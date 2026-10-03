@@ -8,7 +8,7 @@ repository = "https://github.com/Eoth/mimicway"
 
 [dependencies]
 # Web framework async
-axum = { version = "0.7", features = ["macros"] }
+axum = { version = "0.8", features = ["macros"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "net", "time"] }
 
 # HTTP client for proxy forwarding

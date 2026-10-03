@@ -589,11 +589,11 @@ mod tests {
 
         let app = if chunked {
             axum::Router::new()
-                .route("/*rest", any(respond_chunked))
+                .route("/{*rest}", any(respond_chunked))
                 .with_state(body)
         } else {
             axum::Router::new()
-                .route("/*rest", any(respond_fixed))
+                .route("/{*rest}", any(respond_fixed))
                 .with_state(body)
         };
 

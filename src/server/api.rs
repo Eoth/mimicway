@@ -29,31 +29,31 @@ pub fn routes() -> Router<AppState> {
         .route("/config", get(get_config).put(put_config))
         .route("/config/reset", delete_route(reset_config))
         .route("/config/backups", get(list_backups))
-        .route("/config/restore/:filename", post(restore_backup))
+        .route("/config/restore/{filename}", post(restore_backup))
         .route("/services", get(list_services).post(create_service))
         .route(
-            "/services/:name",
+            "/services/{name}",
             get(get_service).put(update_service).delete(delete_service),
         )
-        .route("/services/:name/toggle", put(toggle_service))
-        .route("/services/:name/ping", post(ping_service))
-        .route("/services/:name/rules/reorder", put(reorder_rules))
+        .route("/services/{name}/toggle", put(toggle_service))
+        .route("/services/{name}/ping", post(ping_service))
+        .route("/services/{name}/rules/reorder", put(reorder_rules))
         .route(
-            "/groups/:group/services/:name",
+            "/groups/{group}/services/{name}",
             get(get_service_grouped)
                 .put(update_service_grouped)
                 .delete(delete_service_grouped),
         )
         .route(
-            "/groups/:group/services/:name/toggle",
+            "/groups/{group}/services/{name}/toggle",
             put(toggle_service_grouped),
         )
         .route(
-            "/groups/:group/services/:name/ping",
+            "/groups/{group}/services/{name}/ping",
             post(ping_service_grouped),
         )
         .route(
-            "/groups/:group/services/:name/rules/reorder",
+            "/groups/{group}/services/{name}/rules/reorder",
             put(reorder_rules_grouped),
         )
         .route("/script/validate", post(validate_script))
@@ -62,24 +62,24 @@ pub fn routes() -> Router<AppState> {
         .route("/logs", get(get_logs))
         .route("/observation/status", get(get_observation_status))
         .route(
-            "/services/:name/observe",
+            "/services/{name}/observe",
             post(observe_service).delete(unobserve_service),
         )
         .route(
-            "/groups/:group/services/:name/observe",
+            "/groups/{group}/services/{name}/observe",
             post(observe_service_grouped).delete(unobserve_service_grouped),
         )
-        .route("/services/:name/suggestions", get(get_service_suggestions))
+        .route("/services/{name}/suggestions", get(get_service_suggestions))
         .route(
-            "/groups/:group/services/:name/suggestions",
+            "/groups/{group}/services/{name}/suggestions",
             get(get_service_suggestions_grouped),
         )
         .route("/groups", get(list_groups).post(create_group))
         .route(
-            "/groups/:name",
+            "/groups/{name}",
             get(get_group).put(update_group).delete(delete_group),
         )
-        .route("/groups/:name/members", put(update_group_members));
+        .route("/groups/{name}/members", put(update_group_members));
 
     #[cfg(feature = "messaging-kafka")]
     let router = router
@@ -95,7 +95,7 @@ pub fn routes() -> Router<AppState> {
             get(list_tcp_services).post(create_tcp_service),
         )
         .route(
-            "/tcp/services/:name",
+            "/tcp/services/{name}",
             put(update_tcp_service).delete(delete_tcp_service),
         );
 
@@ -2793,7 +2793,7 @@ mod tests {
                 _ => (StatusCode::NOT_FOUND, "missing").into_response(),
             }
         }
-        let target_app = axum::Router::new().route("/*rest", axum::routing::any(target));
+        let target_app = axum::Router::new().route("/{*rest}", axum::routing::any(target));
         let target_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let target_port = target_listener.local_addr().unwrap().port();
         tokio::spawn(async move {
