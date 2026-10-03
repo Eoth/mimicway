@@ -1,26 +1,49 @@
-# Dependency updates arrive as pull requests, each one going through the full CI (tests, cargo-deny, npm audit,
-# image scan) before anyone merges it.
+# Dependency updates arrive as pull requests, each one going through the CI before anyone merges it.
+# Monthly and grouped, so that a month of updates costs a few CI runs: the minor and patch updates of an ecosystem in
+# one pull request, each major update in its own (it may need code changes), the actions and the base images in one
+# each. A version is proposed a week after its release at the earliest: a compromised release is usually pulled within
+# days. Dependabot does not rebase its pull requests when develop moves, since each rebase runs their CI again: comment
+# "@dependabot rebase" on the one about to be merged. Security updates are not delayed: they come as soon as an
+# advisory is published.
 version: 2
 updates:
   - package-ecosystem: cargo
     directory: /
     schedule:
-      interval: weekly
+      interval: monthly
+    cooldown:
+      default-days: 7
+    rebase-strategy: disabled
     groups:
       rust-minor-and-patch:
         update-types: [minor, patch]
   - package-ecosystem: npm
     directory: /frontend
     schedule:
-      interval: weekly
+      interval: monthly
+    cooldown:
+      default-days: 7
+    rebase-strategy: disabled
     groups:
       npm-minor-and-patch:
         update-types: [minor, patch]
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: weekly
+      interval: monthly
+    cooldown:
+      default-days: 7
+    rebase-strategy: disabled
+    groups:
+      actions:
+        patterns: ["*"]
   - package-ecosystem: docker
     directory: /
     schedule:
-      interval: weekly
+      interval: monthly
+    cooldown:
+      default-days: 7
+    rebase-strategy: disabled
+    groups:
+      base-images:
+        patterns: ["*"]
