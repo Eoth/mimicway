@@ -812,47 +812,7 @@ mod tests {
         dir
     }
 
-    async fn capture_one_raw_request(ready_tx: tokio::sync::oneshot::Sender<u16>) -> String {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-        ready_tx.send(addr.port()).unwrap();
-
-        let (mut stream, _) = listener.accept().await.unwrap();
-        use tokio::io::{AsyncReadExt, AsyncWriteExt};
-        let mut buf = Vec::new();
-        let mut chunk = [0u8; 4096];
-        loop {
-            let n = tokio::time::timeout(
-                std::time::Duration::from_millis(1000),
-                stream.read(&mut chunk),
-            )
-            .await
-            .unwrap_or(Ok(0))
-            .unwrap_or(0);
-            if n == 0 {
-                break;
-            }
-            buf.extend_from_slice(&chunk[..n]);
-            // Once the headers are in, allow one short last read for a chunked body before calling the request complete.
-            if buf.windows(4).any(|w| w == b"\r\n\r\n") {
-                let n2 = tokio::time::timeout(
-                    std::time::Duration::from_millis(200),
-                    stream.read(&mut chunk),
-                )
-                .await
-                .unwrap_or(Ok(0))
-                .unwrap_or(0);
-                if n2 > 0 {
-                    buf.extend_from_slice(&chunk[..n2]);
-                }
-                break;
-            }
-        }
-        let _ = stream
-            .write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 0\r\n\r\n")
-            .await;
-        String::from_utf8_lossy(&buf).into_owned()
-    }
+    use crate::server::test_support::capture_one_raw_request;
 
     fn disabled_auth_config() -> crate::auth::AuthConfig {
         crate::auth::AuthConfig {

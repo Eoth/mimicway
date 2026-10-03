@@ -521,49 +521,12 @@ mod tests {
         assert_eq!(combined, "http://svc:8080/api/v1");
     }
 
-    /// Reads the raw request a fake TCP target receives, to check what `forward()` really sends (method, path and
-    /// query, headers, body) without an HTTP client's parsing in between. The end-to-end tests of
-    /// `server::intercept::tests` check the same through the whole pipeline.
-    async fn capture_raw_request(port_rx: tokio::sync::oneshot::Sender<u16>) -> String {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-        port_rx.send(addr.port()).unwrap();
-
-        let (mut stream, _) = listener.accept().await.unwrap();
-        use tokio::io::{AsyncReadExt, AsyncWriteExt};
-        let mut buf = Vec::new();
-        let mut chunk = [0u8; 4096];
-        loop {
-            let n = tokio::time::timeout(Duration::from_millis(500), stream.read(&mut chunk))
-                .await
-                .unwrap_or(Ok(0))
-                .unwrap_or(0);
-            if n == 0 {
-                break;
-            }
-            buf.extend_from_slice(&chunk[..n]);
-            if buf.windows(4).any(|w| w == b"\r\n\r\n") {
-                // a body may follow: one last short read
-                let n2 = tokio::time::timeout(Duration::from_millis(100), stream.read(&mut chunk))
-                    .await
-                    .unwrap_or(Ok(0))
-                    .unwrap_or(0);
-                if n2 > 0 {
-                    buf.extend_from_slice(&chunk[..n2]);
-                }
-                break;
-            }
-        }
-        let _ = stream
-            .write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 0\r\n\r\n")
-            .await;
-        String::from_utf8_lossy(&buf).into_owned()
-    }
+    use crate::server::test_support::capture_one_raw_request;
 
     #[tokio::test]
     async fn forward_preserves_query_headers_method_and_body() {
         let (port_tx, port_rx) = tokio::sync::oneshot::channel();
-        let server = tokio::spawn(capture_raw_request(port_tx));
+        let server = tokio::spawn(capture_one_raw_request(port_tx));
         let port = port_rx.await.unwrap();
 
         let client = ProxyClient::new();

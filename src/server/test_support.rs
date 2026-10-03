@@ -116,3 +116,99 @@ pub(crate) async fn serve(app: Router) -> String {
     });
     format!("http://127.0.0.1:{port}")
 }
+
+/// A fake HTTP target on a free local port: sends its port through `ready`, answers the one request it receives with
+/// an empty 200, and returns that request as raw text (request line, headers, body). What a proxy sends is then checked
+/// without an HTTP parser in between.
+///
+/// The request is read up to the end its headers announce (Content-Length, or the last chunk), never up to a pause:
+/// TCP may deliver the body long after the headers on a loaded machine. The deadline only stops a test that would hang.
+pub(crate) async fn capture_one_raw_request(ready: tokio::sync::oneshot::Sender<u16>) -> String {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    ready.send(listener.local_addr().unwrap().port()).unwrap();
+    let (mut stream, _) = listener.accept().await.unwrap();
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(10);
+    let mut buf = Vec::new();
+    let mut chunk = [0u8; 4096];
+    while !request_is_complete(&buf) {
+        match tokio::time::timeout_at(deadline, stream.read(&mut chunk)).await {
+            Ok(Ok(n)) if n > 0 => buf.extend_from_slice(&chunk[..n]),
+            _ => break,
+        }
+    }
+    let _ = stream
+        .write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 0\r\n\r\n")
+        .await;
+    String::from_utf8_lossy(&buf).into_owned()
+}
+
+/// Whether `buf` holds a whole HTTP/1.1 request: headers, then the body they announce.
+fn request_is_complete(buf: &[u8]) -> bool {
+    let Some(end) = buf.windows(4).position(|w| w == b"\r\n\r\n") else {
+        return false;
+    };
+    let head = String::from_utf8_lossy(&buf[..end]).to_ascii_lowercase();
+    let body = &buf[end + 4..];
+    let header = |name: &str| {
+        head.lines()
+            .find_map(|line| line.strip_prefix(name)?.strip_prefix(':').map(str::trim))
+    };
+    if header("transfer-encoding").is_some_and(|value| value.contains("chunked")) {
+        return body == b"0\r\n\r\n" || body.ends_with(b"\r\n0\r\n\r\n");
+    }
+    let length = header("content-length")
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(0);
+    body.len() >= length
+}
+
+#[cfg(test)]
+mod tests {
+    use super::capture_one_raw_request;
+    use tokio::io::AsyncWriteExt;
+
+    // Sends `parts` to the fake target, pausing between them as a loaded machine or network would, and returns what
+    // the target captured.
+    async fn capture_sent_in_parts(parts: &[&[u8]]) -> String {
+        let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
+        let target = tokio::spawn(capture_one_raw_request(ready_tx));
+        let port = ready_rx.await.unwrap();
+        let mut client = tokio::net::TcpStream::connect(("127.0.0.1", port))
+            .await
+            .unwrap();
+        for (i, part) in parts.iter().enumerate() {
+            if i > 0 {
+                tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+            }
+            // A target that stopped reading too early has closed the connection: what it captured says so.
+            let _ = client.write_all(part).await;
+        }
+        target.await.unwrap()
+    }
+
+    #[tokio::test]
+    async fn a_body_that_arrives_after_the_headers_is_captured() {
+        let raw = capture_sent_in_parts(&[
+            b"POST /a HTTP/1.1\r\nhost: target\r\ncontent-length: 12\r\n\r\n",
+            b"payload-",
+            b"body",
+        ])
+        .await;
+        assert!(raw.ends_with("\r\n\r\npayload-body"), "{raw}");
+    }
+
+    #[tokio::test]
+    async fn a_chunked_body_is_captured_up_to_its_last_chunk() {
+        let raw = capture_sent_in_parts(&[
+            b"POST /a HTTP/1.1\r\nhost: target\r\ntransfer-encoding: chunked\r\n\r\n",
+            b"c\r\npayload-body\r\n",
+            b"0\r\n\r\n",
+        ])
+        .await;
+        assert!(
+            raw.ends_with("\r\n\r\nc\r\npayload-body\r\n0\r\n\r\n"),
+            "{raw}"
+        );
+    }
+}
