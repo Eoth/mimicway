@@ -34,7 +34,6 @@ fastrand = "2"
 
 # Tower middleware (CORS, static files)
 tower-http = { version = "0.5", features = ["cors", "fs"] }
-tower = "0.4"
 
 # Structured logging
 tracing = "0.1"
