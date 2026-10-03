@@ -305,7 +305,7 @@ cd frontend && npm run test:e2e          # Playwright, against a running Mimicwa
 
 For UI work with hot reload, run the binary, then `cd frontend && npm run dev` and open <http://localhost:5173>. `build.rs` embeds `frontend/dist` when it exists; `cargo build` without a built UI gives a binary that serves `STATIC_DIR` (`./frontend/dist` by default).
 
-CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs formatting, clippy and tests with each feature, the UI tests and build, the end-to-end suite against the real binary, `cargo-deny`, `npm audit`, an image build scanned by Trivy, and a secret scan.
+CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs formatting, clippy and tests with each feature, the UI tests and build, the end-to-end suite against the real binary, `cargo-deny`, `npm audit`, an image build scanned by Trivy, and a secret scan; each job runs when a file it checks changes, and a change to the documentation runs the documentation checks and the secret scan only.
 
 Code map:
 

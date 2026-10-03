@@ -1,4 +1,6 @@
-# Every gate a reviewer would otherwise have to run by hand. A pull request merges only when all jobs pass.
+# Every gate a reviewer would otherwise have to run by hand. Each job runs only when a file it checks changes:
+# scripts/ci-plan.mjs decides, from the changed files, and "CI passed" fails when a job it planned did not pass. That
+# last job is the one check branch protection requires.
 # Actions are pinned to commit SHAs (version in the comment): a tag can be moved, a commit cannot. Dependabot proposes
 # the updates. Runner images are pinned too: a new image is a change like any other, not a surprise.
 name: CI
@@ -7,24 +9,84 @@ on:
   push:
     branches: [main, develop]
   pull_request:
+  schedule:
+    # Weekly, on develop: the advisories published since against lock files that did not change.
+    - cron: "41 3 * * 1"
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  rust:
-    name: Rust (fmt, clippy, tests)
+  changes:
+    name: Plan (which jobs the change needs)
+    runs-on: ubuntu-24.04
+    outputs:
+      jobs: ${{ steps.plan.outputs.jobs }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # A pull request is checked out as a merge commit: its first parent is the target branch.
+          fetch-depth: 2
+          persist-credentials: false
+      - id: plan
+        run: node scripts/ci-plan.mjs plan
+        env:
+          BEFORE: ${{ github.event.before }}
+
+  checks:
+    name: Documentation, comments and repository checks
+    needs: changes
+    if: contains(fromJSON(needs.changes.outputs.jobs), 'checks')
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+      - name: Every Markdown link, image and anchor resolves
+        run: node scripts/check-doc-links.mjs
+      - name: The repository checks fail on the drifts they are meant to catch
+        run: node --test scripts/*.test.mjs
+      - name: Every page and screenshot exists in English and French, with the same headings and images
+        run: node scripts/check-doc-translations.mjs
+      - name: Comments and test titles are in English (paths listed in the script)
+        run: node scripts/check-french-comments.mjs
+      - name: No tracked file names the former design system
+        run: node scripts/check-former-design-system.mjs
+
+  secrets:
+    name: Secret scan
+    needs: changes
+    if: contains(fromJSON(needs.changes.outputs.jobs), 'secrets')
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  rust:
+    name: Rust (fmt, clippy, tests)
+    needs: changes
+    if: contains(fromJSON(needs.changes.outputs.jobs), 'rust')
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable branch
         with:
           toolchain: stable
@@ -38,9 +100,13 @@ jobs:
 
   kafka:
     name: Rust with the Kafka feature
+    needs: changes
+    if: contains(fromJSON(needs.changes.outputs.jobs), 'kafka')
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable branch
         with:
           toolchain: stable
@@ -83,9 +149,13 @@ jobs:
 
   supply-chain:
     name: Supply chain (advisories, licenses, sources)
+    needs: changes
+    if: contains(fromJSON(needs.changes.outputs.jobs), 'supply-chain')
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
         with:
           command: check
@@ -107,11 +177,15 @@ jobs:
         working-directory: frontend
         run: npm audit --audit-level=critical
 
-  frontend:
-    name: UI (unit tests, build), documentation and comment checks
+  ui:
+    name: UI (unit tests, build)
+    needs: changes
+    if: contains(fromJSON(needs.changes.outputs.jobs), 'ui')
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
@@ -123,23 +197,17 @@ jobs:
         run: npm test
       - working-directory: frontend
         run: npm run build
-      - name: Every Markdown link, image and anchor resolves
-        run: node scripts/check-doc-links.mjs
-      - name: The repository checks fail on the drifts they are meant to catch
-        run: node --test scripts/*.test.mjs
-      - name: Every page and screenshot exists in English and French, with the same headings and images
-        run: node scripts/check-doc-translations.mjs
-      - name: Comments and test titles are in English (paths listed in the script)
-        run: node scripts/check-french-comments.mjs
-      - name: No tracked file names the former design system
-        run: node scripts/check-former-design-system.mjs
 
   e2e:
     name: End-to-end (real binary, real browser)
+    # After the unit tests, when they run: a failure there stops the costliest job before it starts.
+    needs: [changes, rust, ui]
+    if: ${{ !cancelled() && !failure() && contains(fromJSON(needs.changes.outputs.jobs), 'e2e') }}
     runs-on: ubuntu-24.04
-    needs: [rust, frontend]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable branch
         with:
           toolchain: stable
@@ -172,9 +240,13 @@ jobs:
 
   docker:
     name: Container image (build, vulnerability scan)
+    needs: changes
+    if: contains(fromJSON(needs.changes.outputs.jobs), 'docker')
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - run: docker build -t mimicway:ci .
       - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -185,9 +257,13 @@ jobs:
 
   kubernetes:
     name: Kubernetes manifests (render, schema check)
+    needs: changes
+    if: contains(fromJSON(needs.changes.outputs.jobs), 'kubernetes')
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Install kubeconform
         run: |
           curl -sSLo kubeconform.tgz https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz
@@ -202,9 +278,13 @@ jobs:
 
   workflows:
     name: Workflows (actionlint, shellcheck)
+    needs: changes
+    if: contains(fromJSON(needs.changes.outputs.jobs), 'workflows')
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       # Checks every workflow, including the release one that only runs on tags, and the shell steps through the
       # runner's shellcheck.
       - name: Lint the workflows
@@ -214,13 +294,29 @@ jobs:
           tar xzf actionlint.tgz actionlint
           ./actionlint -color
 
-  secrets:
-    name: Secret scan
+  ci-passed:
+    name: CI passed
+    needs:
+      - changes
+      - checks
+      - secrets
+      - rust
+      - kafka
+      - supply-chain
+      - ui
+      - e2e
+      - docker
+      - kubernetes
+      - workflows
+    if: always()
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0
-      - uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
+          persist-credentials: false
+          sparse-checkout: scripts
+      - name: Every planned job passed
+        run: node scripts/ci-plan.mjs verdict
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEEDS: ${{ toJSON(needs) }}
+          PLANNED: ${{ needs.changes.outputs.jobs }}

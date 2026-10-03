@@ -305,7 +305,7 @@ cd frontend && npm run test:e2e          # Playwright, contre un Mimicway lancé
 
 Pour travailler sur l'interface avec rechargement à chaud, lancez le binaire, puis `cd frontend && npm run dev` et ouvrez <http://localhost:5173>. `build.rs` intègre `frontend/dist` quand il existe ; `cargo build` sans interface construite donne un binaire qui sert `STATIC_DIR` (`./frontend/dist` par défaut).
 
-La CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) vérifie le formatage, clippy et les tests avec chaque fonctionnalité, les tests et la construction de l'interface, la suite de bout en bout contre le vrai binaire, `cargo-deny`, `npm audit`, une construction d'image analysée par Trivy, et une recherche de secrets.
+La CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) vérifie le formatage, clippy et les tests avec chaque fonctionnalité, les tests et la construction de l'interface, la suite de bout en bout contre le vrai binaire, `cargo-deny`, `npm audit`, une construction d'image analysée par Trivy, et une recherche de secrets ; chaque job tourne quand un fichier qu'il vérifie change, et une modification de la documentation ne lance que les contrôles de documentation et la recherche de secrets.
 
 Plan du code :
 

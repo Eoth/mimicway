@@ -23,7 +23,7 @@ cd frontend && npm run dev                     # UI with hot reload on http://lo
 
 ## Checks
 
-CI runs all of these on every pull request; run the ones your change touches before pushing.
+CI runs the ones a pull request needs: each job runs when a file it checks changes (`scripts/ci-plan.mjs` maps files to jobs), and the `CI passed` check fails when a job that had to run did not pass. Run the ones your change touches before pushing.
 
 ```bash
 cargo fmt --check
