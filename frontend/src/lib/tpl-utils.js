@@ -263,6 +263,10 @@ export function varNameToSource(varName) {
 // Unlike templateToFields, which parses an existing {{...}} template, this starts from a literal JSON example, without
 // {{}}, as the user pasted it: each value becomes a fixed field (fieldType 'value', source 'fixed') holding the pasted
 // value, which the user can then bind to another source (path, query, fake data...) in the builder.
+//
+// A field holds the raw text of the template, as templateToFields gives it: a key or a string is the content of a JSON
+// string, escapes included (JSON.parse decoded them), and any other value its JSON literal (null stays null). Keys go
+// through the builder's rows like typed ones: trimmed, and a blank key is a row not filled in yet, left out.
 
 export function exampleJsonToFields(value) {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
@@ -272,7 +276,8 @@ export function exampleJsonToFields(value) {
 }
 
 function objectToFields(obj) {
-  return Object.entries(obj).map(([key, value]) => {
+  return Object.entries(obj).map(([name, value]) => {
+    const key = rawJsonString(name);
     if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
       return { key, fieldType: 'object', children: objectToFields(value) };
     }
@@ -280,17 +285,20 @@ function objectToFields(obj) {
       if (value.length > 0 && typeof value[0] === 'object' && value[0] !== null) {
         return { key, fieldType: 'array-objects', template: objectToFields(value[0]) };
       }
-      return {
-        key, fieldType: 'array-values',
-        items: value.map(v => ({ source: 'fixed', value: String(v), pipe: '', asNumber: typeof v === 'number' })),
-      };
+      return { key, fieldType: 'array-values', items: value.map(v => ({ source: 'fixed', ...rawJsonValue(v), pipe: '' })) };
     }
-    return {
-      key, fieldType: 'value', source: 'fixed',
-      value: String(value ?? ''), pipe: '',
-      asNumber: typeof value === 'number' || typeof value === 'boolean',
-    };
+    return { key, fieldType: 'value', source: 'fixed', ...rawJsonValue(value), pipe: '' };
   });
+}
+
+function rawJsonString(text) {
+  return JSON.stringify(text).slice(1, -1);
+}
+
+function rawJsonValue(value) {
+  return typeof value === 'string'
+    ? { value: rawJsonString(value), asNumber: false }
+    : { value: JSON.stringify(value), asNumber: true };
 }
 
 // ── Low-level JSON-aware parser ─────────────────────────────────────
@@ -307,10 +315,11 @@ function extractTplEntries(objStr) {
   while (i < inner.length) {
     while (i < inner.length && /[\s,]/.test(inner[i])) i++;
     if (i >= inner.length || inner[i] !== '"') break;
-    const keyEnd = inner.indexOf('"', i + 1);
-    if (keyEnd === -1) break;
-    const key = inner.slice(i + 1, keyEnd);
-    i = keyEnd + 1;
+    // A key may hold escaped quotes (\"): read as a string token, not up to the next quote.
+    const [quotedKey, keyLength] = readTplToken(inner, i);
+    if (keyLength < 2 || !quotedKey.endsWith('"')) break;
+    const key = quotedKey.slice(1, -1);
+    i += keyLength;
     while (i < inner.length && /[\s:]/.test(inner[i])) i++;
     const [value, consumed] = readTplToken(inner, i);
     entries.push([key, value]);
@@ -443,6 +452,16 @@ function xmlNodeToTpl(field) {
 //    own text is dropped. API and SOAP responses rarely mix them: a leaf holds text, a parent holds elements.
 //  - A root without any child element (text only) is refused with a message that says so.
 
+// DOMParser gives text and attribute values decoded (&amp; read as &): a fixed value is written back into the template
+// as it is, so it is kept as raw XML, its markup characters as entities.
+function rawXmlText(text) {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function rawXmlAttribute(text) {
+  return rawXmlText(text).replace(/"/g, '&quot;');
+}
+
 export function exampleXmlToFields(xmlString) {
   const text = xmlString.trim();
   if (!text) {
@@ -498,7 +517,7 @@ export function templateToXmlFields(tpl) {
 
 function xmlAttributesToTplFields(el) {
   return Array.from(el.attributes || []).map(attr => ({
-    name: attr.name, ...parseXmlLeafExpr(attr.value),
+    name: attr.name, ...parseXmlLeafExpr(attr.value, rawXmlAttribute),
   }));
 }
 
@@ -509,13 +528,13 @@ function xmlElementToTplField(el) {
   if (childElements.length > 0) {
     return { tag, nodeType: 'parent', attributes, children: childElements.map(xmlElementToTplField) };
   }
-  return { tag, nodeType: 'value', attributes, ...parseXmlLeafExpr(el.textContent ?? '') };
+  return { tag, nodeType: 'value', attributes, ...parseXmlLeafExpr(el.textContent ?? '', rawXmlText) };
 }
 
 // Reads an XML leaf (element text or attribute value): when it is exactly one {{expr | pipe}} expression, splits it
 // as parseTplValue() does for JSON (varNameToSource, findPipeSeparator); otherwise a fixed literal value. No asNumber
-// here, unlike JSON: XML text has no quoted and unquoted values.
-function parseXmlLeafExpr(raw) {
+// here, unlike JSON: XML text has no quoted and unquoted values. `toRaw` turns a fixed value back into raw XML.
+function parseXmlLeafExpr(raw, toRaw) {
   const trimmed = (raw ?? '').trim();
   const varMatch = trimmed.match(/^\{\{([^}].*?)\}\}$/);
   if (varMatch) {
@@ -532,12 +551,12 @@ function parseXmlLeafExpr(raw) {
     const { source, value } = varNameToSource(varName);
     return { source, value, pipe };
   }
-  return { source: 'fixed', value: trimmed, pipe: '' };
+  return { source: 'fixed', value: toRaw(trimmed), pipe: '' };
 }
 
 function xmlAttributesToFields(el) {
   return Array.from(el.attributes || []).map(attr => ({
-    name: attr.name, source: 'fixed', value: attr.value, pipe: '',
+    name: attr.name, source: 'fixed', value: rawXmlAttribute(attr.value), pipe: '',
   }));
 }
 
@@ -548,5 +567,5 @@ function xmlElementToField(el) {
   if (childElements.length > 0) {
     return { tag, nodeType: 'parent', attributes, children: childElements.map(xmlElementToField) };
   }
-  return { tag, nodeType: 'value', source: 'fixed', value: el.textContent ?? '', pipe: '', attributes };
+  return { tag, nodeType: 'value', source: 'fixed', value: rawXmlText(el.textContent ?? ''), pipe: '', attributes };
 }

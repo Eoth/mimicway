@@ -53,6 +53,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - With `AUTH_ENABLED=true`, only the management API (`/api/...`) requires a token, as documented. The mocked and proxied service routes required one too, which broke every mock for the applications under test and forwarded the Mimicway token to the real backends on proxied rules.
 
 ### Fixed
+- The response builders keep special characters: an example pasted in the JSON builder with a quote, a backslash or a line break in a key or a string gave an invalid template, and `null` became an empty string; an XML example with `&`, `<` or a quote in its text or attributes gave invalid XML, and opening an XML template that held `&amp;` in the structured view turned it into a bare `&`. A JSON key with an escaped quote also read back cut short.
 - The list of backups is newest first even when several were taken in the same millisecond, as successive changes from a script can do: their order came from the file system (on Windows, oldest first).
 - With the dark theme chosen, or preferred by the system, the page no longer shows light while it loads: the theme applies before the configuration and the language are fetched.
 - On a phone (360 px wide), the service page, the rule form and the request log no longer scroll sideways: long URLs break, a form section shrinks with the screen, and the log table scrolls inside its own box.
