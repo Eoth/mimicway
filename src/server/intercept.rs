@@ -904,7 +904,7 @@ mod tests {
         let request_line = raw.lines().next().unwrap_or("");
         assert!(
             request_line.starts_with("POST "),
-            "methode HTTP non preservee: {request_line}"
+            "HTTP method not preserved: {request_line}"
         );
         assert!(
             request_line.contains("/foo/bar?a=1&b=two"),
@@ -1019,7 +1019,7 @@ mod tests {
         let request_line = raw.lines().next().unwrap_or("");
         assert!(
             request_line.starts_with("POST "),
-            "methode HTTP non preservee (rule-level proxy): {request_line}"
+            "HTTP method not preserved (rule-level proxy): {request_line}"
         );
         assert!(
             request_line.contains("/foo/bar?a=1&b=two"),

@@ -90,7 +90,7 @@ pub fn suggest(
     }
 
     if classes.len() == 1 {
-        let representative = classes[0].last().expect("classe non vide");
+        let representative = classes[0].last().expect("a class is never empty");
         return Some(Suggestion::Unconditional {
             rule: Box::new(SuggestedRule {
                 method: method.to_string(),
@@ -107,7 +107,7 @@ pub fn suggest(
             .iter()
             .zip(values_per_class)
             .map(|(class, value)| {
-                let representative = class.last().expect("classe non vide");
+                let representative = class.last().expect("a class is never empty");
                 SuggestedRule {
                     method: method.to_string(),
                     sub_path: sub_path.to_string(),
