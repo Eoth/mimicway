@@ -312,6 +312,7 @@ Plan du code :
 ```
 src/
   main.rs       démarrage, erreurs de configuration, arrêt propre
+  lib.rs        les modules ci-dessous, en bibliothèque pour le binaire et les cibles de fuzzing
   server/       routeur Axum, API de gestion, interception, garde navigateur, journaux, observation, suggestions
   engine/       matcher, proxy, moteur de templates, bac à sable Rhai
   auth/         client Keycloak (validation JWKS), middleware, rôles

@@ -1,35 +1,17 @@
+// Starts Mimicway: reads the environment, then serves the library's router (lib.rs holds the server itself).
 // No unsafe Rust in the shipped binary. Tests use it only to set environment variables (unsafe since edition
 // 2024), which is why the attribute is limited to non-test builds.
 #![cfg_attr(not(test), forbid(unsafe_code))]
 
-//   auth/      Keycloak token validation, group permissions
-//   models/    configuration schema (Service, Rule, Group...)
-//   engine/    matching, HTTP proxy, templates, Rhai scripts
-//   store/     YAML persistence, backups
-//   server/    management API (/api/*), service interception, browser guard
-//   i18n       server messages in the language of the request
-//   messaging/ Kafka, compiled only with the "messaging-kafka" feature
-//   tcp/       raw TCP mocks, compiled only with the "tcp-mock" feature
-pub mod auth;
-pub mod engine;
-pub mod i18n;
-#[cfg(feature = "messaging-kafka")]
-pub mod messaging;
-pub mod models;
-pub mod server;
-pub mod store;
-#[cfg(feature = "tcp-mock")]
-pub mod tcp;
-
-use crate::auth::AuthConfig;
-use crate::auth::keycloak::KeycloakClient;
-use crate::engine::ProxyClient;
-use crate::engine::script::ScriptEngine;
-use crate::server::browser_guard::BrowserGuard;
-use crate::server::ping::PingCache;
-use crate::server::request_log::RequestLog;
-use crate::server::{AppState, build_router_with};
-use crate::store::MockStore;
+use mimicway::auth::AuthConfig;
+use mimicway::auth::keycloak::KeycloakClient;
+use mimicway::engine::ProxyClient;
+use mimicway::engine::script::ScriptEngine;
+use mimicway::server::browser_guard::BrowserGuard;
+use mimicway::server::ping::PingCache;
+use mimicway::server::request_log::RequestLog;
+use mimicway::server::{AppState, build_router_with};
+use mimicway::store::MockStore;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
@@ -64,7 +46,7 @@ async fn main() {
             ))
         });
 
-    let ui = crate::server::ui_files::UiSource::from_env();
+    let ui = mimicway::server::ui_files::UiSource::from_env();
 
     let port: u16 = std::env::var("PORT")
         .ok()
@@ -85,24 +67,24 @@ async fn main() {
 
     #[cfg(feature = "messaging-kafka")]
     let messaging = {
-        let kafka_config = crate::messaging::KafkaConfig::from_env();
-        let message_log = crate::messaging::message_log::MessageLog::new();
+        let kafka_config = mimicway::messaging::KafkaConfig::from_env();
+        let message_log = mimicway::messaging::message_log::MessageLog::new();
         let publisher = if kafka_config.enabled {
             tracing::info!(
                 topic = %kafka_config.listen_topic,
                 brokers = ?kafka_config.brokers,
                 "messaging: Kafka enabled, starting consumer"
             );
-            crate::messaging::consumer::spawn(
+            mimicway::messaging::consumer::spawn(
                 kafka_config.clone(),
                 store.clone(),
                 message_log.clone(),
             )
         } else {
             tracing::info!("messaging: Kafka disabled (KAFKA_ENABLED=false)");
-            crate::messaging::consumer::Publisher::None
+            mimicway::messaging::consumer::Publisher::None
         };
-        crate::messaging::MessagingState {
+        mimicway::messaging::MessagingState {
             message_log,
             reply_topic: kafka_config.reply_topic,
             publisher,
@@ -113,7 +95,7 @@ async fn main() {
     // (TcpRuntime::replace). Their tasks are detached: on shutdown only HTTP is drained, and open TCP connections are
     // cut, since a binary protocol has no generic way to end a session cleanly from the server side anyway.
     #[cfg(feature = "tcp-mock")]
-    let tcp_runtime = crate::tcp::TcpRuntime::load_and_spawn(&data_dir, bind_ip).await;
+    let tcp_runtime = mimicway::tcp::TcpRuntime::load_and_spawn(&data_dir, bind_ip).await;
 
     let state = AppState {
         store,
@@ -124,7 +106,7 @@ async fn main() {
         keycloak,
         script_engine: ScriptEngine::new(),
         ping_cache: PingCache::new(),
-        observation: crate::server::observation::ObservationState::new(),
+        observation: mimicway::server::observation::ObservationState::new(),
         #[cfg(feature = "messaging-kafka")]
         messaging,
         #[cfg(feature = "tcp-mock")]

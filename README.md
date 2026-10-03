@@ -312,6 +312,7 @@ Code map:
 ```
 src/
   main.rs       startup, configuration errors, graceful shutdown
+  lib.rs        the modules below, as a library for the binary and the fuzz targets
   server/       Axum router, management API, interception, browser guard, logs, observation, suggestions
   engine/       matcher, proxy, template renderer, Rhai sandbox
   auth/         Keycloak client (JWKS validation), middleware, roles
