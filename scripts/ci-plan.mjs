@@ -8,8 +8,9 @@
 // job that a wrong condition skips cannot pass for a green run.
 //
 // Usage (in .github/workflows/ci.yml):
-//   node scripts/ci-plan.mjs plan      writes `jobs` (a JSON array) to $GITHUB_OUTPUT. Reads GITHUB_EVENT_NAME and
-//                                      BEFORE (the commit a push starts from).
+//   node scripts/ci-plan.mjs plan      writes `jobs` and `codeql` (JSON arrays: jobs, CodeQL languages) to
+//                                      $GITHUB_OUTPUT. Reads GITHUB_EVENT_NAME and BEFORE (the commit a push starts
+//                                      from).
 //   node scripts/ci-plan.mjs verdict   reads NEEDS (toJSON(needs)) and PLANNED (the `jobs` output), exits 1 on a
 //                                      planned job that did not pass, or on any failed or cancelled job.
 import { execFileSync } from 'node:child_process';
@@ -29,11 +30,14 @@ export const JOBS = [
   'docker',
   'kubernetes',
   'workflows',
+  'codeql',
 ];
 
 // Always run on a push or a pull request: any file can hold a secret, a broken link or the former design system's
 // name, and both jobs take seconds.
 const ALWAYS = ['checks', 'secrets'];
+
+const CODEQL_LANGUAGES = ['actions', 'javascript-typescript', 'rust'];
 
 // Read and checked by people only: a change to these runs the always-on jobs alone.
 const DOCUMENTATION = [/\.md$/, /^docs\//, /^LICENSE$/, /^\.github\/ISSUE_TEMPLATE\//];
@@ -66,6 +70,12 @@ const RULES = {
   kubernetes: [/^k8s\//],
   workflows: [/^\.github\/workflows\//, /^\.github\/actions\//],
 };
+// For each language CodeQL analyses, its files.
+const CODEQL_RULES = {
+  actions: [/^\.github\/workflows\//, /^\.github\/actions\//],
+  'javascript-typescript': [/^frontend\/.*\.(js|mjs|cjs|ts|svelte|html)$/, /^scripts\/.*\.(js|mjs)$/],
+  rust: [/^src\/.*\.rs$/, /^tests\/.*\.rs$/, /^build\.rs$/, /^Cargo\.(toml|lock)$/],
+};
 // Checked by the always-on jobs, or by no job at all: claimed so that changing them does not run everything.
 // Dockerfile.release is built by the release workflow only, on a tag; the bootstrap scripts are run by people.
 const ALWAYS_ONLY = [
@@ -85,17 +95,19 @@ function escape(text) {
 
 const matches = (patterns, file) => patterns.some((pattern) => pattern.test(file));
 
-// The jobs a set of changed files needs, for a push or a pull request. `files` null means the changes are unknown (a
-// new branch, a force push whose start is gone): everything runs.
+// The jobs and CodeQL languages a set of changed files needs, for a push or a pull request. `files` null means the
+// changes are unknown (a new branch, a force push whose start is gone): everything runs.
 export function planFor(event, files) {
   if (event === 'schedule') {
-    // The weekly run: advisories published against unchanged lock files.
-    return { jobs: ['supply-chain'] };
+    // The weekly run: advisories published against unchanged lock files, and the queries CodeQL added since.
+    return { jobs: ['supply-chain', 'codeql'], codeql: [...CODEQL_LANGUAGES] };
   }
   const jobs = new Set(ALWAYS);
+  const codeql = new Set();
   const everything = event === 'workflow_dispatch' || files === null || files.some((f) => matches(EVERYTHING, f));
   if (everything) {
     for (const job of Object.keys(RULES)) jobs.add(job);
+    for (const language of CODEQL_LANGUAGES) codeql.add(language);
   } else {
     for (const file of files) {
       if (matches(DOCUMENTATION, file)) continue;
@@ -106,10 +118,20 @@ export function planFor(event, files) {
           claimed = true;
         }
       }
+      for (const [language, patterns] of Object.entries(CODEQL_RULES)) {
+        if (matches(patterns, file)) codeql.add(language);
+      }
       if (!claimed) return planFor(event, null);
     }
   }
-  return { jobs: JOBS.filter((job) => jobs.has(job)) };
+  // Scorecard's SAST check counts the merged pull requests that carry a successful CodeQL check: the workflows are
+  // analysed on every pull request, documentation included, which takes about a minute.
+  if (event === 'pull_request') codeql.add('actions');
+  if (codeql.size > 0) jobs.add('codeql');
+  return {
+    jobs: JOBS.filter((job) => jobs.has(job)),
+    codeql: CODEQL_LANGUAGES.filter((language) => codeql.has(language)),
+  };
 }
 
 // What is wrong with a finished run: `needs` is the workflow's needs context, `planned` the jobs the plan scheduled.

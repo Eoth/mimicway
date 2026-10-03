@@ -10,7 +10,8 @@ on:
     branches: [main, develop]
   pull_request:
   schedule:
-    # Weekly, on develop: the advisories published since against lock files that did not change.
+    # Weekly, on develop: the advisories published since against lock files that did not change, and the queries
+    # CodeQL added since.
     - cron: "41 3 * * 1"
   workflow_dispatch:
 
@@ -30,6 +31,7 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       jobs: ${{ steps.plan.outputs.jobs }}
+      codeql: ${{ steps.plan.outputs.codeql }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -294,6 +296,32 @@ jobs:
           tar xzf actionlint.tgz actionlint
           ./actionlint -color
 
+  codeql:
+    name: CodeQL (${{ matrix.language }})
+    needs: changes
+    if: contains(fromJSON(needs.changes.outputs.jobs), 'codeql')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        # The languages whose files changed; on a pull request, the workflows always (see scripts/ci-plan.mjs).
+        language: ${{ fromJSON(needs.changes.outputs.codeql) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Nothing is built: CodeQL reads the sources as they are (build mode none), Rust included.
+      - uses: github/codeql-action/init@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: none
+      - uses: github/codeql-action/analyze@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        with:
+          category: /language:${{ matrix.language }}
+
   ci-passed:
     name: CI passed
     needs:
@@ -308,6 +336,7 @@ jobs:
       - docker
       - kubernetes
       - workflows
+      - codeql
     if: always()
     runs-on: ubuntu-24.04
     steps:

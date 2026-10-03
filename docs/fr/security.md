@@ -66,6 +66,7 @@ Le formulaire de connexion utilise l'octroi par mot de passe de Keycloak. Le rem
 
 - `Cargo.lock` et `frontend/package-lock.json` sont versionnés : les compilations résolvent exactement le même graphe de dépendances.
 - La CI échoue sur toute vulnérabilité connue ou crate retirée (« yanked »), sur une licence hors d'une liste permissive et sur une dépendance venue d'ailleurs que crates.io ([deny.toml](../../deny.toml)), sur les alertes npm de gravité haute, sur les vulnérabilités critiques ou hautes de l'image de conteneur (Trivy) et sur les secrets versionnés (gitleaks).
+- CodeQL analyse le serveur (Rust), l'interface (JavaScript) et les workflows de la CI dès qu'ils changent, les workflows à chaque pull request, et les trois chaque semaine ; ses alertes sont listées dans l'onglet Security du dépôt.
 - Les actions tierces de la CI sont épinglées par empreinte de commit, et Dependabot propose leurs mises à jour avec celles des crates, des paquets npm et des images de base.
 - Le code de production ne contient aucun Rust `unsafe` (`#![forbid(unsafe_code)]` hors tests).
 - L'image contient le binaire statique et son répertoire de données, rien d'autre (`FROM scratch`) : ni système d'exploitation, ni shell, ni paquet système, donc aucune place pour une vulnérabilité hors du code de Mimicway lui-même. Elle s'exécute sous un utilisateur non root (uid 1000) ; les manifestes Kubernetes ajoutent un système de fichiers racine en lecture seule, aucune élévation de privilèges et aucune capacité Linux.

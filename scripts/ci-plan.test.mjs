@@ -11,16 +11,18 @@ import { JOBS, READ_BY_UI_TESTS, planFor, verdict } from './ci-plan.mjs';
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const jobsOf = (event, files) => planFor(event, files).jobs;
 
-test('a change of server code runs the Rust, Kafka, end-to-end and image jobs', () => {
-  const jobs = jobsOf('push', ['src/engine/matcher.rs']);
-  for (const job of ['rust', 'kafka', 'e2e', 'docker']) assert.ok(jobs.includes(job), job);
-  assert.ok(!jobs.includes('ui'));
+test('a change of server code runs the Rust, Kafka, end-to-end and image jobs, and CodeQL for Rust', () => {
+  const plan = planFor('push', ['src/engine/matcher.rs']);
+  for (const job of ['rust', 'kafka', 'e2e', 'docker', 'codeql']) assert.ok(plan.jobs.includes(job), job);
+  assert.ok(!plan.jobs.includes('ui'));
+  assert.deepEqual(plan.codeql, ['rust']);
 });
 
-test('a change of the interface runs the UI, end-to-end, Kafka and image jobs', () => {
-  const jobs = jobsOf('push', ['frontend/src/lib/components/RuleForm.svelte']);
-  for (const job of ['ui', 'e2e', 'kafka', 'docker']) assert.ok(jobs.includes(job), job);
-  assert.ok(!jobs.includes('rust'));
+test('a change of the interface runs the UI, end-to-end, Kafka and image jobs, and CodeQL for JavaScript', () => {
+  const plan = planFor('push', ['frontend/src/lib/components/RuleForm.svelte']);
+  for (const job of ['ui', 'e2e', 'kafka', 'docker', 'codeql']) assert.ok(plan.jobs.includes(job), job);
+  assert.ok(!plan.jobs.includes('rust'));
+  assert.deepEqual(plan.codeql, ['javascript-typescript']);
 });
 
 test('a change of an end-to-end spec runs the end-to-end jobs, not the unit tests nor the image', () => {
@@ -31,8 +33,14 @@ test('a change of an end-to-end spec runs the end-to-end jobs, not the unit test
 
 test('a change of documentation runs the always-on jobs only', () => {
   const docs = ['README.md', 'docs/en/matching-rules.md', 'docs/fr/screenshots/rule-form.png', 'frontend/README.md'];
-  assert.deepEqual(jobsOf('push', docs), ['checks', 'secrets']);
-  assert.deepEqual(jobsOf('pull_request', docs), ['checks', 'secrets']);
+  assert.deepEqual(planFor('push', docs), { jobs: ['checks', 'secrets'], codeql: [] });
+});
+
+test('a pull request of documentation also has its workflows analysed by CodeQL, for the SAST check', () => {
+  assert.deepEqual(planFor('pull_request', ['docs/en/security.md']), {
+    jobs: ['checks', 'secrets', 'codeql'],
+    codeql: ['actions'],
+  });
 });
 
 test('a lock file or a policy runs the supply chain job', () => {
@@ -44,7 +52,10 @@ test('a lock file or a policy runs the supply chain job', () => {
 
 test('the Kubernetes manifests and the workflows run their own checks', () => {
   assert.deepEqual(jobsOf('push', ['k8s/base/deployment.yaml']), ['checks', 'secrets', 'kubernetes']);
-  assert.deepEqual(jobsOf('push', ['.github/workflows/release.yml']), ['checks', 'secrets', 'workflows']);
+  assert.deepEqual(planFor('push', ['.github/workflows/release.yml']), {
+    jobs: ['checks', 'secrets', 'workflows', 'codeql'],
+    codeql: ['actions'],
+  });
 });
 
 test('an unknown kind of file, the CI workflow or the plan itself runs every job', () => {
@@ -54,10 +65,14 @@ test('an unknown kind of file, the CI workflow or the plan itself runs every job
   assert.deepEqual(jobsOf('push', null), JOBS);
   assert.deepEqual(jobsOf('pull_request', null), JOBS);
   assert.deepEqual(jobsOf('workflow_dispatch', []), JOBS);
+  assert.deepEqual(planFor('workflow_dispatch', []).codeql, ['actions', 'javascript-typescript', 'rust']);
 });
 
-test('the weekly run checks the lock files against the advisories published since', () => {
-  assert.deepEqual(jobsOf('schedule', []), ['supply-chain']);
+test('the weekly run checks the advisories published since and runs every CodeQL analysis', () => {
+  assert.deepEqual(planFor('schedule', []), {
+    jobs: ['supply-chain', 'codeql'],
+    codeql: ['actions', 'javascript-typescript', 'rust'],
+  });
 });
 
 test('every file outside frontend/ that a UI test reads runs the UI job', () => {
