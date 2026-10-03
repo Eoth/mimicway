@@ -279,8 +279,26 @@ impl MockStore {
         Self::collect_backups_dir(&backups_dir, false, &mut result)?;
         Self::collect_backups_dir(&backups_dir.join("protected"), true, &mut result)?;
 
-        result.sort_by_key(|b| std::cmp::Reverse(b.created_at_ms));
+        // Several backups can share a millisecond. Within one, the sequence number of the name orders the normal ones,
+        // and a protected backup is the oldest: a reset takes it before the write that makes the normal one.
+        result.sort_by_key(|b| {
+            std::cmp::Reverse((
+                b.created_at_ms,
+                !b.protected,
+                Self::backup_sequence(&b.filename),
+            ))
+        });
         Ok(result)
+    }
+
+    /// The sequence number of a normal backup's name (`mock-config-{ts}-{seq}.yaml`), 0 for any other name.
+    fn backup_sequence(filename: &str) -> u64 {
+        filename
+            .strip_prefix("mock-config-")
+            .and_then(|rest| rest.strip_suffix(".yaml"))
+            .and_then(|rest| rest.split('-').nth(1))
+            .and_then(|seq| seq.parse().ok())
+            .unwrap_or(0)
     }
 
     fn collect_backups_dir(
@@ -938,6 +956,48 @@ mod tests {
         for pair in backups.windows(2) {
             assert!(pair[0].created_at_ms >= pair[1].created_at_ms);
         }
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[tokio::test]
+    async fn list_backups_orders_the_backups_of_one_millisecond_newest_first() {
+        // A reset takes a protected backup then a normal one, and a fast client can make several changes, within the
+        // same millisecond: the order cannot come from the timestamp alone, nor from the order the directory lists.
+        let dir = temp_dir();
+        let store = MockStore::load_or_init(&dir).await.unwrap();
+        let backups_dir = dir.join("backups");
+        std::fs::create_dir_all(backups_dir.join("protected")).unwrap();
+        std::fs::write(
+            backups_dir.join("protected/pre-reset-1700000000000.yaml"),
+            "",
+        )
+        .unwrap();
+        for seq in [3, 1, 5, 2, 4] {
+            std::fs::write(
+                backups_dir.join(format!("mock-config-1700000000000-{seq:06}.yaml")),
+                "",
+            )
+            .unwrap();
+        }
+
+        let names: Vec<String> = store
+            .list_backups()
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|b| b.filename)
+            .collect();
+        assert_eq!(
+            names,
+            [
+                "mock-config-1700000000000-000005.yaml",
+                "mock-config-1700000000000-000004.yaml",
+                "mock-config-1700000000000-000003.yaml",
+                "mock-config-1700000000000-000002.yaml",
+                "mock-config-1700000000000-000001.yaml",
+                "pre-reset-1700000000000.yaml",
+            ]
+        );
         std::fs::remove_dir_all(&dir).ok();
     }
 

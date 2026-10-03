@@ -51,6 +51,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - With `AUTH_ENABLED=true`, only the management API (`/api/...`) requires a token, as documented. The mocked and proxied service routes required one too, which broke every mock for the applications under test and forwarded the Mimicway token to the real backends on proxied rules.
 
 ### Fixed
+- The list of backups is newest first even when several were taken in the same millisecond, as successive changes from a script can do: their order came from the file system (on Windows, oldest first).
 - With the dark theme chosen, or preferred by the system, the page no longer shows light while it loads: the theme applies before the configuration and the language are fetched.
 - On a phone (360 px wide), the service page, the rule form and the request log no longer scroll sideways: long URLs break, a form section shrinks with the screen, and the log table scrolls inside its own box.
 - The knob of a switched-off toggle stands out from its track in both themes (it was at 1.6:1 or less); the group creation form keeps a single primary button; in the Kafka log only the replies Mimicway publishes wear the mock badge, a received message an information badge.
