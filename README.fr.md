@@ -51,7 +51,7 @@ L'image est publiée pour amd64 et arm64 à chaque version, signée et accompagn
 
 Chaque [version](https://github.com/Eoth/mimicway/releases) fournit un binaire en un seul fichier pour Linux (x86_64 et arm64, statique), macOS (Intel et Apple Silicon) et Windows, avec l'interface incluse. Décompressez-le et lancez `./mimicway`.
 
-Ouvrez <http://localhost:7342>.
+Ouvrez <http://localhost:7342>. L'interface demande Chrome ou Edge 111, Firefox 114, Safari 16.4 ou plus récent (navigateurs sortis depuis mars 2023).
 
 ### Depuis les sources
 

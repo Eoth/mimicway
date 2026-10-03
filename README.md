@@ -51,7 +51,7 @@ The image is published for amd64 and arm64 with each release, signed and with it
 
 Each [release](https://github.com/Eoth/mimicway/releases) has a single-file binary for Linux (x86_64 and arm64, static), macOS (Intel and Apple Silicon) and Windows, with the UI inside. Unpack it and run `./mimicway`.
 
-Open <http://localhost:7342>.
+Open <http://localhost:7342>. The interface needs Chrome or Edge 111, Firefox 114, Safari 16.4 or later (browsers from March 2023 on).
 
 ### From source
 
