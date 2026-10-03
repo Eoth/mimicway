@@ -191,7 +191,7 @@ test('a file in an unknown syntax is reported rather than skipped', () => {
 
 // A file name that each covered pathspec matches.
 function sampleOf(pattern) {
-  return pattern.replace('**/', '').replace('*', 'sample');
+  return pattern.replaceAll('**/', '').replaceAll('*', 'sample');
 }
 
 // A file of comment lines, written in the comment syntax of `file`: in Svelte markup and in CSS, "//" is not a comment.
