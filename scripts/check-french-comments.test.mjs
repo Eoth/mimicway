@@ -104,6 +104,17 @@ test('Svelte: HTML comments, script, expressions and style are read; markup text
   ]);
 });
 
+test('Svelte: a <SCRIPT> or a <Style> is a component, as Svelte reads it, and its content is markup', () => {
+  const svelte = [
+    '<SCRIPT>// pour la suite</SCRIPT>',
+    '<Style>/* pour plus tard */</Style>',
+    '<script>',
+    '  // Ouvre le formulaire',
+    '</script>',
+  ];
+  assert.deepEqual(check({ 'A.svelte': svelte.join('\n') }), ['A.svelte:4: // Ouvre le formulaire']);
+});
+
 test('Rust: strings, raw strings, character literals and lifetimes do not hide or fake a comment', () => {
   const rust = [
     'fn f<\'a>(s: &\'a str) -> char { \'"\' } // returns a quote',

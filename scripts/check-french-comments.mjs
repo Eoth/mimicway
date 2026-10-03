@@ -86,6 +86,7 @@ const KEYWORDS_BEFORE_EXPRESSION = new Set([
 const WORD = /[\p{L}\p{N}_$]+/uy;
 const RUST_RAW_STRING = /b?r(#*)"/y;
 const RUST_CHAR = /'(?:\\(?:u\{[0-9a-fA-F]+\}|x[0-9a-fA-F]{2}|.)|[^\\'\n])'/uy;
+// Lower case only, as Svelte reads them: a <SCRIPT> or a <Style> is a component, whose content is markup.
 const SVELTE_EMBEDDED = /<(script|style)\b[^>]*>/y;
 
 function matchAt(pattern, text, index) {
