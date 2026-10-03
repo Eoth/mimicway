@@ -17,13 +17,13 @@
     "design:preview": "vite --open /design-preview.html"
   },
   "dependencies": {
-    "svelte": "^5.56.3"
+    "svelte": "^5.57.1"
   },
   "devDependencies": {
-    "@playwright/test": "^1.61.0",
+    "@playwright/test": "^1.63.0",
     "@sveltejs/vite-plugin-svelte": "^5.1.1",
     "@testing-library/jest-dom": "^6.9.1",
-    "@testing-library/svelte": "^5.3.1",
+    "@testing-library/svelte": "^5.4.2",
     "jsdom": "^29.1.1",
     "vite": "^6.4.3",
     "vitest": "^4.1.9"
