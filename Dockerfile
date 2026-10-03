@@ -6,7 +6,7 @@ RUN npm ci --ignore-scripts
 COPY frontend/ ./
 RUN npm run build
 
-FROM rust:1.96-alpine@sha256:a41f7740f8b45d45795624eec13a8b42263cc700f19f7e4e86e04d3dda08a479 AS backend
+FROM rust:1.98-alpine@sha256:7cc1c22d77d9432f7fe012a70e6d3e555af54c2a6832700ed7d553f1769ae89f AS backend
 RUN apk add --no-cache musl-dev
 WORKDIR /build
 # The dependencies first, built against a placeholder main in a layer of their own: every build whose Cargo.toml and
