@@ -526,3 +526,23 @@ Size M
 **What.** Store what a message says, not its translation: a function that translates it (`() => t("…")`, which keeps the message a literal for the extraction), called when rendering; notifications accept the same form. An error text sent by the server stays in the language of the request that got it.
 
 **Done when.** `frontend/src/tests/french.test.js` opens each screen's state before switching languages (today it opens them after, because of this) and still finds no English text left.
+
+### E13. A lighter CI
+
+Size M
+
+**Why.** A push to `develop` costs far more machine time than it checks. Every CI run starts its 9 jobs whatever changed (9.8 to 16.6 job-minutes per run, the container image alone 4 to 6), a change to a Markdown file included; and the push makes Dependabot rebase each of its open pull requests, whose full CI runs again: after the push of fbf07d2, 5 pull request runs, about 60 job-minutes, for one commit of documentation. The runs also warn that their actions target Node.js 20, now deprecated, and that `ubuntu-latest` moves to Ubuntu 26 on 2026-10-19.
+
+**What.** Measure the job-minutes of a push first (GitHub API), then: run each job only when the files it checks change, behind one aggregate job that branch protection can require (R17); stop Dependabot from rebasing its pull requests on every push, and group or space its updates; cache what can be cached (Rust, npm, image layers); move the actions to their Node.js 24 versions and pin the runner images. Keep every check that runs today for the changes it concerns.
+
+**Done when.** A documentation-only push runs the documentation checks only, a push no longer reruns the Dependabot pull requests, the job-minutes of a typical push are measured before and after, and no run warns about deprecated actions.
+
+### E14. Major updates proposed by Dependabot
+
+Size M
+
+**Why.** Four Dependabot pull requests fail their CI on `cargo test` (clippy passes, so the tests catch a change of behaviour): axum 0.8.9, base64 0.23.1, tower 0.5.3 and tower-http 0.6.11; axum 0.8 changed its path syntax, for one. Left open, they rerun their CI at every push to `develop` (E13) and the dependencies age.
+
+**What.** Reproduce each failure locally from its branch, then migrate the code to each new version with its tests, one change per dependency, or close the pull request with the reason when the update is not worth it now.
+
+**Done when.** No Dependabot pull request is left failing, and each one is merged or closed with its reason.
