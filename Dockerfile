@@ -9,7 +9,13 @@ RUN npm run build
 FROM rust:1.96-alpine@sha256:a41f7740f8b45d45795624eec13a8b42263cc700f19f7e4e86e04d3dda08a479 AS backend
 RUN apk add --no-cache musl-dev
 WORKDIR /build
-COPY Cargo.toml Cargo.lock build.rs ./
+# The dependencies first, built against a placeholder main in a layer of their own: every build whose Cargo.toml and
+# Cargo.lock did not change reuses it. The placeholder's outputs are deleted, or Cargo could take the real sources, older
+# than them, for already built.
+COPY Cargo.toml Cargo.lock ./
+RUN mkdir src && echo 'fn main() {}' > src/main.rs && cargo build --release --locked \
+    && rm -rf src target/release/mimicway target/release/deps/mimicway-* target/release/.fingerprint/mimicway-*
+COPY build.rs ./
 COPY src/ src/
 # build.rs embeds the built UI in the binary.
 COPY --from=frontend /build/frontend/dist frontend/dist
