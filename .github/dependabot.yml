@@ -17,6 +17,11 @@ updates:
     groups:
       rust-minor-and-patch:
         update-types: [minor, patch]
+    ignore:
+      # Used by the tests only, at the version reqwest, hyper-util and jsonwebtoken already build, so that it adds
+      # nothing to compile: its next major comes when theirs does, by hand.
+      - dependency-name: base64
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: npm
     directory: /frontend
     schedule:
