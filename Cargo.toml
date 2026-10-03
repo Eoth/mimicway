@@ -33,7 +33,7 @@ regex = "1"
 fastrand = "2"
 
 # Tower middleware (CORS, static files)
-tower-http = { version = "0.5", features = ["cors", "fs"] }
+tower-http = { version = "0.6", features = ["cors", "fs"] }
 
 # Structured logging
 tracing = "0.1"
