@@ -43,7 +43,8 @@ updates:
       actions:
         patterns: ["*"]
   - package-ecosystem: docker
-    directory: /
+    # The images of Dockerfile and of the fuzzing builder (.clusterfuzzlite/Dockerfile).
+    directories: ["/", "/.clusterfuzzlite"]
     schedule:
       interval: monthly
     cooldown:

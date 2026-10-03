@@ -13,8 +13,11 @@
 //   i18n       server messages in the language of the request
 //   messaging/ Kafka, compiled only with the "messaging-kafka" feature
 //   tcp/       raw TCP mocks, compiled only with the "tcp-mock" feature
+//   fuzzing    entry points of the fuzz targets (fuzz/), compiled by cargo-fuzz only
 pub mod auth;
 pub mod engine;
+#[cfg(fuzzing)]
+pub mod fuzzing;
 pub mod i18n;
 #[cfg(feature = "messaging-kafka")]
 pub mod messaging;

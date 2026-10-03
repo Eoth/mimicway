@@ -34,6 +34,8 @@ cd frontend && npm test                # unit tests, including translation check
 cd frontend && npm run test:e2e        # with Mimicway running, see frontend/e2e/README.md
 ```
 
+The fuzz targets (`fuzz/`; `src/fuzzing.rs` says what each one checks) build with a nightly toolchain and [cargo-fuzz](https://github.com/rust-fuzz/cargo-fuzz), against the server's lock file: `cp Cargo.lock fuzz/ && cargo +nightly fuzz run config_import -- -max_total_time=300`. CI runs them five minutes on a pull request that changes the server, and an hour every week; a crash becomes a fix with its regression test.
+
 The Kafka feature builds librdkafka from source: it needs cmake, a C toolchain and, on Linux, the libcurl headers (`libcurl4-openssl-dev` on Debian and Ubuntu). Then `cargo test --features messaging-kafka`.
 
 ## What a good change looks like

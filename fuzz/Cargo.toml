@@ -1,0 +1,61 @@
+# Fuzz targets of the server's parsers and matchers, built by cargo-fuzz (nightly, sanitizers) and run by
+# ClusterFuzzLite in CI. A workspace of its own: none of this reaches the server's build. Build it against the lock file
+# the server ships with: copy ../Cargo.lock here first (CI does), so that the fuzzed crates are the shipped ones.
+[package]
+name = "mimicway-fuzz"
+version = "0.0.0"
+edition = "2024"
+license = "MIT"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+mimicway = { path = "..", features = ["tcp-mock"] }
+
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "sub_path"
+path = "fuzz_targets/sub_path.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "request_conditions"
+path = "fuzz_targets/request_conditions.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "xml_path"
+path = "fuzz_targets/xml_path.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "template"
+path = "fuzz_targets/template.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "tcp_hex"
+path = "fuzz_targets/tcp_hex.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "config_import"
+path = "fuzz_targets/config_import.rs"
+test = false
+doc = false
+bench = false

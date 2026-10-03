@@ -78,6 +78,10 @@ messaging-kafka = ["dep:rdkafka"]
 # why). Off by default: src/tcp/ is not even compiled. No extra dependency: byte matching uses regex::bytes.
 tcp-mock = ["tokio/io-util"]
 
+[lints.rust]
+# cargo-fuzz builds with `--cfg fuzzing`, which compiles src/fuzzing.rs, the entry points of the fuzz targets.
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(fuzzing)"] }
+
 [profile.release]
 opt-level = 3
 lto = true

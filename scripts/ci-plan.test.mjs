@@ -10,6 +10,8 @@ import { JOBS, READ_BY_UI_TESTS, planFor, verdict } from './ci-plan.mjs';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const jobsOf = (event, files) => planFor(event, files).jobs;
+// Every job a change of files can schedule: the weekly campaign aside, and the fuzzing of pull requests on a push.
+const BY_FILES = JOBS.filter((job) => !['fuzz', 'fuzz-batch'].includes(job));
 
 test('a change of server code runs the Rust, Kafka, end-to-end and image jobs, and CodeQL for Rust', () => {
   const plan = planFor('push', ['src/engine/matcher.rs']);
@@ -43,6 +45,14 @@ test('a pull request of documentation also has its workflows analysed by CodeQL,
   });
 });
 
+test('a pull request that changes Rust or the fuzz targets is fuzzed; a push is not', () => {
+  assert.ok(jobsOf('pull_request', ['src/tcp/hex.rs']).includes('fuzz'));
+  assert.ok(jobsOf('pull_request', ['fuzz/fuzz_targets/tcp_hex.rs']).includes('fuzz'));
+  assert.ok(jobsOf('pull_request', ['.clusterfuzzlite/build.sh']).includes('fuzz'));
+  assert.ok(!jobsOf('push', ['src/tcp/hex.rs']).includes('fuzz'));
+  assert.ok(!jobsOf('pull_request', ['frontend/src/App.svelte']).includes('fuzz'));
+});
+
 test('a lock file or a policy runs the supply chain job', () => {
   for (const file of ['Cargo.lock', 'frontend/package-lock.json', 'deny.toml', 'osv-scanner.toml']) {
     assert.ok(jobsOf('push', [file]).includes('supply-chain'), file);
@@ -60,17 +70,17 @@ test('the Kubernetes manifests and the workflows run their own checks', () => {
 
 test('an unknown kind of file, the CI workflow or the plan itself runs every job', () => {
   for (const file of ['tool-of-tomorrow.toml', '.github/workflows/ci.yml', 'scripts/ci-plan.mjs']) {
-    assert.deepEqual(jobsOf('push', ['README.md', file]), JOBS, file);
+    assert.deepEqual(jobsOf('push', ['README.md', file]), BY_FILES, file);
   }
-  assert.deepEqual(jobsOf('push', null), JOBS);
-  assert.deepEqual(jobsOf('pull_request', null), JOBS);
-  assert.deepEqual(jobsOf('workflow_dispatch', []), JOBS);
+  assert.deepEqual(jobsOf('push', null), BY_FILES);
+  assert.deepEqual(jobsOf('workflow_dispatch', []), BY_FILES);
+  assert.deepEqual(jobsOf('pull_request', null), JOBS.filter((job) => job !== 'fuzz-batch'));
   assert.deepEqual(planFor('workflow_dispatch', []).codeql, ['actions', 'javascript-typescript', 'rust']);
 });
 
-test('the weekly run checks the advisories published since and runs every CodeQL analysis', () => {
+test('the weekly run checks the advisories published since, runs every CodeQL analysis and the long fuzzing', () => {
   assert.deepEqual(planFor('schedule', []), {
-    jobs: ['supply-chain', 'codeql'],
+    jobs: ['supply-chain', 'codeql', 'fuzz-batch'],
     codeql: ['actions', 'javascript-typescript', 'rust'],
   });
 });

@@ -20,6 +20,7 @@ export const COVERED = [
   'src/**/*.rs',
   'tests/**/*.rs',
   'build.rs',
+  'fuzz/**/*.rs',
   'scripts/*.mjs',
   'frontend/*.js',
   'frontend/e2e/**/*.js',

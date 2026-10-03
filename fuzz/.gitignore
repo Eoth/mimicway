@@ -1,0 +1,6 @@
+# Built and found by the fuzzer; the lock file is the server's, copied before each build.
+target/
+corpus/
+artifacts/
+coverage/
+Cargo.lock

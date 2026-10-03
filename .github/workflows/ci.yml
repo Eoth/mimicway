@@ -10,8 +10,8 @@ on:
     branches: [main, develop]
   pull_request:
   schedule:
-    # Weekly, on develop: the advisories published since against lock files that did not change, and the queries
-    # CodeQL added since.
+    # Weekly, on develop: the advisories published since against lock files that did not change, the queries CodeQL
+    # added since, and an hour of fuzzing.
     - cron: "41 3 * * 1"
   workflow_dispatch:
 
@@ -322,6 +322,51 @@ jobs:
         with:
           category: /language:${{ matrix.language }}
 
+  # The fuzz targets of fuzz/ (.clusterfuzzlite/ builds them), on the parsers and matchers of untrusted input. A
+  # crash fails the job, with the input that causes it in the job's artifacts.
+  fuzz:
+    name: Fuzzing (ClusterFuzzLite, 5 minutes)
+    needs: changes
+    if: contains(fromJSON(needs.changes.outputs.jobs), 'fuzz')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      # Reads the corpus the weekly campaign keeps as an artifact.
+      actions: read
+    steps:
+      - uses: google/clusterfuzzlite/actions/build_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1 # v1
+        with:
+          language: rust
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          sanitizer: address
+      - uses: google/clusterfuzzlite/actions/run_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1 # v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          mode: code-change
+          fuzz-seconds: 300
+          sanitizer: address
+
+  fuzz-batch:
+    name: Fuzzing campaign (ClusterFuzzLite, 1 hour)
+    needs: changes
+    if: contains(fromJSON(needs.changes.outputs.jobs), 'fuzz-batch')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: google/clusterfuzzlite/actions/build_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1 # v1
+        with:
+          language: rust
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          sanitizer: address
+      - uses: google/clusterfuzzlite/actions/run_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1 # v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          mode: batch
+          fuzz-seconds: 3600
+          sanitizer: address
+
   ci-passed:
     name: CI passed
     needs:
@@ -337,6 +382,8 @@ jobs:
       - kubernetes
       - workflows
       - codeql
+      - fuzz
+      - fuzz-batch
     if: always()
     runs-on: ubuntu-24.04
     steps:

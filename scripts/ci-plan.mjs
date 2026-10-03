@@ -31,6 +31,8 @@ export const JOBS = [
   'kubernetes',
   'workflows',
   'codeql',
+  'fuzz',
+  'fuzz-batch',
 ];
 
 // Always run on a push or a pull request: any file can hold a secret, a broken link or the former design system's
@@ -53,6 +55,7 @@ const RUST = [
   /^\.?(rustfmt|clippy)\.toml$/,
 ];
 const MANIFESTS = [/^Cargo\.(toml|lock)$/, /^frontend\/package(-lock)?\.json$/];
+const FUZZING = [/^fuzz\//, /^\.clusterfuzzlite\//];
 // Files outside frontend/ that the UI's unit tests read: frontend/src/tests/UrlHealthBadge.test.js compares the
 // server's PING_TTL_MS with its own. ci-plan.test.mjs fails when a UI test reads another file that is not listed here.
 export const READ_BY_UI_TESTS = ['src/server/ping.rs'];
@@ -69,12 +72,13 @@ const RULES = {
   docker: [/^Dockerfile$/, /^\.dockerignore$/, /^Cargo\.(toml|lock)$/, /^build\.rs$/, /^src\//, /^frontend\/(?!e2e\/)/],
   kubernetes: [/^k8s\//],
   workflows: [/^\.github\/workflows\//, /^\.github\/actions\//],
+  fuzz: [...RUST, ...FUZZING],
 };
 // For each language CodeQL analyses, its files.
 const CODEQL_RULES = {
   actions: [/^\.github\/workflows\//, /^\.github\/actions\//],
   'javascript-typescript': [/^frontend\/.*\.(js|mjs|cjs|ts|svelte|html)$/, /^scripts\/.*\.(js|mjs)$/],
-  rust: [/^src\/.*\.rs$/, /^tests\/.*\.rs$/, /^build\.rs$/, /^Cargo\.(toml|lock)$/],
+  rust: [/^src\/.*\.rs$/, /^tests\/.*\.rs$/, /^build\.rs$/, /^fuzz\/.*\.rs$/, /^Cargo\.(toml|lock)$/],
 };
 // Checked by the always-on jobs, or by no job at all: claimed so that changing them does not run everything.
 // Dockerfile.release is built by the release workflow only, on a tag; the bootstrap scripts are run by people.
@@ -99,8 +103,9 @@ const matches = (patterns, file) => patterns.some((pattern) => pattern.test(file
 // changes are unknown (a new branch, a force push whose start is gone): everything runs.
 export function planFor(event, files) {
   if (event === 'schedule') {
-    // The weekly run: advisories published against unchanged lock files, and the queries CodeQL added since.
-    return { jobs: ['supply-chain', 'codeql'], codeql: [...CODEQL_LANGUAGES] };
+    // The weekly run: advisories published against unchanged lock files, the queries CodeQL added since, and the long
+    // fuzzing campaign.
+    return { jobs: ['supply-chain', 'codeql', 'fuzz-batch'], codeql: [...CODEQL_LANGUAGES] };
   }
   const jobs = new Set(ALWAYS);
   const codeql = new Set();
@@ -127,6 +132,8 @@ export function planFor(event, files) {
   // Scorecard's SAST check counts the merged pull requests that carry a successful CodeQL check: the workflows are
   // analysed on every pull request, documentation included, which takes about a minute.
   if (event === 'pull_request') codeql.add('actions');
+  // ClusterFuzzLite fuzzes what a pull request changes; what reaches develop otherwise waits for the weekly campaign.
+  if (event !== 'pull_request') jobs.delete('fuzz');
   if (codeql.size > 0) jobs.add('codeql');
   return {
     jobs: JOBS.filter((job) => jobs.has(job)),
