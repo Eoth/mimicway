@@ -55,7 +55,7 @@ Ouvrez <http://localhost:7342>.
 
 ### Depuis les sources
 
-Prérequis : Rust 1.85+ (édition 2024), Node.js 20+ avec npm. Des scripts d'amorçage les installent : [Windows](scripts/bootstrap-windows.ps1), [Linux/macOS](scripts/bootstrap-linux.sh).
+Prérequis : Rust 1.85+ (édition 2024), Node.js 22.12+ avec npm. Des scripts d'amorçage les installent : [Windows](scripts/bootstrap-windows.ps1), [Linux/macOS](scripts/bootstrap-linux.sh).
 
 ```bash
 cd frontend && npm ci && npm run build && cd ..

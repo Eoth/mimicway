@@ -12,7 +12,7 @@ Security issues are the exception: never in a public issue, see [SECURITY.md](SE
 
 ## Set up
 
-Rust 1.85 or later, Node.js 20 or later. The bootstrap scripts install them: `scripts/bootstrap-linux.sh`, `scripts/bootstrap-windows.ps1`.
+Rust 1.85 or later, Node.js 22.12 or later. The bootstrap scripts install them: `scripts/bootstrap-linux.sh`, `scripts/bootstrap-windows.ps1`.
 
 ```bash
 cd frontend && npm ci && npm run build && cd ..
