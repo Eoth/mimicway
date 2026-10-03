@@ -41,13 +41,13 @@ step "3/6 - Node.js"
 if command -v node &>/dev/null; then
     ok "Node.js already installed ($(node --version))"
 else
-    echo "  Installing Node.js 20 LTS..."
+    echo "  Installing Node.js 24 LTS..."
     if command -v curl &>/dev/null; then
-        curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+        curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
         sudo apt-get install -y -qq nodejs
         ok "Node.js installed ($(node --version))"
     else
-        echo "  WARN: install Node.js 20 or later yourself."
+        echo "  WARN: install Node.js 22.12 or later yourself."
     fi
 fi
 

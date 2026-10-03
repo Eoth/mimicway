@@ -48,7 +48,7 @@ if (Get-Command node -ErrorAction SilentlyContinue) {
         winget install OpenJS.NodeJS.LTS --accept-source-agreements --accept-package-agreements
         Write-Ok "Node.js installed"
     } else {
-        Write-Host "  WARN: install Node.js 20 or later yourself." -ForegroundColor Red
+        Write-Host "  WARN: install Node.js 22.12 or later yourself." -ForegroundColor Red
     }
 }
 

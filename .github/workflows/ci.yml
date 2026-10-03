@@ -54,7 +54,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 22
+          node-version: 24
       - name: Every Markdown link, image and anchor resolves
         run: node scripts/check-doc-links.mjs
       - name: The repository checks fail on the drifts they are meant to catch
@@ -127,7 +127,7 @@ jobs:
       # the e2e job builds: they run here, against this job's build, or they never run at all.
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       # The browser Playwright drives, downloaded again only when the lock file changes.
@@ -181,7 +181,7 @@ jobs:
             ./
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 22
+          node-version: 24
       - name: npm audit (production dependencies of the UI)
         working-directory: frontend
         run: npm audit --omit=dev --audit-level=high
@@ -200,7 +200,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - working-directory: frontend
@@ -228,7 +228,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/develop' }}
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
