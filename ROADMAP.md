@@ -133,6 +133,8 @@ Size M. Decision taken by the maintainers (2026-10-03): changes are proposed by 
 
 **What.** The maintainer creates a machine account (GitHub allows one, run by a person, for automation), gives it write access, and adds a ruleset on `develop` and `main`: no force push, no deletion, pull request with one approval, the CI jobs as required checks, no bypass. Each change becomes a pull request from that account, small enough to read in ten minutes, with a review packet in its description (what changes and why, what could go wrong, what to look at first, how it was checked) and an independent automated review posted as comments (fresh-context agents, CodeQL, mutation testing). CONTRIBUTING describes the flow; the rule on commit hours applies to merges.
 
+**Progress.** On 2026-10-03 the maintainer added a classic branch protection rule to `develop` and a ruleset, `default`, left disabled. Scorecard cannot read classic rules with the workflow's token, and its Branch-Protection check now ends in an internal error; it reads rulesets. Decided by the maintainers (2026-10-06): the classic rule goes, and the ruleset carries everything, starting with no force push and no deletion on `develop` (Branch-Protection 3), which leaves direct pushes possible until the pull request flow is ready.
+
 **Done when.** The last 30 changes of `develop` are approved pull requests (Code-Review 10), Branch-Protection is at 8 and CI-Tests at 10.
 
 ### R18. OpenSSF Best Practices badge
