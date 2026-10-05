@@ -12,12 +12,15 @@ Write-Step "1/6 - Rust toolchain"
 if (Get-Command rustc -ErrorAction SilentlyContinue) {
     $v = (rustc --version)
     Write-Ok "rustc already installed ($v)"
-} else {
-    Write-Host "  Installing Rust with rustup..."
-    Invoke-WebRequest -Uri "https://win.rustup.rs/x86_64" -OutFile "$env:TEMP\rustup-init.exe" -UseBasicParsing
-    & "$env:TEMP\rustup-init.exe" -y --default-toolchain stable
+} elseif (Get-Command winget -ErrorAction SilentlyContinue) {
+    # Through winget, like the other tools: its manifest pins the installer's version and SHA-256, which winget checks
+    # before running it. A download from win.rustup.rs would run whatever that address serves on the day.
+    Write-Host "  Installing Rust with rustup (winget)..."
+    winget install --id Rustlang.Rustup --exact --accept-source-agreements --accept-package-agreements
     $env:PATH = "$env:USERPROFILE\.cargo\bin;$env:PATH"
     Write-Ok "Rust installed ($(rustc --version))"
+} else {
+    Write-Host "  WARN: winget is not available. Install Rust 1.85 or later with rustup, as https://rustup.rs shows." -ForegroundColor Red
 }
 $env:PATH = "$env:USERPROFILE\.cargo\bin;$env:PATH"
 

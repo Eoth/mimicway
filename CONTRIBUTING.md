@@ -12,7 +12,7 @@ Security issues are the exception: never in a public issue, see [SECURITY.md](SE
 
 ## Set up
 
-Rust 1.85 or later, Node.js 22.12 or later. The bootstrap scripts install them: `scripts/bootstrap-linux.sh`, `scripts/bootstrap-windows.ps1`.
+Rust 1.85 or later, Node.js 22.12 or later. The bootstrap scripts build everything: `scripts/bootstrap-windows.ps1` first installs Rust and Node.js with winget when they are missing; `scripts/bootstrap-linux.sh` checks their versions and, when one is missing or too old, says where to install it, without downloading anything itself.
 
 ```bash
 cd frontend && npm ci && npm run build && cd ..

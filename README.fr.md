@@ -55,7 +55,7 @@ Ouvrez <http://localhost:7342>. L'interface demande Chrome ou Edge 111, Firefox 
 
 ### Depuis les sources
 
-Prérequis : Rust 1.85+ (édition 2024), Node.js 22.12+ avec npm. Des scripts d'amorçage les installent : [Windows](scripts/bootstrap-windows.ps1), [Linux/macOS](scripts/bootstrap-linux.sh).
+Prérequis : Rust 1.85+ (édition 2024), Node.js 22.12+ avec npm. Des scripts d'amorçage construisent le tout : celui de [Windows](scripts/bootstrap-windows.ps1) installe d'abord Rust et Node.js avec winget s'ils manquent ; celui de [Linux/macOS](scripts/bootstrap-linux.sh) vérifie leurs versions et, s'il en manque une ou qu'elle est trop ancienne, indique où l'installer, sans rien télécharger lui-même.
 
 ```bash
 cd frontend && npm ci && npm run build && cd ..
