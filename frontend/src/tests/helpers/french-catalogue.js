@@ -3,8 +3,9 @@
 // a French translation breaks these two files only.
 export const MAY_LOAD_FRENCH = ['french.test.js', 'l10n.test.js'];
 
-export const REFUSAL = `Only ${MAY_LOAD_FRENCH.join(' and ')} may load the French catalogue: assert the English text, `
-  + 'or move a test about French into french.test.js.';
+export const REFUSAL =
+  `Only ${MAY_LOAD_FRENCH.join(' and ')} may load the French catalogue: assert the English text, ` +
+  'or move a test about French into french.test.js.';
 
 /** Whether the test file at `testPath` (absolute) may load the French catalogue. */
 export function mayLoadFrench(testPath) {

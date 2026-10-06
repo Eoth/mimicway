@@ -16,7 +16,12 @@ function textRule(name, text, conditions = []) {
     script: null,
     post_script: null,
     conditions: { all_of: conditions, any_of: [] },
-    response: { status: 200, headers: [{ name: 'Content-Type', value: 'text/plain' }], body: [{ type: 'Literal', value: text }], chaos: null },
+    response: {
+      status: 200,
+      headers: [{ name: 'Content-Type', value: 'text/plain' }],
+      body: [{ type: 'Literal', value: text }],
+      chaos: null,
+    },
   };
 }
 
@@ -35,7 +40,9 @@ test.describe('Rule order', () => {
         wsdl_mode: 'auto',
         rules: [
           textRule('any-order', 'any order'),
-          textRule('order-42', 'order 42', [{ source: { type: 'PathParam', key: 'id' }, operator: { type: 'Eq', value: '42' } }]),
+          textRule('order-42', 'order 42', [
+            { source: { type: 'PathParam', key: 'id' }, operator: { type: 'Eq', value: '42' } },
+          ]),
         ],
       },
     });

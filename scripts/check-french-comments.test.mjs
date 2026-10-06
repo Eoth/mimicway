@@ -48,7 +48,10 @@ test('terse French, as test titles write it without articles, is recognised', ()
     'Runner (scenarios JSON) - lot 10 (XML par exemple)',
     'Runner (scenarios JSON) - lot 16 (diagnostic reponse JSON/XML)',
   ];
-  assert.deepEqual(titles.filter((title) => !isFrench(title)), []);
+  assert.deepEqual(
+    titles.filter((title) => !isFrench(title)),
+    [],
+  );
 });
 
 test('English that shares letters with French words is not reported', () => {
@@ -64,7 +67,7 @@ test('English that shares letters with French words is not reported', () => {
 test('strings, templates, regular expressions and URLs are not comments', () => {
   const js = [
     't("Les règles sont appliquées dans cet ordre");',
-    "const url = 'http://example.com/les/regles'; const b = \"// pour\";",
+    'const url = \'http://example.com/les/regles\'; const b = "// pour";',
     'const tpl = `// une ligne ${t("dans une chaine")} // avec`;',
     'const re = /\\/\\/ avec|["\']/g; const half = total / 2 / 3; // two divisions',
     'const nested = `a ${`b // pour ${c}`} d`; // still code before this comment',
@@ -84,7 +87,7 @@ test('block comments report the line that holds French', () => {
 test('Svelte: HTML comments, script, expressions and style are read; markup text is not', () => {
   const svelte = [
     '<script>',
-    "  const label = t(\"Les services\"); // the label's text",
+    '  const label = t("Les services"); // the label\'s text',
     '</script>',
     '<!-- Liste des services, avec leur groupe -->',
     '<p title="L\'URL des services">Les services sont ici</p>',
@@ -117,14 +120,14 @@ test('Svelte: a <SCRIPT> or a <Style> is a component, as Svelte reads it, and it
 
 test('Rust: strings, raw strings, character literals and lifetimes do not hide or fake a comment', () => {
   const rust = [
-    'fn f<\'a>(s: &\'a str) -> char { \'"\' } // returns a quote',
+    "fn f<'a>(s: &'a str) -> char { '\"' } // returns a quote",
     'const A: &str = "// pour les tests";',
     'const B: &str = r#"une " chaine // avec"#; // English',
     "const C: u8 = b'\\''; // puis la suite",
     '/* outer /* inner */ toujours dans le commentaire, avec des mots */',
   ].join('\n');
   assert.deepEqual(check({ 'a.rs': rust }), [
-    "a.rs:4: // puis la suite",
+    'a.rs:4: // puis la suite',
     'a.rs:5: /* outer /* inner */ toujours dans le commentaire, avec des mots */',
   ]);
 });
@@ -169,7 +172,7 @@ test('a method named test, a string or a comment holds no title', () => {
 
 test('a French test title is reported with its line, an English one passes', () => {
   const js = "test('keeps the order of the rules', () => {});\ntest('garde l\\'ordre des règles', () => {});\n";
-  assert.deepEqual(check({ 'a.spec.js': js }), ["a.spec.js:2: title \"garde l'ordre des règles\""]);
+  assert.deepEqual(check({ 'a.spec.js': js }), ['a.spec.js:2: title "garde l\'ordre des règles"']);
 });
 
 test('the names of the scenarios of a scenario file are titles, their steps are data', () => {

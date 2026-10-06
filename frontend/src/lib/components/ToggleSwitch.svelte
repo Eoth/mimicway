@@ -32,10 +32,10 @@
     data-testid="toggle-switch-{key}"
   >
     <span class="toggle-knob"></span>
-    <span class="sr-only">{checked ? t("Enabled") : t("Disabled")}</span>
+    <span class="sr-only">{checked ? t('Enabled') : t('Disabled')}</span>
   </button>
   <span class="toggle-status" aria-live="polite">
-    {checked ? t("ON") : t("OFF")}
+    {checked ? t('ON') : t('OFF')}
   </span>
 </div>
 
@@ -59,7 +59,9 @@
     border: var(--line-thick) solid var(--color-control);
     background: var(--color-sunken);
     padding: 0;
-    transition: background-color var(--duration-move), border-color var(--duration-move);
+    transition:
+      background-color var(--duration-move),
+      border-color var(--duration-move);
   }
 
   .toggle-switch.active {

@@ -10,7 +10,9 @@ export function initialTheme() {
   } catch {
     // Storage blocked (private mode, policy): the system's preference still applies.
   }
-  return typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  return typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: dark)').matches
+    ? 'dark'
+    : 'light';
 }
 
 export function applyTheme(theme) {

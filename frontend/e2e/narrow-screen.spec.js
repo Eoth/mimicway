@@ -5,11 +5,19 @@ const API = 'http://localhost:7342/api';
 // On a 360 px screen (a phone held upright) no main screen may scroll sideways, in either theme: long URLs break, a
 // wide table scrolls inside its own box, and fields shrink with their form.
 const rule = (name, method, action) => ({
-  name, method, sub_path: null, action, pre_script: null, script: null, post_script: null,
+  name,
+  method,
+  sub_path: null,
+  action,
+  pre_script: null,
+  script: null,
+  post_script: null,
   conditions: { all_of: [], any_of: [] },
   response: {
-    status: 200, headers: [{ name: 'Content-Type', value: 'application/json' }],
-    body: [{ type: 'Literal', value: '{"ok":true}' }], chaos: null,
+    status: 200,
+    headers: [{ name: 'Content-Type', value: 'application/json' }],
+    body: [{ type: 'Literal', value: '{"ok":true}' }],
+    chaos: null,
   },
 });
 

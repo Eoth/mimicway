@@ -126,9 +126,7 @@ test.describe('Rule tester: conditions against a real request', () => {
     const keyField = page.locator('#cond-key');
     const datalistId = await keyField.getAttribute('list');
     expect(datalistId).toBeTruthy();
-    const suggestions = await page
-      .locator(`#${datalistId} option`)
-      .evaluateAll((opts) => opts.map((o) => o.value));
+    const suggestions = await page.locator(`#${datalistId} option`).evaluateAll((opts) => opts.map((o) => o.value));
     expect(suggestions).toContain('customerRef');
 
     // A suggestion, not a constraint: a name never seen can still be typed.
@@ -258,11 +256,13 @@ test.describe('Rule tester: scripts', () => {
     // The script of the guide's example (rhai-scripts.md) and of the server's test
     // map_lookup_by_path_param_returns_correct_target_and_falls_back_for_unknown_key (src/server/intercept.rs).
     await page.getByRole('switch', { name: /Custom script/ }).click();
-    await page.locator('#rule-script').fill(
-      'let mapping = #{ "billing": "svc-billing-042", "orders": "svc-orders-017" };\n' +
-      'let name = request.path.name;\n' +
-      'if mapping.contains(name) { #{ id: mapping[name], found: "true" } } else { #{ id: "unknown", found: "false" } }'
-    );
+    await page
+      .locator('#rule-script')
+      .fill(
+        'let mapping = #{ "billing": "svc-billing-042", "orders": "svc-orders-017" };\n' +
+          'let name = request.path.name;\n' +
+          'if mapping.contains(name) { #{ id: mapping[name], found: "true" } } else { #{ id: "unknown", found: "false" } }',
+      );
 
     const logSelect = page.locator('#rule-tester-log');
     await expect(logSelect).toBeVisible();
@@ -289,18 +289,22 @@ test.describe('Rule tester: scripts', () => {
     await page.locator('input#rule-name').fill('quote-rule');
 
     await page.getByRole('switch', { name: /Custom script/ }).click();
-    await page.locator('#rule-script').fill(
-      'let villes = [\n' +
-      '  #{ name: "Paris", cp: "75000", insee: "75056" },\n' +
-      '  #{ name: "Lyon", cp: "69000", insee: "69123" }\n' +
-      '];\n' +
-      'let ville = seeded_pick(request.path.siret, villes);\n' +
-      '#{ ville: ville, quoteId: "fixed-id" }'
-    );
+    await page
+      .locator('#rule-script')
+      .fill(
+        'let villes = [\n' +
+          '  #{ name: "Paris", cp: "75000", insee: "75056" },\n' +
+          '  #{ name: "Lyon", cp: "69000", insee: "69123" }\n' +
+          '];\n' +
+          'let ville = seeded_pick(request.path.siret, villes);\n' +
+          '#{ ville: ville, quoteId: "fixed-id" }',
+      );
 
     const logSelect = page.locator('#rule-tester-log');
     await expect(logSelect).toBeVisible();
-    const matchingOption = logSelect.locator('option', { hasText: 'seeded-pick-object-svc/quote/44306184100047' }).first();
+    const matchingOption = logSelect
+      .locator('option', { hasText: 'seeded-pick-object-svc/quote/44306184100047' })
+      .first();
     await expect(matchingOption).toBeAttached();
     await logSelect.selectOption(await matchingOption.getAttribute('value'));
 

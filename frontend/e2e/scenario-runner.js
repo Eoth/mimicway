@@ -45,7 +45,9 @@ async function runStep(page, step) {
     case 'goto': {
       const url = PAGE_PATHS[step.page];
       if (url === undefined) {
-        throw new Error(`goto: unknown page "${step.page}" (only a page the server serves at its own URL joins PAGE_PATHS)`);
+        throw new Error(
+          `goto: unknown page "${step.page}" (only a page the server serves at its own URL joins PAGE_PATHS)`,
+        );
       }
       await page.goto(url);
       await page.waitForLoadState('networkidle');
@@ -89,12 +91,17 @@ async function runStep(page, step) {
       // the documentation screenshots are regenerated (docs-screenshot.js). `file` is a plain file name, written to
       // docs/<language>/screenshots/ once per language of the guide.
       if (!target) throw new Error('screenshot: "target" (the subject of the image) is required');
-      const subject = [target].flat().map((name) => resolveTarget(name, params)).join(', ');
+      const subject = [target]
+        .flat()
+        .map((name) => resolveTarget(name, params))
+        .join(', ');
       await docsScreenshot(page, step.file, subject);
       return;
     }
     default:
-      throw new Error(`Unsupported action "${action}". Actions: goto, click, fill, selectOption, assertVisible, assertHidden, assertText, resizeToContent, screenshot.`);
+      throw new Error(
+        `Unsupported action "${action}". Actions: goto, click, fill, selectOption, assertVisible, assertHidden, assertText, resizeToContent, screenshot.`,
+      );
   }
 }
 
@@ -106,7 +113,9 @@ export async function runScenario(page, scenario) {
     try {
       await runStep(page, step);
     } catch (e) {
-      throw new Error(`Scenario "${scenario.scenario}", step ${i + 1}/${scenario.steps.length} (${JSON.stringify(step)}): ${e.message}`);
+      throw new Error(
+        `Scenario "${scenario.scenario}", step ${i + 1}/${scenario.steps.length} (${JSON.stringify(step)}): ${e.message}`,
+      );
     }
   }
 }

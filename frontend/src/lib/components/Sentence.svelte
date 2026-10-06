@@ -7,7 +7,7 @@
     text.split(/(\{\d+\})/).map((part) => {
       const placeholder = part.match(/^\{(\d+)\}$/);
       return placeholder ? { code: codes[Number(placeholder[1])] ?? part } : { text: part };
-    })
+    }),
   );
 </script>
 

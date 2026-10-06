@@ -3,7 +3,14 @@ import { describe, it, expect, vi } from 'vitest';
 import RuleList from '../lib/components/RuleList.svelte';
 
 const mockRules = [
-  { name: 'rule-siret', conditions: { all_of: [{ source: { type: 'QueryParam', key: 'q' }, operator: { type: 'Eq', value: '1' } }], any_of: [] }, response: { status: 200, body: [] } },
+  {
+    name: 'rule-siret',
+    conditions: {
+      all_of: [{ source: { type: 'QueryParam', key: 'q' }, operator: { type: 'Eq', value: '1' } }],
+      any_of: [],
+    },
+    response: { status: 200, body: [] },
+  },
   { name: 'catch-all', conditions: { all_of: [], any_of: [] }, response: { status: 200, body: [] } },
 ];
 

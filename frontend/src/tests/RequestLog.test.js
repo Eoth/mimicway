@@ -8,10 +8,19 @@ vi.mock('../lib/api.js', () => ({
 }));
 
 describe('RequestLog date/heure', () => {
-  it('affiche la date et l\'heure de la requete, pas seulement l\'heure', async () => {
+  it("affiche la date et l'heure de la requete, pas seulement l'heure", async () => {
     const ts = new Date('2026-01-15T10:30:00').getTime();
     getLogs.mockResolvedValue([
-      { timestamp: ts, service_name: 'svc-a', method: 'GET', path: '/svc-a/foo', mode: 'mock', rule_matched: 'r1', target_url: null, status: 200 },
+      {
+        timestamp: ts,
+        service_name: 'svc-a',
+        method: 'GET',
+        path: '/svc-a/foo',
+        mode: 'mock',
+        rule_matched: 'r1',
+        target_url: null,
+        status: 200,
+      },
     ]);
 
     const { getByText, container } = render(RequestLog);
@@ -21,8 +30,12 @@ describe('RequestLog date/heure', () => {
     // English has no regional date format of its own: dates follow the browser's locale (intlLocale()), the French
     // order is checked by french.test.js.
     const expected = new Date(ts).toLocaleString(undefined, {
-      day: '2-digit', month: '2-digit', year: '2-digit',
-      hour: '2-digit', minute: '2-digit', second: '2-digit',
+      day: '2-digit',
+      month: '2-digit',
+      year: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
     });
     const cell = container.querySelector('.col-time');
     expect(cell.textContent).toBe(expected);
@@ -30,7 +43,16 @@ describe('RequestLog date/heure', () => {
 
   it('affiche l\'en-tete de colonne "Date/Heure"', async () => {
     getLogs.mockResolvedValue([
-      { timestamp: Date.now(), service_name: 'svc-a', method: 'GET', path: '/svc-a/foo', mode: 'mock', rule_matched: 'r1', target_url: null, status: 200 },
+      {
+        timestamp: Date.now(),
+        service_name: 'svc-a',
+        method: 'GET',
+        path: '/svc-a/foo',
+        mode: 'mock',
+        rule_matched: 'r1',
+        target_url: null,
+        status: 200,
+      },
     ]);
     const { getByText } = render(RequestLog);
     await waitFor(() => expect(getByText('Date/time')).toBeInTheDocument());

@@ -70,7 +70,7 @@ test.describe('Config backups & restore', () => {
 
   test('UI restore flow: click through to a restored config', async ({ page, request }) => {
     const targetFilename = await newBackupFilename(request, () =>
-      request.post(`${API}/services`, { data: validService('restore-target-svc') })
+      request.post(`${API}/services`, { data: validService('restore-target-svc') }),
     );
 
     // That backup holds the configuration from before the write, with no service. A second write changes the current

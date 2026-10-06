@@ -33,7 +33,10 @@ const variable = fc.oneof(
 // ── JSON ─────────────────────────────────────────────────────────────
 
 // The raw content of a JSON string: what sits between its quotes, escapes included.
-const jsonRaw = fc.string().filter(noExpression).map((s) => JSON.stringify(s).slice(1, -1));
+const jsonRaw = fc
+  .string()
+  .filter(noExpression)
+  .map((s) => JSON.stringify(s).slice(1, -1));
 const jsonLiteral = fc.oneof(
   fc.integer().map(String),
   fc.double({ noNaN: true, noDefaultInfinity: true }).map((d) => JSON.stringify(d)),
@@ -50,13 +53,19 @@ const { jsonField } = fc.letrec((tie) => ({
     { depthSize: 'small' },
     fc.tuple(jsonKey, jsonItem).map(([key, item]) => ({ key, fieldType: 'value', ...item })),
     fc.tuple(jsonKey, fc.array(tie('jsonField'), { maxLength: 3 })).map(([key, children]) => ({
-      key, fieldType: 'object', children,
+      key,
+      fieldType: 'object',
+      children,
     })),
     fc.tuple(jsonKey, fc.array(jsonItem, { maxLength: 3 })).map(([key, items]) => ({
-      key, fieldType: 'array-values', items,
+      key,
+      fieldType: 'array-values',
+      items,
     })),
     fc.tuple(jsonKey, fc.array(tie('jsonField'), { maxLength: 3 })).map(([key, template]) => ({
-      key, fieldType: 'array-objects', template,
+      key,
+      fieldType: 'array-objects',
+      template,
     })),
   ),
 }));
@@ -113,7 +122,8 @@ describe('tpl-utils properties (JSON)', () => {
           expect(Array.isArray(templateToFields(text))).toBe(true);
         } catch (error) {
           expect(error instanceof SyntaxError || error instanceof TypeError).toBe(true);
-          if (error instanceof TypeError) expect(error.message).toBe('The JSON must be an object to be shown in the guided view.');
+          if (error instanceof TypeError)
+            expect(error.message).toBe('The JSON must be an object to be shown in the guided view.');
         }
       }),
     );
@@ -145,7 +155,14 @@ const { xmlField } = fc.letrec((tie) => ({
   xmlField: fc.oneof(
     { depthSize: 'small' },
     fc
-      .tuple(tag, attributes(xmlAttrRaw), fc.oneof(variable, xmlTextRaw.map((value) => ({ source: 'fixed', value, pipe: '' }))))
+      .tuple(
+        tag,
+        attributes(xmlAttrRaw),
+        fc.oneof(
+          variable,
+          xmlTextRaw.map((value) => ({ source: 'fixed', value, pipe: '' })),
+        ),
+      )
       .map(([t, attrs, leaf]) => ({ tag: t, nodeType: 'value', attributes: attrs, ...leaf })),
     fc
       .tuple(tag, attributes(xmlAttrRaw), fc.array(tie('xmlField'), { minLength: 1, maxLength: 3 }))
@@ -157,8 +174,28 @@ const { xmlField } = fc.letrec((tie) => ({
 const { xmlNode } = fc.letrec((tie) => ({
   xmlNode: fc.oneof(
     { depthSize: 'small' },
-    fc.record({ tag, attrs: fc.uniqueArray(fc.tuple(fc.stringMatching(/^[a-z][a-z0-9]{0,5}$/), xmlChars.filter((s) => !/[\t\n]/.test(s))), { selector: ([n]) => n, maxLength: 2 }), text: xmlChars }),
-    fc.record({ tag, attrs: fc.uniqueArray(fc.tuple(fc.stringMatching(/^[a-z][a-z0-9]{0,5}$/), xmlChars.filter((s) => !/[\t\n]/.test(s))), { selector: ([n]) => n, maxLength: 2 }), children: fc.array(tie('xmlNode'), { minLength: 1, maxLength: 3 }) }),
+    fc.record({
+      tag,
+      attrs: fc.uniqueArray(
+        fc.tuple(
+          fc.stringMatching(/^[a-z][a-z0-9]{0,5}$/),
+          xmlChars.filter((s) => !/[\t\n]/.test(s)),
+        ),
+        { selector: ([n]) => n, maxLength: 2 },
+      ),
+      text: xmlChars,
+    }),
+    fc.record({
+      tag,
+      attrs: fc.uniqueArray(
+        fc.tuple(
+          fc.stringMatching(/^[a-z][a-z0-9]{0,5}$/),
+          xmlChars.filter((s) => !/[\t\n]/.test(s)),
+        ),
+        { selector: ([n]) => n, maxLength: 2 },
+      ),
+      children: fc.array(tie('xmlNode'), { minLength: 1, maxLength: 3 }),
+    }),
   ),
 }));
 const serialize = (node) => {
@@ -181,10 +218,15 @@ const tree = (xml) => {
 describe('tpl-utils properties (XML)', () => {
   it('fields written as a template read back as the same fields', () => {
     fc.assert(
-      fc.property(tag, attributes(xmlAttrRaw), fc.array(xmlField, { minLength: 1, maxLength: 3 }), (rootTag, rootAttributes, fields) => {
-        const parsed = templateToXmlFields(xmlFieldsToTemplate(fields, rootTag, rootAttributes));
-        expect(parsed).toEqual({ rootTag, rootAttributes, fields });
-      }),
+      fc.property(
+        tag,
+        attributes(xmlAttrRaw),
+        fc.array(xmlField, { minLength: 1, maxLength: 3 }),
+        (rootTag, rootAttributes, fields) => {
+          const parsed = templateToXmlFields(xmlFieldsToTemplate(fields, rootTag, rootAttributes));
+          expect(parsed).toEqual({ rootTag, rootAttributes, fields });
+        },
+      ),
     );
   });
 

@@ -42,11 +42,15 @@ test.describe('Documentation screenshots: the image must show its whole subject'
   });
 
   test('a subject taller than the view fails the capture', async ({ page }) => {
-    await expect(docsScreenshot(page, 'tall.png', '#tall')).rejects.toThrow(/#tall is not entirely in the captured view/);
+    await expect(docsScreenshot(page, 'tall.png', '#tall')).rejects.toThrow(
+      /#tall is not entirely in the captured view/,
+    );
   });
 
   test('elements of a subject too far apart to show together fail the capture', async ({ page }) => {
-    await expect(docsScreenshot(page, 'apart.png', '#top, #below')).rejects.toThrow(/is not entirely in the captured view/);
+    await expect(docsScreenshot(page, 'apart.png', '#top, #below')).rejects.toThrow(
+      /is not entirely in the captured view/,
+    );
   });
 
   test('a text area that hides part of its text fails the capture, until it is resized to its content', async ({

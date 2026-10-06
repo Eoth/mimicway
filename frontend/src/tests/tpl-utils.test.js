@@ -32,38 +32,46 @@ describe('fieldsToTemplate', () => {
   });
 
   it('variable with pipe', () => {
-    const fields = [{ key: 'siren', fieldType: 'value', source: 'path', value: 'siret', pipe: 'first(9)', asNumber: false }];
+    const fields = [
+      { key: 'siren', fieldType: 'value', source: 'path', value: 'siret', pipe: 'first(9)', asNumber: false },
+    ];
     expect(fieldsToTemplate(fields)).toBe('{"siren":"{{path.siret | first(9)}}"}');
   });
 
   it('nested object', () => {
-    const fields = [{
-      key: 'data',
-      fieldType: 'object',
-      children: [{ key: 'id', fieldType: 'value', source: 'uuid', value: '', pipe: '', asNumber: false }],
-    }];
+    const fields = [
+      {
+        key: 'data',
+        fieldType: 'object',
+        children: [{ key: 'id', fieldType: 'value', source: 'uuid', value: '', pipe: '', asNumber: false }],
+      },
+    ];
     const tpl = fieldsToTemplate(fields);
     expect(tpl).toBe('{"data":{"id":"{{uuid}}"}}');
   });
 
   it('array of values', () => {
-    const fields = [{
-      key: 'tags',
-      fieldType: 'array-values',
-      items: [
-        { source: 'fixed', value: 'a', pipe: '', asNumber: false },
-        { source: 'fixed', value: 'b', pipe: '', asNumber: false },
-      ],
-    }];
+    const fields = [
+      {
+        key: 'tags',
+        fieldType: 'array-values',
+        items: [
+          { source: 'fixed', value: 'a', pipe: '', asNumber: false },
+          { source: 'fixed', value: 'b', pipe: '', asNumber: false },
+        ],
+      },
+    ];
     expect(fieldsToTemplate(fields)).toBe('{"tags":["a","b"]}');
   });
 
   it('array of objects', () => {
-    const fields = [{
-      key: 'items',
-      fieldType: 'array-objects',
-      template: [{ key: 'id', fieldType: 'value', source: 'seq', value: '', pipe: '', asNumber: true }],
-    }];
+    const fields = [
+      {
+        key: 'items',
+        fieldType: 'array-objects',
+        template: [{ key: 'id', fieldType: 'value', source: 'seq', value: '', pipe: '', asNumber: true }],
+      },
+    ];
     expect(fieldsToTemplate(fields)).toBe('{"items":[{"id":{{seq}}}]}');
   });
 });
@@ -133,10 +141,14 @@ describe('validateTemplateAsJson', () => {
     const fields = [
       { key: 'siret', fieldType: 'value', source: 'path', value: 'siret', pipe: '', asNumber: false },
       { key: 'siren', fieldType: 'value', source: 'path', value: 'siret', pipe: 'first(9)', asNumber: false },
-      { key: 'data', fieldType: 'object', children: [
-        { key: 'nom', fieldType: 'value', source: 'fake', value: 'CompanyName', pipe: '', asNumber: false },
-        { key: 'ts', fieldType: 'value', source: 'now_ms', value: '', pipe: '', asNumber: true },
-      ]},
+      {
+        key: 'data',
+        fieldType: 'object',
+        children: [
+          { key: 'nom', fieldType: 'value', source: 'fake', value: 'CompanyName', pipe: '', asNumber: false },
+          { key: 'ts', fieldType: 'value', source: 'now_ms', value: '', pipe: '', asNumber: true },
+        ],
+      },
     ];
     const tpl = fieldsToTemplate(fields);
     expect(validateTemplateAsJson(tpl)).toBeNull();
@@ -164,7 +176,9 @@ describe('round-trip: fields -> template -> fields', () => {
   });
 
   it('variable with pipe', () => {
-    const fields = [{ key: 'siren', fieldType: 'value', source: 'path', value: 'siret', pipe: 'first(9)', asNumber: false }];
+    const fields = [
+      { key: 'siren', fieldType: 'value', source: 'path', value: 'siret', pipe: 'first(9)', asNumber: false },
+    ];
     const back = roundTrip(fields);
     expect(back[0].source).toBe('path');
     expect(back[0].value).toBe('siret');
@@ -172,14 +186,16 @@ describe('round-trip: fields -> template -> fields', () => {
   });
 
   it('nested object', () => {
-    const fields = [{
-      key: 'data',
-      fieldType: 'object',
-      children: [
-        { key: 'id', fieldType: 'value', source: 'uuid', value: '', pipe: '', asNumber: false },
-        { key: 'name', fieldType: 'value', source: 'fake', value: 'FirstName', pipe: '', asNumber: false },
-      ],
-    }];
+    const fields = [
+      {
+        key: 'data',
+        fieldType: 'object',
+        children: [
+          { key: 'id', fieldType: 'value', source: 'uuid', value: '', pipe: '', asNumber: false },
+          { key: 'name', fieldType: 'value', source: 'fake', value: 'FirstName', pipe: '', asNumber: false },
+        ],
+      },
+    ];
     const back = roundTrip(fields);
     expect(back[0].fieldType).toBe('object');
     expect(back[0].children).toHaveLength(2);
@@ -189,7 +205,9 @@ describe('round-trip: fields -> template -> fields', () => {
   });
 
   it('multiple pipes chained', () => {
-    const fields = [{ key: 'v', fieldType: 'value', source: 'path', value: 'name', pipe: 'lower | first(5)', asNumber: false }];
+    const fields = [
+      { key: 'v', fieldType: 'value', source: 'path', value: 'name', pipe: 'lower | first(5)', asNumber: false },
+    ];
     const back = roundTrip(fields);
     expect(back[0].pipe).toBe('lower | first(5)');
   });
@@ -205,16 +223,28 @@ describe('round-trip: fields -> template -> fields', () => {
     const fields = [
       { key: 'siret', fieldType: 'value', source: 'path', value: 'siret', pipe: '', asNumber: false },
       { key: 'siren', fieldType: 'value', source: 'path', value: 'siret', pipe: 'first(9)', asNumber: false },
-      { key: 'unite_legale', fieldType: 'object', children: [
-        { key: 'denomination', fieldType: 'value', source: 'fake', value: 'CompanyName', pipe: '', asNumber: false },
-        { key: 'adresse', fieldType: 'object', children: [
-          { key: 'ville', fieldType: 'value', source: 'fake', value: 'CityFR', pipe: '', asNumber: false },
-        ]},
-      ]},
-      { key: 'meta', fieldType: 'object', children: [
-        { key: 'timestamp', fieldType: 'value', source: 'now_ms', value: '', pipe: '', asNumber: true },
-        { key: 'seq', fieldType: 'value', source: 'seq', value: '', pipe: '', asNumber: true },
-      ]},
+      {
+        key: 'unite_legale',
+        fieldType: 'object',
+        children: [
+          { key: 'denomination', fieldType: 'value', source: 'fake', value: 'CompanyName', pipe: '', asNumber: false },
+          {
+            key: 'adresse',
+            fieldType: 'object',
+            children: [
+              { key: 'ville', fieldType: 'value', source: 'fake', value: 'CityFR', pipe: '', asNumber: false },
+            ],
+          },
+        ],
+      },
+      {
+        key: 'meta',
+        fieldType: 'object',
+        children: [
+          { key: 'timestamp', fieldType: 'value', source: 'now_ms', value: '', pipe: '', asNumber: true },
+          { key: 'seq', fieldType: 'value', source: 'seq', value: '', pipe: '', asNumber: true },
+        ],
+      },
     ];
     const back = roundTrip(fields);
     expect(back).toHaveLength(4);
@@ -301,11 +331,15 @@ describe('buildExpr', () => {
   });
 
   it('xpath without pipe', () => {
-    expect(buildExpr({ source: 'xpath', value: 'Envelope/Body/recherche/Siret', pipe: '' })).toBe('{{xpath.Envelope/Body/recherche/Siret}}');
+    expect(buildExpr({ source: 'xpath', value: 'Envelope/Body/recherche/Siret', pipe: '' })).toBe(
+      '{{xpath.Envelope/Body/recherche/Siret}}',
+    );
   });
 
   it('xpath with pipe', () => {
-    expect(buildExpr({ source: 'xpath', value: 'Envelope/Body/recherche/Siret', pipe: 'substr(0,9)' })).toBe('{{xpath.Envelope/Body/recherche/Siret | substr(0,9)}}');
+    expect(buildExpr({ source: 'xpath', value: 'Envelope/Body/recherche/Siret', pipe: 'substr(0,9)' })).toBe(
+      '{{xpath.Envelope/Body/recherche/Siret | substr(0,9)}}',
+    );
   });
 });
 
@@ -331,7 +365,10 @@ describe('varNameToSource', () => {
     expect(varNameToSource('unknown')).toEqual({ source: 'fixed', value: 'unknown' });
   });
   it('parses xpath (round-trip with a slash-containing path)', () => {
-    expect(varNameToSource('xpath.Envelope/Body/recherche/Siret')).toEqual({ source: 'xpath', value: 'Envelope/Body/recherche/Siret' });
+    expect(varNameToSource('xpath.Envelope/Body/recherche/Siret')).toEqual({
+      source: 'xpath',
+      value: 'Envelope/Body/recherche/Siret',
+    });
   });
 });
 
@@ -357,14 +394,16 @@ describe('xmlFieldsToTemplate', () => {
   });
 
   it('nested parent node', () => {
-    const fields = [{
-      tag: 'data',
-      nodeType: 'parent',
-      children: [
-        { tag: 'id', nodeType: 'value', source: 'uuid', value: '', pipe: '' },
-        { tag: 'name', nodeType: 'value', source: 'fake', value: 'FirstName', pipe: '' },
-      ],
-    }];
+    const fields = [
+      {
+        tag: 'data',
+        nodeType: 'parent',
+        children: [
+          { tag: 'id', nodeType: 'value', source: 'uuid', value: '', pipe: '' },
+          { tag: 'name', nodeType: 'value', source: 'fake', value: 'FirstName', pipe: '' },
+        ],
+      },
+    ];
     const tpl = xmlFieldsToTemplate(fields, 'root');
     expect(tpl).toBe('<root><data><id>{{uuid}}</id><name>{{fake.FirstName}}</name></data></root>');
   });
@@ -372,9 +411,11 @@ describe('xmlFieldsToTemplate', () => {
   it('what xmlFieldsToTemplate produces is valid XML', () => {
     const fields = [
       { tag: 'id', nodeType: 'value', source: 'uuid', value: '', pipe: '' },
-      { tag: 'info', nodeType: 'parent', children: [
-        { tag: 'city', nodeType: 'value', source: 'fake', value: 'CityFR', pipe: 'upper' },
-      ]},
+      {
+        tag: 'info',
+        nodeType: 'parent',
+        children: [{ tag: 'city', nodeType: 'value', source: 'fake', value: 'CityFR', pipe: 'upper' }],
+      },
     ];
     const tpl = xmlFieldsToTemplate(fields, 'resp');
     expect(validateTemplateAsXml(tpl)).toBeNull();
@@ -397,7 +438,7 @@ describe('validateTemplateAsXml edge cases', () => {
   });
 
   it('rejects empty tag names', () => {
-    expect(validateTemplateAsXml('<></>') ).not.toBeNull();
+    expect(validateTemplateAsXml('<></>')).not.toBeNull();
   });
 });
 
@@ -437,7 +478,7 @@ describe('exampleJsonToFields', () => {
     ]);
   });
 
-  it('convertit un tableau d\'objets en array-objects (template sur le 1er element)', () => {
+  it("convertit un tableau d'objets en array-objects (template sur le 1er element)", () => {
     const fields = exampleJsonToFields({ items: [{ id: 1 }, { id: 2 }] });
     expect(fields[0].fieldType).toBe('array-objects');
     expect(fields[0].template).toEqual([
@@ -468,25 +509,39 @@ describe('exampleJsonToFields', () => {
 
 describe('xmlFieldsToTemplate avec attributs', () => {
   it('rend les attributs de la racine', () => {
-    const tpl = xmlFieldsToTemplate([], 'response', [{ name: 'xmlns:soap', source: 'fixed', value: 'http://schemas.xmlsoap.org/soap/', pipe: '' }]);
+    const tpl = xmlFieldsToTemplate([], 'response', [
+      { name: 'xmlns:soap', source: 'fixed', value: 'http://schemas.xmlsoap.org/soap/', pipe: '' },
+    ]);
     expect(tpl).toBe('<response xmlns:soap="http://schemas.xmlsoap.org/soap/"></response>');
   });
 
-  it('rend les attributs d\'un noeud valeur, y compris en variable avec pipe', () => {
-    const fields = [{ tag: 'id', nodeType: 'value', source: 'fixed', value: '42', pipe: '', attributes: [{ name: 'type', source: 'path', value: 'kind', pipe: 'upper' }] }];
+  it("rend les attributs d'un noeud valeur, y compris en variable avec pipe", () => {
+    const fields = [
+      {
+        tag: 'id',
+        nodeType: 'value',
+        source: 'fixed',
+        value: '42',
+        pipe: '',
+        attributes: [{ name: 'type', source: 'path', value: 'kind', pipe: 'upper' }],
+      },
+    ];
     expect(xmlFieldsToTemplate(fields)).toBe('<response><id type="{{path.kind | upper}}">42</id></response>');
   });
 
-  it('rend les attributs d\'un noeud parent', () => {
-    const fields = [{
-      tag: 'client', nodeType: 'parent',
-      attributes: [{ name: 'id', source: 'fixed', value: '7', pipe: '' }],
-      children: [{ tag: 'nom', nodeType: 'value', source: 'fixed', value: 'ACME', pipe: '' }],
-    }];
+  it("rend les attributs d'un noeud parent", () => {
+    const fields = [
+      {
+        tag: 'client',
+        nodeType: 'parent',
+        attributes: [{ name: 'id', source: 'fixed', value: '7', pipe: '' }],
+        children: [{ tag: 'nom', nodeType: 'value', source: 'fixed', value: 'ACME', pipe: '' }],
+      },
+    ];
     expect(xmlFieldsToTemplate(fields)).toBe('<response><client id="7"><nom>ACME</nom></client></response>');
   });
 
-  it('un champ/racine sans attributes produit exactement le meme texte qu\'avant l\'ajout des attributs (retro-compat)', () => {
+  it("un champ/racine sans attributes produit exactement le meme texte qu'avant l'ajout des attributs (retro-compat)", () => {
     const fields = [{ tag: 'id', nodeType: 'value', source: 'uuid', value: '', pipe: '' }];
     expect(xmlFieldsToTemplate(fields, 'root')).toBe('<root><id>{{uuid}}</id></root>');
   });
@@ -496,7 +551,9 @@ describe('xmlFieldsToTemplate avec attributs', () => {
 
 describe('exampleXmlToFields', () => {
   it('convertit un XML plat en fields fixed, tag racine detecte', () => {
-    const { rootTag, rootAttributes, fields } = exampleXmlToFields('<response><siret>44306184100047</siret><nom>ACME Corp</nom></response>');
+    const { rootTag, rootAttributes, fields } = exampleXmlToFields(
+      '<response><siret>44306184100047</siret><nom>ACME Corp</nom></response>',
+    );
     expect(rootTag).toBe('response');
     expect(rootAttributes).toEqual([]);
     expect(fields).toEqual([
@@ -521,8 +578,10 @@ describe('exampleXmlToFields', () => {
     expect(fields[0].children[1].value).toBe('B');
   });
 
-  it('detecte les attributs d\'un element (racine et enfant)', () => {
-    const { rootAttributes, fields } = exampleXmlToFields('<response xmlns:soap="http://x" ver="1"><id type="uuid">42</id></response>');
+  it("detecte les attributs d'un element (racine et enfant)", () => {
+    const { rootAttributes, fields } = exampleXmlToFields(
+      '<response xmlns:soap="http://x" ver="1"><id type="uuid">42</id></response>',
+    );
     expect(rootAttributes).toEqual([
       { name: 'xmlns:soap', source: 'fixed', value: 'http://x', pipe: '' },
       { name: 'ver', source: 'fixed', value: '1', pipe: '' },
@@ -531,7 +590,9 @@ describe('exampleXmlToFields', () => {
   });
 
   it('preserve les prefixes de namespace tels quels, sans planter (limite assumee, pas de resolution semantique)', () => {
-    const { rootTag, fields } = exampleXmlToFields('<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/"><soap:Body><getClientResponse><nom>ACME</nom></getClientResponse></soap:Body></soap:Envelope>');
+    const { rootTag, fields } = exampleXmlToFields(
+      '<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/"><soap:Body><getClientResponse><nom>ACME</nom></getClientResponse></soap:Body></soap:Envelope>',
+    );
     expect(rootTag).toBe('soap:Envelope');
     expect(fields[0].tag).toBe('soap:Body');
     expect(fields[0].children[0].tag).toBe('getClientResponse');
@@ -542,7 +603,9 @@ describe('exampleXmlToFields', () => {
   });
 
   it('rejette une racine sans aucun element imbrique (uniquement du texte)', () => {
-    expect(() => exampleXmlToFields('<response>just text</response>')).toThrow('The XML root holds no nested element. Paste XML with at least one child element.');
+    expect(() => exampleXmlToFields('<response>just text</response>')).toThrow(
+      'The XML root holds no nested element. Paste XML with at least one child element.',
+    );
   });
 
   it('rejette une chaine vide', () => {
@@ -550,7 +613,9 @@ describe('exampleXmlToFields', () => {
   });
 
   it('round-trip avec xmlFieldsToTemplate produit un template XML valide', () => {
-    const { rootTag, rootAttributes, fields } = exampleXmlToFields('<resp ver="1"><client id="7"><nom>ACME</nom></client></resp>');
+    const { rootTag, rootAttributes, fields } = exampleXmlToFields(
+      '<resp ver="1"><client id="7"><nom>ACME</nom></client></resp>',
+    );
     const tpl = xmlFieldsToTemplate(fields, rootTag, rootAttributes);
     expect(validateTemplateAsXml(tpl)).toBeNull();
     expect(tpl).toBe('<resp ver="1"><client id="7"><nom>ACME</nom></client></resp>');
@@ -568,7 +633,9 @@ describe('templateToXmlFields', () => {
   it('reconstruit une valeur fixe (litterale) en source "fixed"', () => {
     const { rootTag, fields } = templateToXmlFields('<response><nom>ACME</nom></response>');
     expect(rootTag).toBe('response');
-    expect(fields).toEqual([{ tag: 'nom', nodeType: 'value', attributes: [], source: 'fixed', value: 'ACME', pipe: '' }]);
+    expect(fields).toEqual([
+      { tag: 'nom', nodeType: 'value', attributes: [], source: 'fixed', value: 'ACME', pipe: '' },
+    ]);
   });
 
   it('reconstruit une expression {{expr}} sans pipe', () => {
@@ -591,20 +658,25 @@ describe('templateToXmlFields', () => {
   });
 
   it('reconstruit un noeud imbrique (nodeType parent) recursivement', () => {
-    const { fields } = templateToXmlFields('<response><client><nom>ACME</nom><siret>{{path.siret}}</siret></client></response>');
+    const { fields } = templateToXmlFields(
+      '<response><client><nom>ACME</nom><siret>{{path.siret}}</siret></client></response>',
+    );
     expect(fields[0].nodeType).toBe('parent');
     expect(fields[0].children).toHaveLength(2);
     expect(fields[0].children[1].source).toBe('path');
   });
 
   it('reconstruit les attributs (racine et noeud) avec leur propre source/pipe', () => {
-    const { rootAttributes, fields } = templateToXmlFields('<response ver="1"><id type="{{path.kind | upper}}">42</id></response>');
+    const { rootAttributes, fields } = templateToXmlFields(
+      '<response ver="1"><id type="{{path.kind | upper}}">42</id></response>',
+    );
     expect(rootAttributes).toEqual([{ name: 'ver', source: 'fixed', value: '1', pipe: '' }]);
     expect(fields[0].attributes[0]).toEqual({ name: 'type', source: 'path', value: 'kind', pipe: 'upper' });
   });
 
   it('round-trip xmlFieldsToTemplate -> templateToXmlFields -> xmlFieldsToTemplate produit le meme template', () => {
-    const original = '<devisResponse ver="2"><client><nom>ACME</nom><siret>{{path.siret | upper}}</siret></client></devisResponse>';
+    const original =
+      '<devisResponse ver="2"><client><nom>ACME</nom><siret>{{path.siret | upper}}</siret></client></devisResponse>';
     const { rootTag, rootAttributes, fields } = templateToXmlFields(original);
     expect(xmlFieldsToTemplate(fields, rootTag, rootAttributes)).toBe(original);
   });

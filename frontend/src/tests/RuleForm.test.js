@@ -140,7 +140,7 @@ describe('RuleForm: pre_script / post_script', () => {
     expect(payload.post_script).toBe('"post-result"');
   });
 
-  it('n\'envoie pas pre_script si le champ reste vide meme toggle actif', async () => {
+  it("n'envoie pas pre_script si le champ reste vide meme toggle actif", async () => {
     checkRuleConflicts.mockResolvedValue({ conflicts: [] });
     const onSave = vi.fn();
     const { getByLabelText, getByRole, container } = render(RuleForm, { props: { onSave } });
@@ -164,20 +164,20 @@ describe('RuleForm: ouverture automatique des "Options avancées"', () => {
     response: { status: 200, headers: [], body: [{ type: 'Literal', value: 'ok' }], chaos: null },
   };
 
-  it('reste repliee a l\'ouverture d\'une regle sans pre_script ni post_script', () => {
+  it("reste repliee a l'ouverture d'une regle sans pre_script ni post_script", () => {
     const { getByRole, queryByRole } = render(RuleForm, { props: { rule: baseRule } });
     expect(getByRole('button', { name: /Advanced options/, expanded: false })).toBeInTheDocument();
     expect(queryByRole('switch', { name: 'Pre-script (preparation)' })).not.toBeInTheDocument();
   });
 
-  it('s\'ouvre automatiquement si post_script a deja du contenu', () => {
+  it("s'ouvre automatiquement si post_script a deja du contenu", () => {
     const rule = { ...baseRule, post_script: '"already set"' };
     const { getByRole } = render(RuleForm, { props: { rule } });
     expect(getByRole('button', { name: /Advanced options/, expanded: true })).toBeInTheDocument();
     expect(getByRole('switch', { name: 'Post-script (finalization)' })).toBeInTheDocument();
   });
 
-  it('s\'ouvre automatiquement si pre_script a deja du contenu', () => {
+  it("s'ouvre automatiquement si pre_script a deja du contenu", () => {
     const rule = { ...baseRule, pre_script: '"already set"' };
     const { getByRole } = render(RuleForm, { props: { rule } });
     expect(getByRole('button', { name: /Advanced options/, expanded: true })).toBeInTheDocument();
@@ -238,7 +238,7 @@ describe('RuleForm: detecteur de conflit a la sauvegarde', () => {
     },
   ];
 
-  it('sauvegarde directement sans avertissement quand aucun conflit n\'est detecte', async () => {
+  it("sauvegarde directement sans avertissement quand aucun conflit n'est detecte", async () => {
     checkRuleConflicts.mockResolvedValue({ conflicts: [] });
     const onSave = vi.fn();
     const { getByLabelText, container, queryByTestId } = render(RuleForm, {
@@ -270,7 +270,7 @@ describe('RuleForm: detecteur de conflit a la sauvegarde', () => {
     expect(onSave).not.toHaveBeenCalled();
   });
 
-  it('permet de sauvegarder quand meme malgre l\'avertissement', async () => {
+  it("permet de sauvegarder quand meme malgre l'avertissement", async () => {
     checkRuleConflicts.mockResolvedValue({
       conflicts: [{ other_rule_name: 'existing-rule', winner: 'draft' }],
     });
@@ -288,7 +288,7 @@ describe('RuleForm: detecteur de conflit a la sauvegarde', () => {
     expect(onSave.mock.calls[0][0].name).toBe('new-rule');
   });
 
-  it('permet d\'annuler l\'avertissement pour continuer a modifier la regle', async () => {
+  it("permet d'annuler l'avertissement pour continuer a modifier la regle", async () => {
     checkRuleConflicts.mockResolvedValue({
       conflicts: [{ other_rule_name: 'existing-rule', winner: 'other' }],
     });
@@ -331,7 +331,7 @@ describe('RuleForm: action Proxy masquee pour un service purement mocke', () => 
     expect(queryByTestId('rule-form-purely-mocked-hint')).not.toBeInTheDocument();
   });
 
-  it('masque l\'action Proxy quand le service est purement mocke', () => {
+  it("masque l'action Proxy quand le service est purement mocke", () => {
     const { getByTestId, queryByTestId } = render(RuleForm, {
       props: { isPurelyMocked: true },
     });
@@ -340,7 +340,7 @@ describe('RuleForm: action Proxy masquee pour un service purement mocke', () => 
     expect(queryByTestId('rule-form-action-proxy-radio')).not.toBeInTheDocument();
   });
 
-  it('une regle heritee en action=proxy repasse en mock a l\'ouverture si le service est purement mocke', async () => {
+  it("une regle heritee en action=proxy repasse en mock a l'ouverture si le service est purement mocke", async () => {
     checkRuleConflicts.mockResolvedValue({ conflicts: [] });
     const onSave = vi.fn();
     const staleRule = {
@@ -374,7 +374,7 @@ describe('RuleForm: avertissement avant de persister le changement proxy -> mock
     };
   }
 
-  it('affiche un avertissement explicite et bloque la sauvegarde tant qu\'il n\'est pas confirme', async () => {
+  it("affiche un avertissement explicite et bloque la sauvegarde tant qu'il n'est pas confirme", async () => {
     const onSave = vi.fn();
     // Le mock `checkRuleConflicts` est partage entre tous les tests de ce
     // fichier (pas de reset global) : on compare le nombre d'appels avant/
@@ -423,7 +423,7 @@ describe('RuleForm: avertissement avant de persister le changement proxy -> mock
     expect(queryByTestId('rule-form-stale-proxy-warning')).not.toBeInTheDocument();
   });
 
-  it('n\'apparait jamais pour une regle mock ordinaire sur un service purement mocke', async () => {
+  it("n'apparait jamais pour une regle mock ordinaire sur un service purement mocke", async () => {
     checkRuleConflicts.mockResolvedValue({ conflicts: [] });
     const onSave = vi.fn();
     const ordinaryRule = staleProxyRule({ name: 'ordinary-mock-rule', action: 'mock' });
@@ -436,7 +436,7 @@ describe('RuleForm: avertissement avant de persister le changement proxy -> mock
     expect(queryByTestId('rule-form-stale-proxy-warning')).not.toBeInTheDocument();
   });
 
-  it('n\'apparait jamais pour une regle proxy sur un service qui a une cible (pas purement mocke)', async () => {
+  it("n'apparait jamais pour une regle proxy sur un service qui a une cible (pas purement mocke)", async () => {
     checkRuleConflicts.mockResolvedValue({ conflicts: [] });
     const onSave = vi.fn();
     const { container, queryByTestId } = render(RuleForm, {
@@ -454,7 +454,7 @@ describe('RuleForm: avertissement avant de persister le changement proxy -> mock
 // passe, TOUTE regle deja construite via un mode structure atterrissait en
 // "Template avance" a la reouverture -- Rule.response_mode (backend) leve
 // l'ambiguite.
-describe('RuleForm: restauration de la vue d\'origine a l\'edition (retour 1)', () => {
+describe("RuleForm: restauration de la vue d'origine a l'edition (retour 1)", () => {
   it('une regle sauvegardee en JSON "par exemple" reouvre directement la vue assistee (pas le template avance)', () => {
     const rule = {
       name: 'existing',
@@ -526,7 +526,7 @@ describe('RuleForm: restauration de la vue d\'origine a l\'edition (retour 1)', 
     expect(queryByTestId('xml-paste-builder-textarea')).not.toBeInTheDocument();
   });
 
-  it('une regle sans response_mode (sauvegardee avant l\'ajout de ce champ) degrade gracieusement vers l\'ancienne heuristique (Template avance)', () => {
+  it("une regle sans response_mode (sauvegardee avant l'ajout de ce champ) degrade gracieusement vers l'ancienne heuristique (Template avance)", () => {
     const rule = {
       name: 'existing',
       action: 'mock',
@@ -866,7 +866,12 @@ describe('RuleForm: the response survives the builders being unmounted', () => {
       action: 'mock',
       response_mode: 'json-paste',
       conditions: { all_of: [], any_of: [] },
-      response: { status: 200, headers: [], body: [{ type: 'Template', template: '[{"id":"{{path.id}}"}]' }], chaos: null },
+      response: {
+        status: 200,
+        headers: [],
+        body: [{ type: 'Template', template: '[{"id":"{{path.id}}"}]' }],
+        chaos: null,
+      },
     };
     const { container } = render(RuleForm, { props: { rule, onSave } });
 
@@ -876,8 +881,24 @@ describe('RuleForm: the response survives the builders being unmounted', () => {
 });
 
 describe('RuleForm: the traffic of its own service', () => {
-  const captured = { remaining_path: '/1', path_params: {}, query_params: {}, headers: {}, body: '', body_truncated: false, content_type: null };
-  const log = (group_name, path) => ({ timestamp: 1, service_name: 'users', group_name, method: 'GET', path, mode: 'mock', captured });
+  const captured = {
+    remaining_path: '/1',
+    path_params: {},
+    query_params: {},
+    headers: {},
+    body: '',
+    body_truncated: false,
+    content_type: null,
+  };
+  const log = (group_name, path) => ({
+    timestamp: 1,
+    service_name: 'users',
+    group_name,
+    method: 'GET',
+    path,
+    mode: 'mock',
+    captured,
+  });
 
   it('offers the rule tester the requests of its service only, not those of a namesake in another group', async () => {
     getLogs.mockResolvedValue([log('team-a', '/a/users/1'), log('team-b', '/b/users/2'), log(null, '/users/3')]);

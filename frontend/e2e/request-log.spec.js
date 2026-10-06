@@ -56,7 +56,11 @@ test.describe('Request log', () => {
     await expect(unmatched).toContainText('/orders-api/orders/43');
     await expect(matched).toContainText('/orders-api/orders/42');
     await expect(matched).toContainText('paid-order');
-    await docsScreenshot(page, 'request-log-list.png', '[data-testid="request-log-row-0"], [data-testid="request-log-row-1"]');
+    await docsScreenshot(
+      page,
+      'request-log-list.png',
+      '[data-testid="request-log-row-0"], [data-testid="request-log-row-1"]',
+    );
 
     await page.locator('[data-testid="request-log-detail-button-1"]').click();
     const detail = page.locator('[data-testid="request-log-detail-modal"]');

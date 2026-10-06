@@ -65,14 +65,16 @@ test.describe('Service CRUD', () => {
   test('create service with rule and verify mock response', async ({ request }) => {
     const svc = validService('mock-svc', {
       listen_path: '/hello',
-      rules: [validRule('hello-rule', {
-        response: {
-          status: 200,
-          headers: [{ name: 'Content-Type', value: 'application/json' }],
-          body: [{ type: 'Template', template: '{"message":"hello"}' }],
-          chaos: null,
-        },
-      })],
+      rules: [
+        validRule('hello-rule', {
+          response: {
+            status: 200,
+            headers: [{ name: 'Content-Type', value: 'application/json' }],
+            body: [{ type: 'Template', template: '{"message":"hello"}' }],
+            chaos: null,
+          },
+        }),
+      ],
     });
     await request.post(`${API}/services`, { data: svc });
 
@@ -176,15 +178,17 @@ test.describe('Service identity across groups', () => {
 
   async function expandGroup(page, groupName) {
     const header = page.locator('.group-header', { hasText: groupName });
-    if (await header.getAttribute('aria-expanded') === 'false') {
+    if ((await header.getAttribute('aria-expanded')) === 'false') {
       await header.click();
     }
   }
 
   test('the test URL of a grouped service is the same in the list and in its form', async ({ page, request }) => {
-    const grp = await (await request.post(`${API}/groups`, {
-      data: { name: 'url-parity-grp', code: '', admins: [], members: [] },
-    })).json();
+    const grp = await (
+      await request.post(`${API}/groups`, {
+        data: { name: 'url-parity-grp', code: '', admins: [], members: [] },
+      })
+    ).json();
     await request.post(`${API}/services`, {
       data: validService('url-parity-svc', { listen_path: '/v1/*', group_name: 'url-parity-grp' }),
     });
@@ -324,15 +328,17 @@ test.describe('Script execution', () => {
 
   test('script result available in template', async ({ request }) => {
     const svc = validService('script-svc', {
-      rules: [validRule('scripted', {
-        script: '#{ greeting: "hello" }',
-        response: {
-          status: 200,
-          headers: [],
-          body: [{ type: 'Template', template: '{"msg":"{{script.greeting}}"}' }],
-          chaos: null,
-        },
-      })],
+      rules: [
+        validRule('scripted', {
+          script: '#{ greeting: "hello" }',
+          response: {
+            status: 200,
+            headers: [],
+            body: [{ type: 'Template', template: '{"msg":"{{script.greeting}}"}' }],
+            chaos: null,
+          },
+        }),
+      ],
     });
     await request.post(`${API}/services`, { data: svc });
 

@@ -19,7 +19,7 @@ describe('FormField', () => {
     expect(input.getAttribute('aria-describedby')).toContain(hint.id);
   });
 
-  it('affiche l\'erreur avec role alert et aria-invalid sur le champ', () => {
+  it("affiche l'erreur avec role alert et aria-invalid sur le champ", () => {
     const { getByLabelText, getByRole } = render(FormFieldHarness, {
       props: { id: 'svc-name', label: 'Service name', error: 'The name is required.' },
     });
@@ -28,7 +28,7 @@ describe('FormField', () => {
     expect(getByRole('alert')).toHaveTextContent('The name is required.');
   });
 
-  it('n\'affiche pas aria-invalid quand il n\'y a pas d\'erreur', () => {
+  it("n'affiche pas aria-invalid quand il n'y a pas d'erreur", () => {
     const { getByLabelText } = render(FormFieldHarness, {
       props: { id: 'svc-name', label: 'Service name' },
     });

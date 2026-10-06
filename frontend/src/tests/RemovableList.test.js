@@ -3,7 +3,7 @@ import { describe, it, expect, vi } from 'vitest';
 import RemovableList from '../lib/components/RemovableList.svelte';
 
 describe('RemovableList', () => {
-  it('affiche le texte vide quand il n\'y a pas d\'items', () => {
+  it("affiche le texte vide quand il n'y a pas d'items", () => {
     const { getByText } = render(RemovableList, { props: { items: [], emptyText: 'Nothing here.' } });
     expect(getByText('Nothing here.')).toBeInTheDocument();
   });
@@ -18,7 +18,7 @@ describe('RemovableList', () => {
     expect(getByLabelText('Remove bob')).toBeInTheDocument();
   });
 
-  it('appelle onRemove avec l\'item correspondant', async () => {
+  it("appelle onRemove avec l'item correspondant", async () => {
     const onRemove = vi.fn();
     const { getByLabelText } = render(RemovableList, {
       props: { items: ['alice', 'bob'], onRemove },

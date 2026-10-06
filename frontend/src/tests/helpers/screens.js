@@ -5,24 +5,78 @@ import { fireEvent, waitFor } from '@testing-library/svelte';
 import { expect, vi } from 'vitest';
 
 export const group = { name: 'g1', code: 'c0d3e', admins: ['u1'], members: ['u2'] };
-export const proxied = { name: 'a1', listen_path: '/v1/{n}', real_target_url: 'http://10.0.0.1:8080', is_mocked: false, rewrite_directory_urls: false, group_name: 'g1', wsdl_mode: 'auto', rules: [] };
+export const proxied = {
+  name: 'a1',
+  listen_path: '/v1/{n}',
+  real_target_url: 'http://10.0.0.1:8080',
+  is_mocked: false,
+  rewrite_directory_urls: false,
+  group_name: 'g1',
+  wsdl_mode: 'auto',
+  rules: [],
+};
 export const fullRule = {
-  name: 'r1', method: 'POST', sub_path: '/x1', action: 'mock', pre_script: '1', script: '2', post_script: '3', response_mode: 'advanced',
-  conditions: { all_of: [{ source: { type: 'QueryParam', key: 'q' }, operator: { type: 'Eq', value: '1' } }], any_of: [{ source: { type: 'BodyRaw' }, operator: { type: 'Exists' } }] },
+  name: 'r1',
+  method: 'POST',
+  sub_path: '/x1',
+  action: 'mock',
+  pre_script: '1',
+  script: '2',
+  post_script: '3',
+  response_mode: 'advanced',
+  conditions: {
+    all_of: [{ source: { type: 'QueryParam', key: 'q' }, operator: { type: 'Eq', value: '1' } }],
+    any_of: [{ source: { type: 'BodyRaw' }, operator: { type: 'Exists' } }],
+  },
   response: {
-    status: 200, headers: [{ name: 'Content-Type', value: 'application/json' }],
+    status: 200,
+    headers: [{ name: 'Content-Type', value: 'application/json' }],
     body: [
-      { type: 'Template', template: '{}' }, { type: 'Literal', value: '1' }, { type: 'Uuid' },
-      { type: 'PickFrom', values: ['1', '2'] }, { type: 'FakeData', kind: { type: 'FirstName' } }, { type: 'PathSegment', index: 1 },
+      { type: 'Template', template: '{}' },
+      { type: 'Literal', value: '1' },
+      { type: 'Uuid' },
+      { type: 'PickFrom', values: ['1', '2'] },
+      { type: 'FakeData', kind: { type: 'FirstName' } },
+      { type: 'PathSegment', index: 1 },
     ],
     chaos: { delay_ms: 1, delay_min_ms: null, delay_max_ms: null, error_rate: 0.1, error_status: 500 },
   },
 };
 export const mocked = { ...proxied, name: 'b2', is_mocked: true, group_name: null, rules: [fullRule] };
-const captured = { remaining_path: '/x1', path_params: {}, query_params: { q: '1' }, headers: {}, body: '{}', body_truncated: true, content_type: null };
+const captured = {
+  remaining_path: '/x1',
+  path_params: {},
+  query_params: { q: '1' },
+  headers: {},
+  body: '{}',
+  body_truncated: true,
+  content_type: null,
+};
 const logs = [
-  { timestamp: 1, service_name: 'b2', group_name: null, method: 'POST', path: '/b2/x1', mode: 'mock', rule_matched: 'r1', target_url: null, status: 200, captured },
-  { timestamp: 2, service_name: 'a1', group_name: 'g1', method: 'GET', path: '/c0d3e/a1/x2', mode: 'proxy', rule_matched: null, target_url: 'http://10.0.0.1:8080/x2', status: 502, captured: null },
+  {
+    timestamp: 1,
+    service_name: 'b2',
+    group_name: null,
+    method: 'POST',
+    path: '/b2/x1',
+    mode: 'mock',
+    rule_matched: 'r1',
+    target_url: null,
+    status: 200,
+    captured,
+  },
+  {
+    timestamp: 2,
+    service_name: 'a1',
+    group_name: 'g1',
+    method: 'GET',
+    path: '/c0d3e/a1/x2',
+    mode: 'proxy',
+    rule_matched: null,
+    target_url: 'http://10.0.0.1:8080/x2',
+    status: 502,
+    captured: null,
+  },
 ];
 
 /**
@@ -34,23 +88,61 @@ export function answerApi(api) {
   api.getAuthStatus.mockResolvedValue({ enabled: false, show_reset_button: true });
   api.getMessagingStatus.mockResolvedValue({ available: true });
   api.getTcpStatus.mockResolvedValue([{ name: 't1', listen_port: 9000, listening: true, error: null }]);
-  api.getTcpServices.mockResolvedValue([{ name: 't1', listen_port: 9000, rules: [{ name: 'r1', matcher: { type: 'Any' }, response_hex: '' }] }]);
+  api.getTcpServices.mockResolvedValue([
+    { name: 't1', listen_port: 9000, rules: [{ name: 'r1', matcher: { type: 'Any' }, response_hex: '' }] },
+  ]);
   api.getServices.mockResolvedValue([proxied, mocked]);
   api.getGroups.mockResolvedValue([group]);
   api.getBackups.mockResolvedValue([{ filename: 'f1.yaml', created_at_ms: 1, size_bytes: 2048, protected: true }]);
   api.getLogs.mockResolvedValue(logs);
-  api.getMessagingLogs.mockResolvedValue([{ timestamp: 1, direction: 'out', topic: 't1', service_name: 'b2', rule_matched: 'r1', matched: true, body_preview: '{}', body_truncated: true, body_size_bytes: 9 }]);
+  api.getMessagingLogs.mockResolvedValue([
+    {
+      timestamp: 1,
+      direction: 'out',
+      topic: 't1',
+      service_name: 'b2',
+      rule_matched: 'r1',
+      matched: true,
+      body_preview: '{}',
+      body_truncated: true,
+      body_size_bytes: 9,
+    },
+  ]);
   api.getObservationStatus.mockResolvedValue([{ group_name: 'g1', service_name: 'a1' }]);
   api.getServiceSuggestions.mockResolvedValue([
-    { outcome: 'Conditional', rules: [{ method: 'GET', sub_path: '/x2', condition: { source: { type: 'QueryParam', key: 'q' }, operator: { type: 'Eq', value: '1' } }, response: { status: 200, headers: [], body: [{ type: 'Literal', value: '1' }] }, sample_count: 3 }] },
-    { outcome: 'Unconditional', rule: { method: 'GET', sub_path: '/x3', condition: null, response: { status: 404, headers: [], body: [] }, sample_count: 3 } },
+    {
+      outcome: 'Conditional',
+      rules: [
+        {
+          method: 'GET',
+          sub_path: '/x2',
+          condition: { source: { type: 'QueryParam', key: 'q' }, operator: { type: 'Eq', value: '1' } },
+          response: { status: 200, headers: [], body: [{ type: 'Literal', value: '1' }] },
+          sample_count: 3,
+        },
+      ],
+    },
+    {
+      outcome: 'Unconditional',
+      rule: {
+        method: 'GET',
+        sub_path: '/x3',
+        condition: null,
+        response: { status: 404, headers: [], body: [] },
+        sample_count: 3,
+      },
+    },
     { outcome: 'VarianceUnexplained', sample_count: 4, response_class_count: 2 },
   ]);
   api.testRule.mockResolvedValue({
-    overall_matched: false, method_matches: true, sub_path_matches: false, body_truncated: true,
+    overall_matched: false,
+    method_matches: true,
+    sub_path_matches: false,
+    body_truncated: true,
     all_of: [{ condition: fullRule.conditions.all_of[0], matched: false, found_value: null, hint: null }],
     any_of: [{ condition: fullRule.conditions.any_of[0], matched: true, found_value: '1', hint: null }],
-    script_errors: [{ slot: 'pre_script', message: '1' }], script_results: [{ slot: 'script', value: '1', fields: { k1: '2' } }],
+    script_errors: [{ slot: 'pre_script', message: '1' }],
+    script_results: [{ slot: 'script', value: '1', fields: { k1: '2' } }],
   });
 }
 
@@ -90,23 +182,41 @@ export function visibleTexts(container) {
 }
 
 const click = (container, testId) => fireEvent.click(container.querySelector(`[data-testid="${testId}"]`));
-const appeared = (container, testId) => waitFor(() => expect(container.querySelector(`[data-testid="${testId}"]`)).not.toBeNull());
+const appeared = (container, testId) =>
+  waitFor(() => expect(container.querySelector(`[data-testid="${testId}"]`)).not.toBeNull());
 
 const component = (name) => async () => (await import(`../../lib/components/${name}.svelte`)).default;
 
 const jsonFields = [
   { key: 'k1', fieldType: 'value', source: 'fake', value: 'FirstName', pipe: '', asNumber: false },
-  { key: 'k2', fieldType: 'object', children: [{ key: 'k3', fieldType: 'value', source: 'path', value: 'n', pipe: '', asNumber: false }] },
+  {
+    key: 'k2',
+    fieldType: 'object',
+    children: [{ key: 'k3', fieldType: 'value', source: 'path', value: 'n', pipe: '', asNumber: false }],
+  },
   { key: 'k4', fieldType: 'array-values', items: [{ source: 'fixed', value: '1', asNumber: true }] },
   { key: 'k5', fieldType: 'array-objects', template: [] },
 ];
 const xmlFields = [
-  { tag: 'k1', nodeType: 'value', source: 'query', value: 'q', pipe: '', attributes: [{ name: 'k6', source: 'fixed', value: '1' }] },
-  { tag: 'k2', nodeType: 'parent', children: [{ tag: 'k3', nodeType: 'value', source: 'fake', value: 'FirstName', pipe: '' }] },
+  {
+    tag: 'k1',
+    nodeType: 'value',
+    source: 'query',
+    value: 'q',
+    pipe: '',
+    attributes: [{ name: 'k6', source: 'fixed', value: '1' }],
+  },
+  {
+    tag: 'k2',
+    nodeType: 'parent',
+    children: [{ tag: 'k3', nodeType: 'value', source: 'fake', value: 'FirstName', pipe: '' }],
+  },
 ];
 
 async function pasteInvalidSample(container, prefix, sample) {
-  await fireEvent.input(container.querySelector(`[data-testid="${prefix}-paste-builder-textarea"]`), { target: { value: sample } });
+  await fireEvent.input(container.querySelector(`[data-testid="${prefix}-paste-builder-textarea"]`), {
+    target: { value: sample },
+  });
   await click(container, `${prefix}-paste-builder-analyze-button`);
   expect(container.querySelector(`[data-testid="${prefix}-paste-builder-error"]`)).not.toBeNull();
 }
@@ -178,10 +288,22 @@ export const SCREEN_GROUPS = [
         props: { fields: jsonFields },
         open: (c) => click(c, 'json-builder-navigate-button-1'),
       },
-      { id: 'json-builder-array-root', component: component('JsonResponseBuilder'), props: { fields: jsonFields, arrayRoot: true } },
-      { id: 'json-paste', component: component('JsonPasteBuilder'), props: { fields: jsonFields.slice(0, 2), startParsed: true } },
+      {
+        id: 'json-builder-array-root',
+        component: component('JsonResponseBuilder'),
+        props: { fields: jsonFields, arrayRoot: true },
+      },
+      {
+        id: 'json-paste',
+        component: component('JsonPasteBuilder'),
+        props: { fields: jsonFields.slice(0, 2), startParsed: true },
+      },
       { id: 'xml-builder', component: component('XmlResponseBuilder'), props: { fields: xmlFields, rootTag: 'k0' } },
-      { id: 'xml-paste', component: component('XmlPasteBuilder'), props: { fields: xmlFields, rootTag: 'k0', rootAttributes: [], startParsed: true } },
+      {
+        id: 'xml-paste',
+        component: component('XmlPasteBuilder'),
+        props: { fields: xmlFields, rootTag: 'k0', rootAttributes: [], startParsed: true },
+      },
       {
         id: 'xml-paste-nested',
         component: component('XmlPasteBuilder'),
@@ -193,8 +315,16 @@ export const SCREEN_GROUPS = [
   {
     name: 'the errors of the by-example builders',
     screens: [
-      { id: 'json-paste-error', component: component('JsonPasteBuilder'), open: (c) => pasteInvalidSample(c, 'json', '{oops') },
-      { id: 'xml-paste-error', component: component('XmlPasteBuilder'), open: (c) => pasteInvalidSample(c, 'xml', '<oops') },
+      {
+        id: 'json-paste-error',
+        component: component('JsonPasteBuilder'),
+        open: (c) => pasteInvalidSample(c, 'json', '{oops'),
+      },
+      {
+        id: 'xml-paste-error',
+        component: component('XmlPasteBuilder'),
+        open: (c) => pasteInvalidSample(c, 'xml', '<oops'),
+      },
     ],
   },
   {
@@ -226,7 +356,11 @@ export const SCREEN_GROUPS = [
           await click(c, 'group-manager-new-group-button');
         },
       },
-      { id: 'backup-manager', component: component('BackupManager'), open: (c) => appeared(c, 'backup-manager-item-f1.yaml') },
+      {
+        id: 'backup-manager',
+        component: component('BackupManager'),
+        open: (c) => appeared(c, 'backup-manager-item-f1.yaml'),
+      },
       { id: 'tcp-manager', component: component('TcpServiceManager'), open: (c) => appeared(c, 'tcp-manager-item-t1') },
       {
         id: 'tcp-manager-new',

@@ -24,7 +24,7 @@ async function request(method, path, body) {
   const res = await fetch(`${getApiBaseUrl()}${BASE}${path}`, opts);
   if (res.status === 401 && auth.enabled) {
     logout();
-    throw new Error(t("Session expired, please sign in again"));
+    throw new Error(t('Session expired, please sign in again'));
   }
   if (!res.ok) {
     let msg = `${res.status} ${res.statusText}`;

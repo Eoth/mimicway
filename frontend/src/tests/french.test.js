@@ -19,7 +19,7 @@ vi.mock('../lib/api.js');
 
 // A few texts each screen shows in French: the catalogue seen in context, on every screen.
 const FRENCH_TEXTS = {
-  'app': ['+ Ajouter un service', 'Sans groupe', 'Configurer'],
+  app: ['+ Ajouter un service', 'Sans groupe', 'Configurer'],
   'service-form': ['Nom du service', 'URL cible réelle'],
   'service-detail-proxied': ['Modifier le service', 'Utiliser cette suggestion'],
   'service-detail-mocked': ['+ Ajouter une regle', 'Dupliquer'],
@@ -32,7 +32,10 @@ const FRENCH_TEXTS = {
   'xml-paste': ['Recoller un XML', 'Attributs :'],
   'xml-paste-nested': ['racine', 'Chemin des donnees'],
   'json-paste-error': ['Analyser et variabiliser', /^JSON invalide : ./],
-  'xml-paste-error': ['Analyser et variabiliser', 'XML invalide : verifiez les tags (noms vides, imbrication incorrecte).'],
+  'xml-paste-error': [
+    'Analyser et variabiliser',
+    'XML invalide : verifiez les tags (noms vides, imbrication incorrecte).',
+  ],
   'request-log': ['Journal des requetes', 'Detail de la requete'],
   'messaging-log': ['Simuler un message entrant', 'Detail du message'],
   'group-manager': ['Groupes de services', 'Nom du groupe'],
@@ -49,9 +52,21 @@ const escape = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const ENGLISH_ONLY = Object.keys(fr)
   .filter((message) => fr[message] !== message && !frenchTexts.has(message))
   .filter((message) => /[A-Za-z]{2,}/.test(message.replace(/\{\d+\}/g, '')))
-  .map((message) => ({ message, pattern: new RegExp(`^${message.split(/\{\d+\}/).map(escape).join('.+')}$`, 's') }));
+  .map((message) => ({
+    message,
+    pattern: new RegExp(
+      `^${message
+        .split(/\{\d+\}/)
+        .map(escape)
+        .join('.+')}$`,
+      's',
+    ),
+  }));
 
-const shownTexts = (container) => visibleTexts(container).map(({ text }) => text.replace(/\s+/g, ' ').trim()).filter(Boolean);
+const shownTexts = (container) =>
+  visibleTexts(container)
+    .map(({ text }) => text.replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
 
 function englishLeft(texts) {
   return texts.filter((text) => ENGLISH_ONLY.some(({ pattern }) => pattern.test(text)));
@@ -90,7 +105,8 @@ describe('the main screens in French', () => {
         const texts = shownTexts(container);
         expect(englishLeft(texts), screen.id).toEqual([]);
         for (const expected of FRENCH_TEXTS[screen.id]) {
-          const found = expected instanceof RegExp ? texts.some((text) => expected.test(text)) : texts.includes(expected);
+          const found =
+            expected instanceof RegExp ? texts.some((text) => expected.test(text)) : texts.includes(expected);
           expect(found, `${screen.id}: ${expected}`).toBe(true);
         }
         cleanup();
@@ -105,16 +121,41 @@ describe('what French writes its own way', () => {
   it('a space before the colon that follows the script of an error', async () => {
     await setLocale('fr');
     api.testRule.mockResolvedValue({
-      method_matches: true, sub_path_matches: true, path_params: {}, overall_matched: true, body_truncated: false,
-      all_of: [], any_of: [], script_errors: [{ slot: 'script', message: 'boom' }],
+      method_matches: true,
+      sub_path_matches: true,
+      path_params: {},
+      overall_matched: true,
+      body_truncated: false,
+      all_of: [],
+      any_of: [],
+      script_errors: [{ slot: 'script', message: 'boom' }],
     });
     const log = {
-      timestamp: 1, service_name: 'svc-a', method: 'GET', path: '/svc-a/orders/42', mode: 'mock', rule_matched: 'r1', target_url: null, status: 200,
-      captured: { remaining_path: '/orders/42', path_params: {}, query_params: {}, headers: {}, body: '', body_truncated: false, content_type: null },
+      timestamp: 1,
+      service_name: 'svc-a',
+      method: 'GET',
+      path: '/svc-a/orders/42',
+      mode: 'mock',
+      rule_matched: 'r1',
+      target_url: null,
+      status: 200,
+      captured: {
+        remaining_path: '/orders/42',
+        path_params: {},
+        query_params: {},
+        headers: {},
+        body: '',
+        body_truncated: false,
+        content_type: null,
+      },
     };
     const getDraftRule = () => ({ method: 'GET', subPath: '', allOf: [], anyOf: [], script: 'boom()' });
-    const { container, getByTestId } = render(RuleTester, { props: { serviceName: 'svc-a', logs: [log], getDraftRule } });
-    await fireEvent.change(container.querySelector('[data-testid="rule-tester-log-select"]'), { target: { value: '0' } });
+    const { container, getByTestId } = render(RuleTester, {
+      props: { serviceName: 'svc-a', logs: [log], getDraftRule },
+    });
+    await fireEvent.change(container.querySelector('[data-testid="rule-tester-log-select"]'), {
+      target: { value: '0' },
+    });
     await fireEvent.click(container.querySelector('[data-testid="rule-tester-test-button"]'));
     await waitFor(() => expect(getByTestId('rule-tester-script-error-script')).toBeInTheDocument());
     expect(getByTestId('rule-tester-script-error-script').textContent.trim()).toBe('Script personnalisé : boom');
@@ -124,14 +165,30 @@ describe('what French writes its own way', () => {
     await setLocale('fr');
     const timestamp = new Date('2026-01-15T10:30:00').getTime();
     api.getLogs.mockResolvedValue([
-      { timestamp, service_name: 'svc-a', method: 'GET', path: '/svc-a/foo', mode: 'mock', rule_matched: 'r1', target_url: null, status: 200 },
+      {
+        timestamp,
+        service_name: 'svc-a',
+        method: 'GET',
+        path: '/svc-a/foo',
+        mode: 'mock',
+        rule_matched: 'r1',
+        target_url: null,
+        status: 200,
+      },
     ]);
     const { container, getByText } = render(RequestLog);
     await waitFor(() => expect(getByText('svc-a')).toBeInTheDocument());
     const shown = container.querySelector('.col-time').textContent;
-    expect(shown).toBe(new Date(timestamp).toLocaleString('fr-FR', {
-      day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit',
-    }));
+    expect(shown).toBe(
+      new Date(timestamp).toLocaleString('fr-FR', {
+        day: '2-digit',
+        month: '2-digit',
+        year: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      }),
+    );
     expect(shown).toMatch(/^15\/01\/26/);
   });
 });

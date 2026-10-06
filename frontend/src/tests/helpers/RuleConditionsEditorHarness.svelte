@@ -11,9 +11,4 @@
   let anyOf = $state(untrack(() => initialAnyOf));
 </script>
 
-<RuleConditionsEditor
-  {allOf}
-  {anyOf}
-  onAllOfChange={(v) => (allOf = v)}
-  onAnyOfChange={(v) => (anyOf = v)}
-/>
+<RuleConditionsEditor {allOf} {anyOf} onAllOfChange={(v) => (allOf = v)} onAnyOfChange={(v) => (anyOf = v)} />

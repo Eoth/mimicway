@@ -11,14 +11,20 @@ test.describe('Group members', () => {
     await request.delete(`${API}/config/reset`);
     await request.post(`${API}/groups`, { data: { name: 'payments', code: '', admins: [], members: [] } });
     // Without authentication, the creator recorded as admin is "anonymous": the people are set afterwards.
-    const people = await request.put(`${API}/groups/payments/members`, { data: { admins: ['alice'], members: ['bob'] } });
+    const people = await request.put(`${API}/groups/payments/members`, {
+      data: { admins: ['alice'], members: ['bob'] },
+    });
     expect(people.ok()).toBe(true);
   });
 
   test('a group admin adds a member, who is saved with the group', async ({ page, request }) => {
-    await page.route('**/api/auth/status', (route) => route.fulfill({ json: { enabled: true, show_reset_button: false } }));
+    await page.route('**/api/auth/status', (route) =>
+      route.fulfill({ json: { enabled: true, show_reset_button: false } }),
+    );
     await page.route('**/api/auth/login', (route) =>
-      route.fulfill({ json: { access_token: 'stub-token', refresh_token: null, username: 'alice', is_super_admin: false } }),
+      route.fulfill({
+        json: { access_token: 'stub-token', refresh_token: null, username: 'alice', is_super_admin: false },
+      }),
     );
 
     await page.goto('/');
@@ -38,6 +44,8 @@ test.describe('Group members', () => {
     await docsScreenshot(page, 'group-members.png', '[data-testid="group-manager-card-payments"]');
 
     const groups = await (await request.get(`${API}/groups`)).json();
-    expect(groups).toEqual([expect.objectContaining({ name: 'payments', admins: ['alice'], members: ['bob', 'carol'] })]);
+    expect(groups).toEqual([
+      expect.objectContaining({ name: 'payments', admins: ['alice'], members: ['bob', 'carol'] }),
+    ]);
   });
 });

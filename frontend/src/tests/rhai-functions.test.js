@@ -1,10 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  RHAI_FUNCTIONS,
-  filterRhaiFunctions,
-  tokenAtCursor,
-  computeInsertSelection,
-} from '../lib/rhai-functions.js';
+import { RHAI_FUNCTIONS, filterRhaiFunctions, tokenAtCursor, computeInsertSelection } from '../lib/rhai-functions.js';
 
 describe('RHAI_FUNCTIONS (source unique)', () => {
   it('chaque fonction a un nom, une signature, une description et un insertText', () => {
@@ -30,7 +25,7 @@ describe('RHAI_FUNCTIONS (source unique)', () => {
     expect(names).toContain('date_future');
   });
 
-  it('inclut parse_date, l\'inverse de date_now/date_past/date_future', () => {
+  it("inclut parse_date, l'inverse de date_now/date_past/date_future", () => {
     const parseDate = RHAI_FUNCTIONS.find((f) => f.name === 'parse_date');
     expect(parseDate).toBeTruthy();
     expect(parseDate.signature).toBe('parse_date(text, "pattern")');
@@ -46,7 +41,7 @@ describe('RHAI_FUNCTIONS (source unique)', () => {
     expect(names).toContain('request.body');
   });
 
-  it('documente que les noms d\'en-tete sont normalises en minuscules', () => {
+  it("documente que les noms d'en-tete sont normalises en minuscules", () => {
     const headers = RHAI_FUNCTIONS.find((f) => f.name === 'request.headers');
     expect(headers.description.toLowerCase()).toContain('lowercase');
   });
@@ -76,13 +71,16 @@ describe('filterRhaiFunctions', () => {
   it('taper "request" propose les 4 accesseurs de contexte (path/query/headers/body)', () => {
     const matches = filterRhaiFunctions('request');
     expect(matches.map((f) => f.name).sort()).toEqual([
-      'request.body', 'request.headers', 'request.path', 'request.query',
+      'request.body',
+      'request.headers',
+      'request.path',
+      'request.query',
     ]);
   });
 });
 
 describe('tokenAtCursor', () => {
-  it('extrait l\'identifiant Rhai juste avant le curseur', () => {
+  it("extrait l'identifiant Rhai juste avant le curseur", () => {
     expect(tokenAtCursor('seed', 4)).toEqual({ token: 'seed', start: 0 });
   });
 
@@ -95,7 +93,7 @@ describe('tokenAtCursor', () => {
     expect(tokenAtCursor('rand_int', 4)).toEqual({ token: 'rand', start: 0 });
   });
 
-  it('fonctionne au milieu d\'un texte multi-lignes', () => {
+  it("fonctionne au milieu d'un texte multi-lignes", () => {
     const text = 'let x = 1;\nseeded_pi';
     expect(tokenAtCursor(text, text.length)).toEqual({ token: 'seeded_pi', start: 11 });
   });

@@ -50,17 +50,19 @@ test.describe('Purely mocked service: what it answers', () => {
     await request.post(`${API}/services`, {
       data: validService('nocible-avecregle', {
         real_target_url: '',
-        rules: [{
-          name: 'ok-rule',
-          method: 'GET',
-          sub_path: null,
-          action: 'mock',
-          pre_script: null,
-          script: null,
-          post_script: null,
-          conditions: { all_of: [], any_of: [] },
-          response: { status: 200, headers: [], body: [{ type: 'Literal', value: 'ok' }], chaos: null },
-        }],
+        rules: [
+          {
+            name: 'ok-rule',
+            method: 'GET',
+            sub_path: null,
+            action: 'mock',
+            pre_script: null,
+            script: null,
+            post_script: null,
+            conditions: { all_of: [], any_of: [] },
+            response: { status: 200, headers: [], body: [{ type: 'Literal', value: 'ok' }], chaos: null },
+          },
+        ],
       }),
     });
 

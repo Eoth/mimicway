@@ -4,9 +4,30 @@ import ServiceList from '../lib/components/ServiceList.svelte';
 import { resetGroupExpansionState } from '../lib/group-expansion-state.svelte.js';
 
 const mockServices = [
-  { name: 'svc-users', listen_path: '/users/*', real_target_url: 'http://users:80', is_mocked: true, group_name: null, rules: [{ name: 'r1' }] },
-  { name: 'svc-orders', listen_path: '/orders/*', real_target_url: 'http://orders:80', is_mocked: false, group_name: null, rules: [] },
-  { name: 'insee-api', listen_path: '/v4/api/insee/*', real_target_url: 'http://insee:80', is_mocked: true, group_name: 'team-a', rules: [{ name: 'siret' }] },
+  {
+    name: 'svc-users',
+    listen_path: '/users/*',
+    real_target_url: 'http://users:80',
+    is_mocked: true,
+    group_name: null,
+    rules: [{ name: 'r1' }],
+  },
+  {
+    name: 'svc-orders',
+    listen_path: '/orders/*',
+    real_target_url: 'http://orders:80',
+    is_mocked: false,
+    group_name: null,
+    rules: [],
+  },
+  {
+    name: 'insee-api',
+    listen_path: '/v4/api/insee/*',
+    real_target_url: 'http://insee:80',
+    is_mocked: true,
+    group_name: 'team-a',
+    rules: [{ name: 'siret' }],
+  },
 ];
 
 const searchPlaceholder = 'Search by name, path, URL or group...';

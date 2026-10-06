@@ -9,7 +9,7 @@ async function pasteAndParse(getByLabelText, getByText, xml) {
 }
 
 describe('XmlPasteBuilder (exampleXmlToFields via tpl-utils.js)', () => {
-  it('detecte les noeuds d\'un XML colle et les affiche', async () => {
+  it("detecte les noeuds d'un XML colle et les affiche", async () => {
     const onUpdate = vi.fn();
     const { getByLabelText, getByText } = render(XmlPasteBuilder, { props: { onUpdate } });
 
@@ -29,13 +29,19 @@ describe('XmlPasteBuilder (exampleXmlToFields via tpl-utils.js)', () => {
   it('affiche une erreur sur un XML invalide', async () => {
     const { getByLabelText, getByText } = render(XmlPasteBuilder);
     await pasteAndParse(getByLabelText, getByText, '<a><b></a>');
-    await waitFor(() => expect(getByText('Invalid XML: check the tags (empty names, wrong nesting).')).toBeInTheDocument());
+    await waitFor(() =>
+      expect(getByText('Invalid XML: check the tags (empty names, wrong nesting).')).toBeInTheDocument(),
+    );
   });
 
   it('rejette une racine sans element imbrique avec un message explicite', async () => {
     const { getByLabelText, getByText } = render(XmlPasteBuilder);
     await pasteAndParse(getByLabelText, getByText, '<response>just text</response>');
-    await waitFor(() => expect(getByText('The XML root holds no nested element. Paste XML with at least one child element.')).toBeInTheDocument());
+    await waitFor(() =>
+      expect(
+        getByText('The XML root holds no nested element. Paste XML with at least one child element.'),
+      ).toBeInTheDocument(),
+    );
   });
 
   it('le bouton "Recoller un XML" revient a la zone de collage', async () => {
@@ -61,10 +67,10 @@ describe('XmlPasteBuilder (exampleXmlToFields via tpl-utils.js)', () => {
   });
 });
 
-describe('XmlPasteBuilder — navigation par fil d\'Ariane et pliage (divergence assumee vs JsonPasteBuilder)', () => {
+describe("XmlPasteBuilder — navigation par fil d'Ariane et pliage (divergence assumee vs JsonPasteBuilder)", () => {
   const nestedXml = '<r><unite_legale><nom>ACME</nom><adresse><ville>Paris</ville></adresse></unite_legale></r>';
 
-  it('n\'affiche pas de breadcrumb tant qu\'on est a la racine', async () => {
+  it("n'affiche pas de breadcrumb tant qu'on est a la racine", async () => {
     const { getByLabelText, getByText, queryByLabelText } = render(XmlPasteBuilder);
     await pasteAndParse(getByLabelText, getByText, nestedXml);
     await waitFor(() => expect(getByText('unite_legale')).toBeInTheDocument());
@@ -120,9 +126,13 @@ describe('XmlPasteBuilder — navigation par fil d\'Ariane et pliage (divergence
 });
 
 describe('XmlPasteBuilder — attributs XML (specificite absente du modele JSON)', () => {
-  it('detecte et affiche les attributs de la racine et d\'un noeud enfant', async () => {
+  it("detecte et affiche les attributs de la racine et d'un noeud enfant", async () => {
     const { getByLabelText, getByText, getAllByText } = render(XmlPasteBuilder);
-    await pasteAndParse(getByLabelText, getByText, '<response xmlns:soap="http://x"><id type="uuid">42</id></response>');
+    await pasteAndParse(
+      getByLabelText,
+      getByText,
+      '<response xmlns:soap="http://x"><id type="uuid">42</id></response>',
+    );
 
     await waitFor(() => expect(getByText('@xmlns:soap')).toBeInTheDocument());
     expect(getByText('@type')).toBeInTheDocument();
@@ -153,7 +163,7 @@ describe('XmlPasteBuilder — attributs XML (specificite absente du modele JSON)
 
 // startParsed/rootTag/rootAttributes : seedent l'etat initial pour la
 // restauration d'une regle existante, miroir de JsonPasteBuilder.test.js.
-describe('XmlPasteBuilder — startParsed/rootTag (restauration a l\'edition, retour 1)', () => {
+describe("XmlPasteBuilder — startParsed/rootTag (restauration a l'edition, retour 1)", () => {
   it('affiche directement la liste de noeuds quand startParsed=true, sans repasser par la zone de collage', () => {
     const fields = [{ tag: 'siret', nodeType: 'value', source: 'path', value: 'siret', pipe: '', attributes: [] }];
     const { getByText, queryByLabelText } = render(XmlPasteBuilder, {
@@ -183,7 +193,7 @@ describe('XmlPasteBuilder — pipes (retour 2)', () => {
     expect(queryByLabelText('Transformation pipe for nom')).not.toBeInTheDocument();
   });
 
-  it('affiche un champ pipe des qu\'une source non-fixe est choisie, et le transmet via onUpdate', async () => {
+  it("affiche un champ pipe des qu'une source non-fixe est choisie, et le transmet via onUpdate", async () => {
     const onUpdate = vi.fn();
     const { getByLabelText, getByText } = render(XmlPasteBuilder, { props: { onUpdate } });
     await pasteAndParse(getByLabelText, getByText, '<r><siret>123</siret></r>');

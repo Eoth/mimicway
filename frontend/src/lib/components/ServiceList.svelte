@@ -11,12 +11,13 @@
   let filtered = $derived(
     search.trim() === ''
       ? services
-      : services.filter(s =>
-          s.name.toLowerCase().includes(search.toLowerCase()) ||
-          (s.listen_path || '').toLowerCase().includes(search.toLowerCase()) ||
-          s.real_target_url.toLowerCase().includes(search.toLowerCase()) ||
-          (s.group_name || '').toLowerCase().includes(search.toLowerCase())
-        )
+      : services.filter(
+          (s) =>
+            s.name.toLowerCase().includes(search.toLowerCase()) ||
+            (s.listen_path || '').toLowerCase().includes(search.toLowerCase()) ||
+            s.real_target_url.toLowerCase().includes(search.toLowerCase()) ||
+            (s.group_name || '').toLowerCase().includes(search.toLowerCase()),
+        ),
   );
 
   let grouped = $derived(() => {
@@ -40,11 +41,7 @@
     }
   });
 
-  let effectiveExpanded = $derived(
-    search.trim()
-      ? new Set(grouped().map(([key]) => key))
-      : getExpandedGroupKeys()
-  );
+  let effectiveExpanded = $derived(search.trim() ? new Set(grouped().map(([key]) => key)) : getExpandedGroupKeys());
 
   // Leaving the list to edit or clone a service unfolds its group for good, so that it is still open on the way back,
   // even when only the search had unfolded it (the search never writes to the shared expansion state).
@@ -59,7 +56,7 @@
   }
 
   function groupDisplayName(key) {
-    return key === '__ungrouped__' ? t("No group") : key;
+    return key === '__ungrouped__' ? t('No group') : key;
   }
 
   function groupId(key) {
@@ -68,38 +65,38 @@
 
   function groupCodeFor(key) {
     if (key === '__ungrouped__') return '';
-    const g = groups.find(gr => gr.name === key);
+    const g = groups.find((gr) => gr.name === key);
     return g?.code ?? '';
   }
 </script>
 
-<section aria-label={t("Service list")}>
+<section aria-label={t('Service list')}>
   {#if services.length === 0}
     <div class="empty-state" role="status">
-      <p class="empty-title">{t("No service configured")}</p>
-      <p>{t("Add a service to start mocking or proxying routes.")}</p>
+      <p class="empty-title">{t('No service configured')}</p>
+      <p>{t('Add a service to start mocking or proxying routes.')}</p>
     </div>
   {:else}
     <div class="search-bar">
-      <label for="service-search" class="sr-only">{t("Search a service")}</label>
+      <label for="service-search" class="sr-only">{t('Search a service')}</label>
       <input
         id="service-search"
         type="search"
         bind:value={search}
-        placeholder={t("Search by name, path, URL or group...")}
-        aria-label={t("Search a service")}
+        placeholder={t('Search by name, path, URL or group...')}
+        aria-label={t('Search a service')}
         data-testid="service-list-search-input"
       />
       {#if search.trim()}
         <span class="search-count" role="status" aria-live="polite" data-testid="service-list-search-count">
-          {tCount(filtered.length, "{0} / {1} service", "{0} / {1} services", services.length)}
+          {tCount(filtered.length, '{0} / {1} service', '{0} / {1} services', services.length)}
         </span>
       {/if}
     </div>
 
     {#if filtered.length === 0}
       <div class="no-results" role="status" data-testid="service-list-no-results">
-        <p>{t("No service matches “{0}”", search)}</p>
+        <p>{t('No service matches “{0}”', search)}</p>
       </div>
     {:else}
       <div class="groups-container">
@@ -168,7 +165,9 @@
     margin-bottom: var(--space-1);
   }
 
-  .empty-state p { margin: var(--space-1) 0; }
+  .empty-state p {
+    margin: var(--space-1) 0;
+  }
 
   .no-results {
     text-align: center;
@@ -179,6 +178,7 @@
     border-radius: var(--radius-m);
   }
 
-  .no-results p { margin: 0; }
-
+  .no-results p {
+    margin: 0;
+  }
 </style>

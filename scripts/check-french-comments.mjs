@@ -40,14 +40,107 @@ export const COVERED = [
 // (compare-and-swap), "aux", "sans", "tout", "encore". The last ones are nouns and verbs that test titles use: a
 // title often goes without the articles that give a sentence away (`groupe: nom accentue accepte`).
 export const FRENCH_WORDS = [
-  'les', 'pour', 'avec', 'une', 'sont', 'dans', 'qui', 'deja', 'déjà', 'regle', 'règle', 'requete', 'requête', 'meme',
-  'même', 'donc', 'sinon', 'aussi', 'mais', 'etre', 'être', 'cette', 'cela', 'lorsque', 'puis', 'chaque', 'des', 'du',
-  'de', 'le', 'la', 'un', 'et', 'ou', 'au', 'ce', 'ces', 'il', 'ne', 'pas', 'si', 'sur', 'à', 'où', 'quand', 'comme',
-  'doit', 'peut', 'fait', 'tous', 'toujours', 'jamais', 'rien', 'avant', 'apres', 'après', 'selon', 'entre', 'ici',
-  'voir', 'cote', 'côté', 'plutot', 'plutôt', 'seul', 'seule', 'deux', 'reste', 'etat', 'état', 'defaut', 'défaut',
-  'parce', 'aucun', 'aucune', 'avancee', 'avancée', 'avancees', 'avancées', 'comportement', 'donnees', 'données',
-  'erreur', 'exemple', 'exemples', 'fausse', 'fonctionne', 'groupe', 'groupes', 'pliage', 'purement', 'regles', 'règles',
-  'reponse', 'réponse', 'reponses', 'réponses', 'requetes', 'requêtes', 'reseau', 'réseau',
+  'les',
+  'pour',
+  'avec',
+  'une',
+  'sont',
+  'dans',
+  'qui',
+  'deja',
+  'déjà',
+  'regle',
+  'règle',
+  'requete',
+  'requête',
+  'meme',
+  'même',
+  'donc',
+  'sinon',
+  'aussi',
+  'mais',
+  'etre',
+  'être',
+  'cette',
+  'cela',
+  'lorsque',
+  'puis',
+  'chaque',
+  'des',
+  'du',
+  'de',
+  'le',
+  'la',
+  'un',
+  'et',
+  'ou',
+  'au',
+  'ce',
+  'ces',
+  'il',
+  'ne',
+  'pas',
+  'si',
+  'sur',
+  'à',
+  'où',
+  'quand',
+  'comme',
+  'doit',
+  'peut',
+  'fait',
+  'tous',
+  'toujours',
+  'jamais',
+  'rien',
+  'avant',
+  'apres',
+  'après',
+  'selon',
+  'entre',
+  'ici',
+  'voir',
+  'cote',
+  'côté',
+  'plutot',
+  'plutôt',
+  'seul',
+  'seule',
+  'deux',
+  'reste',
+  'etat',
+  'état',
+  'defaut',
+  'défaut',
+  'parce',
+  'aucun',
+  'aucune',
+  'avancee',
+  'avancée',
+  'avancees',
+  'avancées',
+  'comportement',
+  'donnees',
+  'données',
+  'erreur',
+  'exemple',
+  'exemples',
+  'fausse',
+  'fonctionne',
+  'groupe',
+  'groupes',
+  'pliage',
+  'purement',
+  'regles',
+  'règles',
+  'reponse',
+  'réponse',
+  'reponses',
+  'réponses',
+  'requetes',
+  'requêtes',
+  'reseau',
+  'réseau',
 ];
 
 // A letter, a digit, "_" or "-" next to a listed word makes it part of another word ("de-duplicate", "en-AU").
@@ -80,7 +173,20 @@ const SCENARIO_NAME = /"scenario"\s*:\s*("(?:\\.|[^"\\])*")/g;
 
 // Words after which a "/" starts a regular expression rather than a division.
 const KEYWORDS_BEFORE_EXPRESSION = new Set([
-  'return', 'typeof', 'instanceof', 'in', 'of', 'new', 'delete', 'void', 'throw', 'case', 'do', 'else', 'yield', 'await',
+  'return',
+  'typeof',
+  'instanceof',
+  'in',
+  'of',
+  'new',
+  'delete',
+  'void',
+  'throw',
+  'case',
+  'do',
+  'else',
+  'yield',
+  'await',
 ]);
 
 const WORD = /[\p{L}\p{N}_$]+/uy;
@@ -117,9 +223,12 @@ class Comments {
 
   add(start, end) {
     const first = this.lineOf(start);
-    this.text.slice(start, end).split('\n').forEach((text, offset) => {
-      this.lines.push({ line: first + offset, text: text.replace(/\r$/, '') });
-    });
+    this.text
+      .slice(start, end)
+      .split('\n')
+      .forEach((text, offset) => {
+        this.lines.push({ line: first + offset, text: text.replace(/\r$/, '') });
+      });
   }
 
   // The title whose string literal opens at `start` (a quote or a backtick): escapes resolved, interpolations shown

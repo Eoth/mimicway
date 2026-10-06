@@ -22,16 +22,16 @@
     if (isMocked) return;
     try {
       const active = await getObservationStatus();
-      observing = active.some(
-        (e) => e.service_name === serviceName && (e.group_name ?? null) === (groupName ?? null)
-      );
+      observing = active.some((e) => e.service_name === serviceName && (e.group_name ?? null) === (groupName ?? null));
     } catch {
       // Not critical: keep the last known status rather than block the panel on a passing network error.
     } finally {
       statusLoaded = true;
     }
   }
-  $effect(() => { refreshStatus(); });
+  $effect(() => {
+    refreshStatus();
+  });
 
   async function handleToggleObserve() {
     toggling = true;
@@ -66,16 +66,25 @@
 
   function sourceLabel(type) {
     switch (type) {
-      case 'QueryParam': return t("Query parameter");
-      case 'Header': return t("HTTP header");
-      case 'JsonPointer': return t("JSON field of the body");
-      default: return type;
+      case 'QueryParam':
+        return t('Query parameter');
+      case 'Header':
+        return t('HTTP header');
+      case 'JsonPointer':
+        return t('JSON field of the body');
+      default:
+        return type;
     }
   }
 
   function conditionSummary(condition) {
     if (!condition) return null;
-    return t("{0} \"{1}\" = \"{2}\"", sourceLabel(condition.source?.type), condition.source?.key, condition.operator?.value);
+    return t(
+      '{0} "{1}" = "{2}"',
+      sourceLabel(condition.source?.type),
+      condition.source?.key,
+      condition.operator?.value,
+    );
   }
 
   function toRuleDraft(rule) {
@@ -104,9 +113,13 @@
 </script>
 
 {#if !isMocked}
-  <section class="observation-panel" aria-label={t("Observation of the proxied traffic")} data-testid="observation-panel-{serviceName}">
+  <section
+    class="observation-panel"
+    aria-label={t('Observation of the proxied traffic')}
+    data-testid="observation-panel-{serviceName}"
+  >
     <div class="panel-header">
-      <h4>{t("Rule suggestions from real traffic")}</h4>
+      <h4>{t('Rule suggestions from real traffic')}</h4>
       <button
         type="button"
         class="btn btn-sm {observing ? 'btn-outline' : 'btn-primary'}"
@@ -114,11 +127,13 @@
         disabled={toggling || !statusLoaded}
         data-testid="observation-toggle-button-{serviceName}"
       >
-        {observing ? t("Stop observing") : t("Observe this service")}
+        {observing ? t('Stop observing') : t('Observe this service')}
       </button>
     </div>
     <p class="panel-hint">
-      {t("Captures bounded copies of requests and responses while this service is a pure proxy, to suggest mock rules from calls actually observed. Never switched on automatically.")}
+      {t(
+        'Captures bounded copies of requests and responses while this service is a pure proxy, to suggest mock rules from calls actually observed. Never switched on automatically.',
+      )}
     </p>
 
     {#if observing}
@@ -130,30 +145,34 @@
           disabled={loadingSuggestions}
           data-testid="observation-refresh-suggestions-button-{serviceName}"
         >
-          {loadingSuggestions ? t("Loading...") : t("Refresh the suggestions")}
+          {loadingSuggestions ? t('Loading...') : t('Refresh the suggestions')}
         </button>
       </div>
 
       {#if suggestions.length === 0 && !loadingSuggestions}
         <p class="panel-empty" data-testid="observation-suggestions-empty-{serviceName}">
-          {t("No suggestion yet: call this service through the proxy several times, then refresh.")}
+          {t('No suggestion yet: call this service through the proxy several times, then refresh.')}
         </p>
       {/if}
 
       {#each suggestions as suggestion, i (i)}
         {#if suggestion.outcome === 'VarianceUnexplained'}
           <p class="panel-unexplained" role="status" data-testid="observation-suggestion-unexplained-{serviceName}-{i}">
-            {t("Varying responses observed ({0} calls, {1} distinct responses) but no field of the request tells them apart reliably: no rule suggested.", suggestion.sample_count, suggestion.response_class_count)}
+            {t(
+              'Varying responses observed ({0} calls, {1} distinct responses) but no field of the request tells them apart reliably: no rule suggested.',
+              suggestion.sample_count,
+              suggestion.response_class_count,
+            )}
           </p>
         {:else}
-          {#each (suggestion.outcome === 'Unconditional' ? [suggestion.rule] : suggestion.rules) as rule, j (j)}
+          {#each suggestion.outcome === 'Unconditional' ? [suggestion.rule] : suggestion.rules as rule, j (j)}
             <div class="suggestion-card" data-testid="observation-suggestion-{serviceName}-{i}-{j}">
               <div class="suggestion-summary">
                 <code>{rule.method} {rule.sub_path}</code>
                 {#if conditionSummary(rule.condition)}
-                  <span class="suggestion-condition">{t("if {0}", conditionSummary(rule.condition))}</span>
+                  <span class="suggestion-condition">{t('if {0}', conditionSummary(rule.condition))}</span>
                 {:else}
-                  <span class="suggestion-condition">{t("no condition ({0} identical calls)", rule.sample_count)}</span>
+                  <span class="suggestion-condition">{t('no condition ({0} identical calls)', rule.sample_count)}</span>
                 {/if}
               </div>
               <div class="suggestion-response">
@@ -166,7 +185,7 @@
                 onclick={() => onUseSuggestion(toRuleDraft(rule))}
                 data-testid="observation-use-suggestion-{serviceName}-{i}-{j}"
               >
-                {t("Use this suggestion")}
+                {t('Use this suggestion')}
               </button>
             </div>
           {/each}
@@ -197,7 +216,10 @@
     gap: var(--space-3);
   }
 
-  .panel-header h4 { margin: 0; font-size: var(--text-l); }
+  .panel-header h4 {
+    margin: 0;
+    font-size: var(--text-l);
+  }
 
   .panel-hint {
     margin: var(--space-2) 0 0;
@@ -205,9 +227,12 @@
     color: var(--color-text-muted);
   }
 
-  .panel-actions { margin-top: var(--space-3); }
+  .panel-actions {
+    margin-top: var(--space-3);
+  }
 
-  .panel-empty, .panel-unexplained {
+  .panel-empty,
+  .panel-unexplained {
     margin: var(--space-3) 0 0;
     font-size: var(--text-m);
     color: var(--color-text-muted);
@@ -224,11 +249,23 @@
     gap: var(--space-1-5);
   }
 
-  .suggestion-summary { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+  .suggestion-summary {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+  }
 
-  .suggestion-condition { font-size: var(--text-s); color: var(--color-text-muted); }
+  .suggestion-condition {
+    font-size: var(--text-s);
+    color: var(--color-text-muted);
+  }
 
-  .suggestion-response { display: flex; align-items: center; gap: var(--space-2); }
+  .suggestion-response {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
 
   .suggestion-status {
     font-weight: var(--weight-heavy);
@@ -246,7 +283,9 @@
     overflow-wrap: anywhere;
   }
 
-  code { font-size: var(--text-s); }
+  code {
+    font-size: var(--text-s);
+  }
 
   .panel-error {
     margin: var(--space-3) 0 0;

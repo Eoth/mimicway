@@ -1,12 +1,7 @@
 import { render, fireEvent, waitFor } from '@testing-library/svelte';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import ObservationSuggestions from '../lib/components/ObservationSuggestions.svelte';
-import {
-  observeService,
-  unobserveService,
-  getObservationStatus,
-  getServiceSuggestions,
-} from '../lib/api.js';
+import { observeService, unobserveService, getObservationStatus, getServiceSuggestions } from '../lib/api.js';
 
 vi.mock('../lib/api.js', () => ({
   observeService: vi.fn(),
@@ -44,7 +39,7 @@ describe('ObservationSuggestions', () => {
     await waitFor(() => expect(getByText('Stop observing')).toBeInTheDocument());
   });
 
-  it('active l\'observation au clic et appelle observeService avec le bon service/groupe', async () => {
+  it("active l'observation au clic et appelle observeService avec le bon service/groupe", async () => {
     observeService.mockResolvedValue(undefined);
     const { getByText } = render(ObservationSuggestions, {
       props: { serviceName: 'svc-a', groupName: 'team-a', isMocked: false },
@@ -57,7 +52,7 @@ describe('ObservationSuggestions', () => {
     expect(observeService).toHaveBeenCalledWith('svc-a', 'team-a');
   });
 
-  it('desactive l\'observation au clic quand deja active', async () => {
+  it("desactive l'observation au clic quand deja active", async () => {
     getObservationStatus.mockResolvedValue([{ service_name: 'svc-a', group_name: null }]);
     unobserveService.mockResolvedValue(undefined);
     const { getByText } = render(ObservationSuggestions, {
@@ -71,7 +66,7 @@ describe('ObservationSuggestions', () => {
     expect(unobserveService).toHaveBeenCalledWith('svc-a', null);
   });
 
-  it('affiche une erreur si l\'activation echoue', async () => {
+  it("affiche une erreur si l'activation echoue", async () => {
     observeService.mockRejectedValue(new Error('a purely proxied service is required'));
     const { getByText } = render(ObservationSuggestions, {
       props: { serviceName: 'svc-a', isMocked: false },
@@ -80,9 +75,7 @@ describe('ObservationSuggestions', () => {
 
     await fireEvent.click(getByText('Observe this service'));
 
-    await waitFor(() =>
-      expect(getByText('a purely proxied service is required')).toBeInTheDocument()
-    );
+    await waitFor(() => expect(getByText('a purely proxied service is required')).toBeInTheDocument());
   });
 
   it('charge et affiche une suggestion inconditionnelle', async () => {
@@ -142,9 +135,7 @@ describe('ObservationSuggestions', () => {
 
     await fireEvent.click(getByText('Refresh the suggestions'));
 
-    await waitFor(() =>
-      expect(getByText('if Query parameter "id" = "1"')).toBeInTheDocument()
-    );
+    await waitFor(() => expect(getByText('if Query parameter "id" = "1"')).toBeInTheDocument());
     expect(getByText('if Query parameter "id" = "2"')).toBeInTheDocument();
 
     const useButtons = getAllByText('Use this suggestion');
@@ -162,7 +153,7 @@ describe('ObservationSuggestions', () => {
           any_of: [],
         },
         response: { status: 200, headers: [], body: [{ type: 'Literal', value: 'found' }], chaos: null },
-      })
+      }),
     );
   });
 

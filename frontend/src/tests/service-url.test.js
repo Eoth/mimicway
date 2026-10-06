@@ -10,8 +10,9 @@ describe('buildServiceTestUrl', () => {
   });
 
   it('avec groupe : prefixe par le code du groupe puis le nom du service', () => {
-    expect(buildServiceTestUrl({ name: 'svc-users', listenPath: '/v1/*', groupCode: 'ab3f9' }))
-      .toBe('/ab3f9/svc-users/v1/*');
+    expect(buildServiceTestUrl({ name: 'svc-users', listenPath: '/v1/*', groupCode: 'ab3f9' })).toBe(
+      '/ab3f9/svc-users/v1/*',
+    );
   });
 
   it('chemin vide retombe sur le wildcard /*', () => {
@@ -27,11 +28,13 @@ describe('buildServiceTestUrl', () => {
   });
 
   it('avec baseUrl (usage ServiceForm) : prefixe l URL complete', () => {
-    expect(buildServiceTestUrl({
-      name: 'svc-users',
-      listenPath: '/v1/*',
-      groupCode: 'ab3f9',
-      baseUrl: 'http://localhost:7342',
-    })).toBe('http://localhost:7342/ab3f9/svc-users/v1/*');
+    expect(
+      buildServiceTestUrl({
+        name: 'svc-users',
+        listenPath: '/v1/*',
+        groupCode: 'ab3f9',
+        baseUrl: 'http://localhost:7342',
+      }),
+    ).toBe('http://localhost:7342/ab3f9/svc-users/v1/*');
   });
 });

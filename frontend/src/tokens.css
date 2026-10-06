@@ -81,8 +81,8 @@
   /* Type: a major second (1.125) from the 16 px root, rounded to the pixel: 11, 13, 14, 16, 18, 20, 23. The small end
      is close-set on purpose: a tool kept open all day needs a body (14), a secondary size (13) and badges (11) that
      differ yet stay readable. */
-  --font-ui: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", "Liberation Sans", Arial, sans-serif;
-  --font-code: ui-monospace, "Cascadia Mono", "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --font-ui: system-ui, -apple-system, 'Segoe UI', Roboto, 'Noto Sans', 'Liberation Sans', Arial, sans-serif;
+  --font-code: ui-monospace, 'Cascadia Mono', 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
   --text-xs: 0.6875rem;
   --text-s: 0.8125rem;
   --text-m: 0.875rem;
@@ -133,7 +133,7 @@
 
 /* Light theme: lichen paper, moss ink. */
 :root,
-[data-theme="light"] {
+[data-theme='light'] {
   color-scheme: light;
   --color-bg: var(--lichen-100);
   --color-surface: var(--lichen-0);
@@ -175,7 +175,7 @@
 }
 
 /* Dark theme: the undergrowth at night, lighter moss. */
-[data-theme="dark"] {
+[data-theme='dark'] {
   color-scheme: dark;
   --color-bg: var(--lichen-950);
   --color-surface: var(--lichen-900);

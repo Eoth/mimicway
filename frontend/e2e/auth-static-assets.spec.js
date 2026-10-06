@@ -15,12 +15,7 @@ import { fileURLToPath } from 'node:url';
 // files of the interface load without one, or a browser could not even reach the login screen.
 
 const repoRoot = path.resolve(fileURLToPath(new URL('.', import.meta.url)), '..', '..');
-const binaryPath = path.join(
-  repoRoot,
-  'target',
-  'debug',
-  process.platform === 'win32' ? 'mimicway.exe' : 'mimicway',
-);
+const binaryPath = path.join(repoRoot, 'target', 'debug', process.platform === 'win32' ? 'mimicway.exe' : 'mimicway');
 const staticDir = path.join(repoRoot, 'frontend', 'dist');
 
 function getFreePort() {
@@ -110,7 +105,9 @@ test.describe('Auth: the files of the interface load without a token (AUTH_ENABL
     // This instance reaches no Keycloak, so the login answer and the data are stubbed in the browser: the test checks
     // how the interface presents a signed-in user. Token validation itself is covered by the server's tests.
     await page.route('**/api/auth/login', (route) =>
-      route.fulfill({ json: { access_token: 'stub-token', refresh_token: null, username: 'alice', is_super_admin: true } }),
+      route.fulfill({
+        json: { access_token: 'stub-token', refresh_token: null, username: 'alice', is_super_admin: true },
+      }),
     );
     await page.route('**/api/services', (route) => route.fulfill({ json: [] }));
     await page.route('**/api/groups', (route) => route.fulfill({ json: [] }));

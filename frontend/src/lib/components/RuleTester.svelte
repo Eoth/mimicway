@@ -28,14 +28,22 @@
 
   function sourceName(type) {
     switch (type) {
-      case 'QueryParam': return t("query parameter");
-      case 'Header': return t("header");
-      case 'PathParam': return t("path parameter");
-      case 'JsonPointer': return t("JSON Pointer");
-      case 'XPath': return t("XPath");
-      case 'FormField': return t("form field");
-      case 'BodyRaw': return t("raw body");
-      default: return type;
+      case 'QueryParam':
+        return t('query parameter');
+      case 'Header':
+        return t('header');
+      case 'PathParam':
+        return t('path parameter');
+      case 'JsonPointer':
+        return t('JSON Pointer');
+      case 'XPath':
+        return t('XPath');
+      case 'FormField':
+        return t('form field');
+      case 'BodyRaw':
+        return t('raw body');
+      default:
+        return type;
     }
   }
 
@@ -45,10 +53,10 @@
   }
 
   function operatorLabel(operator) {
-    if (operator.type === 'Exists') return t("exists");
+    if (operator.type === 'Exists') return t('exists');
     if (operator.type === 'Eq') return `= '${operator.value}'`;
     if (operator.type === 'Contains') return t("contains '{0}'", operator.value);
-    if (operator.type === 'Regex') return t("matches /{0}/", operator.value);
+    if (operator.type === 'Regex') return t('matches /{0}/', operator.value);
     return operator.type;
   }
 
@@ -97,33 +105,43 @@
 
   let showBodyTruncationWarning = $derived(
     !!result?.body_truncated &&
-    [...(result.all_of ?? []), ...(result.any_of ?? [])].some((e) => bodyBasedSource(e.condition.source.type))
+      [...(result.all_of ?? []), ...(result.any_of ?? [])].some((e) => bodyBasedSource(e.condition.source.type)),
   );
 
   function slotLabel(slot) {
     switch (slot) {
-      case 'pre_script': return t("Pre-script (preparation)");
-      case 'script': return t("Custom script");
-      case 'post_script': return t("Post-script (finalization)");
-      default: return slot;
+      case 'pre_script':
+        return t('Pre-script (preparation)');
+      case 'script':
+        return t('Custom script');
+      case 'post_script':
+        return t('Post-script (finalization)');
+      default:
+        return slot;
     }
   }
 </script>
 
-<section class="rule-tester" aria-label={t("Rule tester against a real request")}>
-  <h3>{t("Test against a real request")}</h3>
+<section class="rule-tester" aria-label={t('Rule tester against a real request')}>
+  <h3>{t('Test against a real request')}</h3>
 
   {#if logs.length === 0}
-    <p class="section-help">{t("No request has been captured for this service yet.")}</p>
+    <p class="section-help">{t('No request has been captured for this service yet.')}</p>
   {:else if testableLogs.length === 0}
     <p class="section-help">
-      {t("No request with captured details for this service: requests proxied directly (service not mocked) are not buffered, so no details are available for a test.")}
+      {t(
+        'No request with captured details for this service: requests proxied directly (service not mocked) are not buffered, so no details are available for a test.',
+      )}
     </p>
   {:else}
-    <FormField id="rule-tester-log" label={t("Captured request")} hint={t("Read-only replay: no request is sent again")}>
+    <FormField
+      id="rule-tester-log"
+      label={t('Captured request')}
+      hint={t('Read-only replay: no request is sent again')}
+    >
       {#snippet children({ id, describedBy })}
         <select {id} bind:value={selectedIndex} aria-describedby={describedBy} data-testid="rule-tester-log-select">
-          <option value="" disabled>{t("Choose a request")}</option>
+          <option value="" disabled>{t('Choose a request')}</option>
           {#each testableLogs as log, idx}
             <option value={String(idx)}>{logLabel(log)}</option>
           {/each}
@@ -131,8 +149,14 @@
       {/snippet}
     </FormField>
 
-    <button type="button" class="btn btn-sm btn-secondary" disabled={selectedIndex === '' || testing} onclick={handleTest} data-testid="rule-tester-test-button">
-      {testing ? t("Testing…") : t("Test against this request")}
+    <button
+      type="button"
+      class="btn btn-sm btn-secondary"
+      disabled={selectedIndex === '' || testing}
+      onclick={handleTest}
+      data-testid="rule-tester-test-button"
+    >
+      {testing ? t('Testing…') : t('Test against this request')}
     </button>
 
     {#if errorMessage}
@@ -143,26 +167,30 @@
       <div class="tester-result" role="status" data-testid="rule-tester-result">
         <p class="result-banner" class:result-ok={result.overall_matched} class:result-fail={!result.overall_matched}>
           {#if result.overall_matched}
-            {t("✓ This rule would match this request")}
+            {t('✓ This rule would match this request')}
           {:else}
-            {t("✗ This rule would not match this request")}
+            {t('✗ This rule would not match this request')}
           {/if}
         </p>
 
         <ul class="result-summary">
-          <li>{result.method_matches ? t("✓ HTTP method matches") : t("✗ HTTP method does not match")}</li>
-          <li>{result.sub_path_matches ? t("✓ Sub-path matches") : t("✗ Sub-path does not match")}</li>
+          <li>{result.method_matches ? t('✓ HTTP method matches') : t('✗ HTTP method does not match')}</li>
+          <li>{result.sub_path_matches ? t('✓ Sub-path matches') : t('✗ Sub-path does not match')}</li>
         </ul>
 
         {#if result.script_errors?.length > 0}
           <div class="callout callout-danger" role="alert" data-testid="rule-tester-script-errors">
             <p class="callout-title">
-              {tCount(result.script_errors.length, "⚠ A script failed to run: the response would be rendered with an empty result for this script (no error is returned to the client, as in production).", "⚠ Scripts failed to run: the response would be rendered with an empty result for these scripts (no error is returned to the client, as in production).")}
+              {tCount(
+                result.script_errors.length,
+                '⚠ A script failed to run: the response would be rendered with an empty result for this script (no error is returned to the client, as in production).',
+                '⚠ Scripts failed to run: the response would be rendered with an empty result for these scripts (no error is returned to the client, as in production).',
+              )}
             </p>
             <ul class="script-error-list">
               {#each result.script_errors as err}
                 <li data-testid="rule-tester-script-error-{err.slot}">
-                  <strong>{t("{0}:", slotLabel(err.slot))}</strong> <code>{err.message}</code>
+                  <strong>{t('{0}:', slotLabel(err.slot))}</strong> <code>{err.message}</code>
                 </li>
               {/each}
             </ul>
@@ -172,7 +200,11 @@
         {#if result.script_results?.length > 0}
           <div class="script-result-panel" data-testid="rule-tester-script-results">
             <p class="script-result-title">
-              {tCount(result.script_results.length, "Result of this script (no error, but check that these are the expected values):", "Result of these scripts (no error, but check that these are the expected values):")}
+              {tCount(
+                result.script_results.length,
+                'Result of this script (no error, but check that these are the expected values):',
+                'Result of these scripts (no error, but check that these are the expected values):',
+              )}
             </p>
             {#each result.script_results as sr}
               <div class="script-result-slot" data-testid="rule-tester-script-result-{sr.slot}">
@@ -197,11 +229,11 @@
 
         {#if showBodyTruncationWarning}
           <p class="callout callout-warning">
-            {t("⚠ The body of this request was truncated in the log: comparisons on the body may be wrong.")}
+            {t('⚠ The body of this request was truncated in the log: comparisons on the body may be wrong.')}
           </p>
         {/if}
 
-        {#each [['all_of', t("AND conditions"), result.all_of], ['any_of', t("OR conditions"), result.any_of]] as [key, title, evaluations]}
+        {#each [['all_of', t('AND conditions'), result.all_of], ['any_of', t('OR conditions'), result.any_of]] as [key, title, evaluations]}
           {#if evaluations.length > 0}
             <div class="condition-group-result">
               <h4>{title}</h4>
@@ -212,8 +244,18 @@
                       <span class="eval-icon" aria-hidden="true">{ev.matched ? '✓' : '✗'}</span>
                       <span class="eval-text">
                         {ev.matched
-                          ? t("{0} {1}: matches (value found: {2})", sourceLabel(ev.condition.source), operatorLabel(ev.condition.operator), ev.found_value != null ? `'${ev.found_value}'` : t("none"))
-                          : t("{0} {1}: does not match (value found: {2})", sourceLabel(ev.condition.source), operatorLabel(ev.condition.operator), ev.found_value != null ? `'${ev.found_value}'` : t("none"))}
+                          ? t(
+                              '{0} {1}: matches (value found: {2})',
+                              sourceLabel(ev.condition.source),
+                              operatorLabel(ev.condition.operator),
+                              ev.found_value != null ? `'${ev.found_value}'` : t('none'),
+                            )
+                          : t(
+                              '{0} {1}: does not match (value found: {2})',
+                              sourceLabel(ev.condition.source),
+                              operatorLabel(ev.condition.operator),
+                              ev.found_value != null ? `'${ev.found_value}'` : t('none'),
+                            )}
                       </span>
                     </div>
                     {#if ev.hint}

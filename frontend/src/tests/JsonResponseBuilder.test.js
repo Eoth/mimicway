@@ -11,16 +11,14 @@ const nestedFields = [
       {
         key: 'adresse',
         fieldType: 'object',
-        children: [
-          { key: 'ville', fieldType: 'value', source: 'fixed', value: 'Paris', pipe: '', asNumber: false },
-        ],
+        children: [{ key: 'ville', fieldType: 'value', source: 'fixed', value: 'Paris', pipe: '', asNumber: false }],
       },
     ],
   },
 ];
 
 describe('JsonResponseBuilder — breadcrumb de navigation', () => {
-  it('n\'affiche pas de breadcrumb tant qu\'on est a la racine', () => {
+  it("n'affiche pas de breadcrumb tant qu'on est a la racine", () => {
     const { queryByLabelText } = render(JsonResponseBuilder, { props: { fields: nestedFields } });
     expect(queryByLabelText('Data path')).not.toBeInTheDocument();
   });
@@ -45,7 +43,9 @@ describe('JsonResponseBuilder — breadcrumb de navigation', () => {
   });
 
   it('permet de remonter en cliquant sur "racine" dans le breadcrumb', async () => {
-    const { getByLabelText, getByText, getByDisplayValue } = render(JsonResponseBuilder, { props: { fields: nestedFields } });
+    const { getByLabelText, getByText, getByDisplayValue } = render(JsonResponseBuilder, {
+      props: { fields: nestedFields },
+    });
 
     await fireEvent.click(getByLabelText('Go into unite_legale'));
     await fireEvent.click(getByLabelText('Go into adresse'));
@@ -55,7 +55,7 @@ describe('JsonResponseBuilder — breadcrumb de navigation', () => {
     expect(getByDisplayValue('unite_legale')).toBeInTheDocument();
   });
 
-  it('le dernier segment du breadcrumb n\'est pas cliquable (aria-current page)', async () => {
+  it("le dernier segment du breadcrumb n'est pas cliquable (aria-current page)", async () => {
     const { getByLabelText, getByText } = render(JsonResponseBuilder, { props: { fields: nestedFields } });
     await fireEvent.click(getByLabelText('Go into unite_legale'));
 
@@ -89,7 +89,9 @@ describe('JsonResponseBuilder — pliage/depliage des noeuds imbriques', () => {
 
   it('replier un noeud masque son contenu et affiche un indicateur, sans perdre les donnees', async () => {
     const onUpdate = vi.fn();
-    const { getByLabelText, getByDisplayValue } = render(JsonResponseBuilder, { props: { fields: nestedFields, onUpdate } });
+    const { getByLabelText, getByDisplayValue } = render(JsonResponseBuilder, {
+      props: { fields: nestedFields, onUpdate },
+    });
 
     const toggle = getByLabelText('Collapse unite_legale');
     await fireEvent.click(toggle);
@@ -151,7 +153,11 @@ describe('JsonResponseBuilder — source "Resultat du script"', () => {
 });
 
 describe('JsonResponseBuilder: a fold follows its field', () => {
-  const object = (key) => ({ key, fieldType: 'object', children: [{ key: `${key}-child`, fieldType: 'value', source: 'fixed', value: '1', pipe: '', asNumber: false }] });
+  const object = (key) => ({
+    key,
+    fieldType: 'object',
+    children: [{ key: `${key}-child`, fieldType: 'value', source: 'fixed', value: '1', pipe: '', asNumber: false }],
+  });
   const expanded = (container, testPath) =>
     container.querySelector(`[data-testid="json-builder-collapse-button-${testPath}"]`).getAttribute('aria-expanded');
   const click = (container, testId) => fireEvent.click(container.querySelector(`[data-testid="${testId}"]`));

@@ -12,14 +12,7 @@
   import { filterRhaiFunctions, tokenAtCursor, computeInsertSelection } from '../rhai-functions.js';
   import { t } from '../i18n.svelte.js';
 
-  let {
-    id,
-    value = '',
-    onInput = () => {},
-    rows = 5,
-    placeholder = '',
-    ariaDescribedby = undefined,
-  } = $props();
+  let { id, value = '', onInput = () => {}, rows = 5, placeholder = '', ariaDescribedby = undefined } = $props();
 
   let textareaEl = $state(null);
   let showSuggestions = $state(false);
@@ -111,10 +104,15 @@
     aria-autocomplete="list"
     aria-controls={showSuggestions ? listboxId : undefined}
     aria-activedescendant={showSuggestions ? `${listboxId}-opt-${activeIndex}` : undefined}
-    data-testid="rhai-script-editor-textarea-{id}"
-  ></textarea>
+    data-testid="rhai-script-editor-textarea-{id}"></textarea>
   {#if showSuggestions}
-    <ul class="rhai-suggestions" id={listboxId} role="listbox" aria-label={t("Available Rhai functions")} data-testid="rhai-script-editor-suggestions-{id}">
+    <ul
+      class="rhai-suggestions"
+      id={listboxId}
+      role="listbox"
+      aria-label={t('Available Rhai functions')}
+      data-testid="rhai-script-editor-suggestions-{id}"
+    >
       {#each suggestions as fn, i (fn.name)}
         <li
           id="{listboxId}-opt-{i}"
@@ -122,8 +120,11 @@
           aria-selected={i === activeIndex}
           class="rhai-suggestion"
           class:active={i === activeIndex}
-          onmousedown={(e) => { e.preventDefault(); selectSuggestion(fn); }}
-          onmouseenter={() => activeIndex = i}
+          onmousedown={(e) => {
+            e.preventDefault();
+            selectSuggestion(fn);
+          }}
+          onmouseenter={() => (activeIndex = i)}
           data-testid="rhai-script-editor-suggestion-{id}-{fn.name}"
         >
           <code class="rhai-suggestion-sig">{fn.signature}</code>
@@ -135,9 +136,22 @@
 </div>
 
 <style>
-  .rhai-editor { position: relative; }
+  .rhai-editor {
+    position: relative;
+  }
 
-  .script-textarea { width: 100%; font-family: var(--font-code); font-size: var(--text-s); padding: var(--space-2); border: var(--line-thin) solid var(--color-control); border-radius: var(--radius-m); background: var(--color-bg); color: var(--color-text); resize: vertical; font-variant-ligatures: none; }
+  .script-textarea {
+    width: 100%;
+    font-family: var(--font-code);
+    font-size: var(--text-s);
+    padding: var(--space-2);
+    border: var(--line-thin) solid var(--color-control);
+    border-radius: var(--radius-m);
+    background: var(--color-bg);
+    color: var(--color-text);
+    resize: vertical;
+    font-variant-ligatures: none;
+  }
 
   .rhai-suggestions {
     position: absolute;
@@ -185,6 +199,8 @@
   }
 
   @media (max-width: 30rem) {
-    .rhai-suggestions { max-height: 10rem; }
+    .rhai-suggestions {
+      max-height: 10rem;
+    }
   }
 </style>

@@ -35,25 +35,99 @@
   let rootAttributes = $state(untrack(() => initialRootAttributes));
 
   const valueSources = [
-    { value: 'fixed', get label() { return t("Keep the value"); } },
-    { value: 'path', get label() { return t("URL parameter"); } },
-    { value: 'query', get label() { return t("Query param"); } },
-    { value: 'header', get label() { return t("HTTP header"); } },
-    { value: 'body', get label() { return t("Echo of the body (JSON pointer)"); } },
-    { value: 'xpath', get label() { return t("XPath (XML/SOAP)"); } },
-    { value: 'fake', get label() { return t("Fake data"); } },
-    { value: 'uuid', get label() { return t("UUID"); } },
-    { value: 'now_ms', get label() { return t("Timestamp (ms)"); } },
-    { value: 'now_iso', get label() { return t("ISO date"); } },
-    { value: 'seq', get label() { return t("Counter"); } },
-    { value: 'script', get label() { return t("Script result"); } },
+    {
+      value: 'fixed',
+      get label() {
+        return t('Keep the value');
+      },
+    },
+    {
+      value: 'path',
+      get label() {
+        return t('URL parameter');
+      },
+    },
+    {
+      value: 'query',
+      get label() {
+        return t('Query param');
+      },
+    },
+    {
+      value: 'header',
+      get label() {
+        return t('HTTP header');
+      },
+    },
+    {
+      value: 'body',
+      get label() {
+        return t('Echo of the body (JSON pointer)');
+      },
+    },
+    {
+      value: 'xpath',
+      get label() {
+        return t('XPath (XML/SOAP)');
+      },
+    },
+    {
+      value: 'fake',
+      get label() {
+        return t('Fake data');
+      },
+    },
+    {
+      value: 'uuid',
+      get label() {
+        return t('UUID');
+      },
+    },
+    {
+      value: 'now_ms',
+      get label() {
+        return t('Timestamp (ms)');
+      },
+    },
+    {
+      value: 'now_iso',
+      get label() {
+        return t('ISO date');
+      },
+    },
+    {
+      value: 'seq',
+      get label() {
+        return t('Counter');
+      },
+    },
+    {
+      value: 'script',
+      get label() {
+        return t('Script result');
+      },
+    },
   ];
 
   const fakeOptions = [
-    'FirstName', 'LastName', 'Email', 'PhoneNumberFR', 'CompanyName',
-    'StreetName', 'CityFR', 'PostcodeFR', 'Siren', 'Siret',
-    'FullAddressFR', 'DatePast', 'DateFuture', 'TimestampMs',
-    'BoolRandom', 'LoremSentence', 'CountryFR', 'IbanFR',
+    'FirstName',
+    'LastName',
+    'Email',
+    'PhoneNumberFR',
+    'CompanyName',
+    'StreetName',
+    'CityFR',
+    'PostcodeFR',
+    'Siren',
+    'Siret',
+    'FullAddressFR',
+    'DatePast',
+    'DateFuture',
+    'TimestampMs',
+    'BoolRandom',
+    'LoremSentence',
+    'CountryFR',
+    'IbanFR',
   ];
 
   // Pipe suggestions for the content of value nodes, the same as XmlResponseBuilder.svelte. Attributes take a source
@@ -73,7 +147,9 @@
     { value: 'trim', label: 'trim' },
   ];
 
-  function deepClone(obj) { return JSON.parse(JSON.stringify(obj)); }
+  function deepClone(obj) {
+    return JSON.parse(JSON.stringify(obj));
+  }
 
   function getByPath(root, path) {
     let current = root;
@@ -103,16 +179,26 @@
 
   let focusedFields = $derived(getByPathSafe(fields, focusPath) ?? []);
 
-  function isCollapsed(testPath) { return collapsedPaths.has(testPath); }
+  function isCollapsed(testPath) {
+    return collapsedPaths.has(testPath);
+  }
 
   function toggleCollapse(testPath) {
     const next = new Set(collapsedPaths);
-    if (next.has(testPath)) next.delete(testPath); else next.add(testPath);
+    if (next.has(testPath)) next.delete(testPath);
+    else next.add(testPath);
     collapsedPaths = next;
   }
 
   function breadcrumbTrail(path) {
-    const trail = [{ get label() { return t("root"); }, path: [] }];
+    const trail = [
+      {
+        get label() {
+          return t('root');
+        },
+        path: [],
+      },
+    ];
     let current = fields;
     for (let i = 0; i < path.length; i += 2) {
       const idx = path[i];
@@ -129,7 +215,10 @@
   function handleParse() {
     parseError = '';
     const text = pasteInput.trim();
-    if (!text) { parseError = t("Paste valid XML."); return; }
+    if (!text) {
+      parseError = t('Paste valid XML.');
+      return;
+    }
     try {
       const result = exampleXmlToFields(text);
       rootTag = result.rootTag;
@@ -166,7 +255,7 @@
   }
 
   function updateNodeProp(path, idx, prop, val) {
-    mutate(root => {
+    mutate((root) => {
       const arr = getByPath(root, path);
       const node = { ...arr[idx], [prop]: val };
       applySourceDefaults(node, prop, val);
@@ -175,7 +264,7 @@
   }
 
   function updateAttrProp(path, idx, attrIdx, prop, val) {
-    mutate(root => {
+    mutate((root) => {
       const arr = getByPath(root, path);
       const node = { ...arr[idx] };
       const attrs = [...(node.attributes || [])];
@@ -197,65 +286,88 @@
     emit();
   }
 
-  function emit() { onUpdate(fields); }
+  function emit() {
+    onUpdate(fields);
+  }
 
   function needsValueInput(src) {
     return ['fixed', 'path', 'query', 'header', 'body', 'xpath', 'script'].includes(src);
   }
 
   function valuePlaceholder(src) {
-    if (src === 'fixed') return t("fixed value");
-    if (src === 'xpath') return t("e.g. Envelope/Body/search/Id");
+    if (src === 'fixed') return t('fixed value');
+    if (src === 'xpath') return t('e.g. Envelope/Body/search/Id');
     // As in XmlResponseBuilder.svelte: a script result is read one flat key deep ({{script.field}}).
-    if (src === 'script') return t("e.g. name (empty = the whole {{script}}; one level only: test the rule to see the keys)");
-    return t("parameter name");
+    if (src === 'script')
+      return t('e.g. name (empty = the whole {{script}}; one level only: test the rule to see the keys)');
+    return t('parameter name');
   }
 
-  function buildExpr(f) { return sharedBuildExpr(f); }
+  function buildExpr(f) {
+    return sharedBuildExpr(f);
+  }
 
   export function toTemplate() {
     return xmlFieldsToTemplate(fields, rootTag, rootAttributes);
   }
 </script>
 
-<div class="paste-builder" aria-label={t("XML builder by example")}>
+<div class="paste-builder" aria-label={t('XML builder by example')}>
   {#if !parsed}
     <div class="paste-zone">
-      <label for="xml-paste-input">{t("Paste an example of the XML response")}</label>
+      <label for="xml-paste-input">{t('Paste an example of the XML response')}</label>
       <textarea
         id="xml-paste-input"
         bind:value={pasteInput}
         rows="6"
         class="paste-textarea"
-        placeholder={t("<response>\n  <id>42</id>\n  <name>ACME Corp</name>\n</response>")}
-        data-testid="xml-paste-builder-textarea"
-      ></textarea>
+        placeholder={t('<response>\n  <id>42</id>\n  <name>ACME Corp</name>\n</response>')}
+        data-testid="xml-paste-builder-textarea"></textarea>
       {#if parseError}
         <div class="form-error" role="alert" data-testid="xml-paste-builder-error">{parseError}</div>
       {/if}
-      <button type="button" class="btn btn-primary btn-sm" onclick={handleParse} data-testid="xml-paste-builder-analyze-button">
-        {t("Analyze and make it variable")}
+      <button
+        type="button"
+        class="btn btn-primary btn-sm"
+        onclick={handleParse}
+        data-testid="xml-paste-builder-analyze-button"
+      >
+        {t('Analyze and make it variable')}
       </button>
     </div>
   {:else}
     <div class="paste-header">
-      <span class="field-hint"><Sentence text={tCount(fields.length, "Root {1}, {0} root node detected: choose the source of each value", "Root {1}, {0} root nodes detected: choose the source of each value")} codes={['', `<${rootTag}>`]} /></span>
-      <button type="button" class="btn btn-outline btn-sm" onclick={resetPaste} data-testid="xml-paste-builder-reset-button">
-        {t("Paste another XML")}
+      <span class="field-hint"
+        ><Sentence
+          text={tCount(
+            fields.length,
+            'Root {1}, {0} root node detected: choose the source of each value',
+            'Root {1}, {0} root nodes detected: choose the source of each value',
+          )}
+          codes={['', `<${rootTag}>`]}
+        /></span
+      >
+      <button
+        type="button"
+        class="btn btn-outline btn-sm"
+        onclick={resetPaste}
+        data-testid="xml-paste-builder-reset-button"
+      >
+        {t('Paste another XML')}
       </button>
     </div>
 
     {#snippet renderAttributes(attributes, testPathPrefix, onAttrUpdate)}
       {#if attributes && attributes.length > 0}
         <div class="paste-attrs">
-          <span class="paste-attrs-label">{t("Attributes:")}</span>
+          <span class="paste-attrs-label">{t('Attributes:')}</span>
           {#each attributes as attr, aidx}
             <div class="paste-attr-row">
               <span class="paste-attr-name">@{attr.name}</span>
               <select
                 value={attr.source}
                 onchange={(e) => onAttrUpdate(aidx, 'source', e.target.value)}
-                aria-label={t("Source for the attribute {0} ({1})", attr.name, testPathPrefix)}
+                aria-label={t('Source for the attribute {0} ({1})', attr.name, testPathPrefix)}
                 data-testid="xml-paste-builder-attr-source-select-{testPathPrefix}-{aidx}"
               >
                 {#each valueSources as vs}<option value={vs.value}>{vs.label}</option>{/each}
@@ -264,7 +376,7 @@
                 <select
                   value={attr.value}
                   onchange={(e) => onAttrUpdate(aidx, 'value', e.target.value)}
-                  aria-label={t("Fake data kind for the attribute {0} ({1})", attr.name, testPathPrefix)}
+                  aria-label={t('Fake data kind for the attribute {0} ({1})', attr.name, testPathPrefix)}
                   data-testid="xml-paste-builder-attr-fake-select-{testPathPrefix}-{aidx}"
                 >
                   {#each fakeOptions as fo}<option value={fo}>{fo}</option>{/each}
@@ -276,7 +388,7 @@
                   value={attr.value}
                   oninput={(e) => onAttrUpdate(aidx, 'value', e.target.value)}
                   placeholder={valuePlaceholder(attr.source)}
-                  aria-label={t("Value for the attribute {0} ({1})", attr.name, testPathPrefix)}
+                  aria-label={t('Value for the attribute {0} ({1})', attr.name, testPathPrefix)}
                   data-testid="xml-paste-builder-attr-value-input-{testPathPrefix}-{aidx}"
                 />
               {/if}
@@ -294,14 +406,19 @@
     {@render renderAttributes(rootAttributes, 'root', (aidx, prop, val) => updateRootAttrProp(aidx, prop, val))}
 
     {#if focusPath.length > 0}
-      <nav class="data-breadcrumb" aria-label={t("Data path")}>
+      <nav class="data-breadcrumb" aria-label={t('Data path')}>
         <ol>
           {#each breadcrumb as segment, i}
             <li aria-current={i === breadcrumb.length - 1 ? 'page' : undefined}>
               {#if i === breadcrumb.length - 1}
                 <span>{segment.label}</span>
               {:else}
-                <button type="button" class="breadcrumb-link" onclick={() => focusPath = segment.path} data-testid="xml-paste-builder-breadcrumb-link-{i}">{segment.label}</button>
+                <button
+                  type="button"
+                  class="breadcrumb-link"
+                  onclick={() => (focusPath = segment.path)}
+                  data-testid="xml-paste-builder-breadcrumb-link-{i}">{segment.label}</button
+                >
               {/if}
             </li>
           {/each}
@@ -324,32 +441,46 @@
                 onclick={() => toggleCollapse(testPath)}
                 aria-expanded={!collapsed}
                 aria-controls="xml-paste-builder-children-{testPath}"
-                aria-label={collapsed ? t("Expand {0}", field.tag || t("this node")) : t("Collapse {0}", field.tag || t("this node"))}
-                title={collapsed ? t("Expand") : t("Collapse")}
-                data-testid="xml-paste-builder-collapse-button-{testPath}"
-              >{collapsed ? '▶' : '▼'}</button>
+                aria-label={collapsed
+                  ? t('Expand {0}', field.tag || t('this node'))
+                  : t('Collapse {0}', field.tag || t('this node'))}
+                title={collapsed ? t('Expand') : t('Collapse')}
+                data-testid="xml-paste-builder-collapse-button-{testPath}">{collapsed ? '▶' : '▼'}</button
+              >
             {/if}
             <span class="paste-key">{field.tag}</span>
             {#if hasChildren}
-              <span class="paste-type-badge">{t("parent node ({0})", (field.children || []).length)}</span>
+              <span class="paste-type-badge">{t('parent node ({0})', (field.children || []).length)}</span>
               {#if collapsed}
-                <span class="collapsed-indicator" data-testid="xml-paste-builder-collapsed-indicator-{testPath}">{tCount((field.children || []).length, "({0} hidden item)", "({0} hidden items)")}</span>
+                <span class="collapsed-indicator" data-testid="xml-paste-builder-collapsed-indicator-{testPath}"
+                  >{tCount((field.children || []).length, '({0} hidden item)', '({0} hidden items)')}</span
+                >
               {/if}
               <button
                 type="button"
                 class="btn-icon btn-icon-xs"
-                onclick={() => focusPath = [...path, idx, 'children']}
-                aria-label={t("Go into {0}", field.tag || t("this node"))}
-                title={t("Go into this node")}
-                data-testid="xml-paste-builder-navigate-button-{testPath}"
-              >&#8594;</button>
+                onclick={() => (focusPath = [...path, idx, 'children'])}
+                aria-label={t('Go into {0}', field.tag || t('this node'))}
+                title={t('Go into this node')}
+                data-testid="xml-paste-builder-navigate-button-{testPath}">&#8594;</button
+              >
             {:else}
               <div class="paste-controls">
-                <select value={field.source} onchange={(e) => updateNodeProp(path, idx, 'source', e.target.value)} aria-label={t("Source for {0}", field.tag)} data-testid="xml-paste-builder-source-select-{testPath}">
+                <select
+                  value={field.source}
+                  onchange={(e) => updateNodeProp(path, idx, 'source', e.target.value)}
+                  aria-label={t('Source for {0}', field.tag)}
+                  data-testid="xml-paste-builder-source-select-{testPath}"
+                >
                   {#each valueSources as vs}<option value={vs.value}>{vs.label}</option>{/each}
                 </select>
                 {#if field.source === 'fake'}
-                  <select value={field.value} onchange={(e) => updateNodeProp(path, idx, 'value', e.target.value)} aria-label={t("Fake data kind for {0}", field.tag)} data-testid="xml-paste-builder-fake-select-{testPath}">
+                  <select
+                    value={field.value}
+                    onchange={(e) => updateNodeProp(path, idx, 'value', e.target.value)}
+                    aria-label={t('Fake data kind for {0}', field.tag)}
+                    data-testid="xml-paste-builder-fake-select-{testPath}"
+                  >
                     {#each fakeOptions as fo}<option value={fo}>{fo}</option>{/each}
                   </select>
                 {:else if needsValueInput(field.source)}
@@ -359,7 +490,7 @@
                     value={field.value}
                     oninput={(e) => updateNodeProp(path, idx, 'value', e.target.value)}
                     placeholder={valuePlaceholder(field.source)}
-                    aria-label={t("Value for {0}", field.tag)}
+                    aria-label={t('Value for {0}', field.tag)}
                     data-testid="xml-paste-builder-value-input-{testPath}"
                   />
                 {/if}
@@ -369,8 +500,8 @@
                     class="pipe-input"
                     value={field.pipe || ''}
                     oninput={(e) => updateNodeProp(path, idx, 'pipe', e.target.value)}
-                    placeholder={t("e.g. {0}", "lower | first(5)")}
-                    aria-label={t("Transformation pipe for {0}", field.tag)}
+                    placeholder={t('e.g. {0}', 'lower | first(5)')}
+                    aria-label={t('Transformation pipe for {0}', field.tag)}
                     list="dl-xml-paste-pipes"
                     autocomplete="off"
                     data-testid="xml-paste-builder-pipe-input-{testPath}"
@@ -385,7 +516,9 @@
             {/if}
           </div>
 
-          {@render renderAttributes(field.attributes, testPath, (aidx, prop, val) => updateAttrProp(path, idx, aidx, prop, val))}
+          {@render renderAttributes(field.attributes, testPath, (aidx, prop, val) =>
+            updateAttrProp(path, idx, aidx, prop, val),
+          )}
 
           {#if hasChildren}
             <div class="nested-block" id="xml-paste-builder-children-{testPath}" hidden={collapsed}>
@@ -405,84 +538,184 @@
 </div>
 
 <style>
-  .paste-builder { display: flex; flex-direction: column; gap: var(--space-3); }
+  .paste-builder {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+  }
 
-  .paste-zone { display: flex; flex-direction: column; gap: var(--space-2); }
-  .paste-zone label { font-weight: var(--weight-strong); font-size: var(--text-m); }
+  .paste-zone {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+  .paste-zone label {
+    font-weight: var(--weight-strong);
+    font-size: var(--text-m);
+  }
   .paste-textarea {
-    width: 100%; font-family: var(--font-code);
-    font-size: var(--text-s); padding: var(--space-2);
-    border: var(--line-thick) dashed var(--color-control); border-radius: var(--radius-m);
-    background: var(--color-bg); color: var(--color-text); resize: vertical;
+    width: 100%;
+    font-family: var(--font-code);
+    font-size: var(--text-s);
+    padding: var(--space-2);
+    border: var(--line-thick) dashed var(--color-control);
+    border-radius: var(--radius-m);
+    background: var(--color-bg);
+    color: var(--color-text);
+    resize: vertical;
     min-height: 8rem;
   }
-  .paste-textarea:focus { border-color: var(--color-primary); border-style: solid; }
+  .paste-textarea:focus {
+    border-color: var(--color-primary);
+    border-style: solid;
+  }
 
-  .paste-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: var(--space-2); }
+  .paste-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
 
   .paste-field {
-    padding: var(--space-1-5) 0; border-bottom: var(--line-thin) solid var(--color-border);
+    padding: var(--space-1-5) 0;
+    border-bottom: var(--line-thin) solid var(--color-border);
   }
-  .paste-field:last-child { border-bottom: none; }
+  .paste-field:last-child {
+    border-bottom: none;
+  }
 
-  .paste-field-main { display: flex; flex-direction: column; gap: var(--space-1); align-items: flex-start; }
+  .paste-field-main {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    align-items: flex-start;
+  }
 
   .paste-key {
-    font-weight: var(--weight-heavy); font-size: var(--text-m); color: var(--color-primary);
+    font-weight: var(--weight-heavy);
+    font-size: var(--text-m);
+    color: var(--color-primary);
     font-family: var(--font-code);
   }
 
   .paste-type-badge {
-    display: inline-block; font-size: var(--text-xs); font-weight: var(--weight-strong);
-    color: var(--color-text-muted); background: var(--color-bg);
-    padding: var(--space-0-5) var(--space-1-5); border-radius: var(--radius-s); width: fit-content;
+    display: inline-block;
+    font-size: var(--text-xs);
+    font-weight: var(--weight-strong);
+    color: var(--color-text-muted);
+    background: var(--color-bg);
+    padding: var(--space-0-5) var(--space-1-5);
+    border-radius: var(--radius-s);
+    width: fit-content;
   }
 
   .paste-controls {
-    display: flex; gap: var(--space-1-5); align-items: center; flex-wrap: wrap;
+    display: flex;
+    gap: var(--space-1-5);
+    align-items: center;
+    flex-wrap: wrap;
   }
   .paste-controls select {
-    padding: var(--space-1) var(--space-2); border: var(--line-thin) solid var(--color-control);
-    border-radius: var(--radius-m); font-size: var(--text-s);
-    background: var(--color-surface); color: var(--color-text);
+    padding: var(--space-1) var(--space-2);
+    border: var(--line-thin) solid var(--color-control);
+    border-radius: var(--radius-m);
+    font-size: var(--text-s);
+    background: var(--color-surface);
+    color: var(--color-text);
   }
   .paste-value {
-    padding: var(--space-1) var(--space-2); border: var(--line-thin) solid var(--color-border);
-    border-radius: var(--radius-m); font-size: var(--text-s);
-    background: var(--color-surface); color: var(--color-text);
-    min-width: 8rem; flex: 1;
+    padding: var(--space-1) var(--space-2);
+    border: var(--line-thin) solid var(--color-border);
+    border-radius: var(--radius-m);
+    font-size: var(--text-s);
+    background: var(--color-surface);
+    color: var(--color-text);
+    min-width: 8rem;
+    flex: 1;
   }
 
   .pipe-input {
-    min-width: 8rem; max-width: 14rem; padding: var(--space-1) var(--space-2);
-    border: var(--line-thin) solid var(--color-control); border-radius: var(--radius-m);
-    font-size: var(--text-s); font-family: var(--font-code);
+    min-width: 8rem;
+    max-width: 14rem;
+    padding: var(--space-1) var(--space-2);
+    border: var(--line-thin) solid var(--color-control);
+    border-radius: var(--radius-m);
+    font-size: var(--text-s);
+    font-family: var(--font-code);
     color: var(--color-primary);
   }
 
   .paste-preview-fixed {
-    font-size: var(--text-s); color: var(--color-text-muted); font-style: italic;
+    font-size: var(--text-s);
+    color: var(--color-text-muted);
+    font-style: italic;
   }
   .paste-preview-var {
-    font-size: var(--text-s); color: var(--color-success); font-family: var(--font-code);
+    font-size: var(--text-s);
+    color: var(--color-success);
+    font-family: var(--font-code);
     font-weight: var(--weight-strong);
   }
 
   .paste-attrs {
-    display: flex; flex-direction: column; gap: var(--space-1);
-    margin: var(--space-1) 0 var(--space-1-5); padding: var(--space-1-5) var(--space-2);
-    background: var(--color-bg); border-radius: var(--radius-m);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    margin: var(--space-1) 0 var(--space-1-5);
+    padding: var(--space-1-5) var(--space-2);
+    background: var(--color-bg);
+    border-radius: var(--radius-m);
     border: var(--line-thin) dashed var(--color-border);
   }
-  .paste-attrs-label { font-size: var(--text-xs); font-weight: var(--weight-strong); color: var(--color-text-muted); text-transform: uppercase; }
-  .paste-attr-row { display: flex; gap: var(--space-1-5); align-items: center; flex-wrap: wrap; }
-  .paste-attr-name { font-family: var(--font-code); font-size: var(--text-s); color: var(--color-text-muted); }
-  .paste-attr-row select { padding: var(--space-1) var(--space-2); border: var(--line-thin) solid var(--color-control); border-radius: var(--radius-m); font-size: var(--text-s); background: var(--color-surface); color: var(--color-text); }
+  .paste-attrs-label {
+    font-size: var(--text-xs);
+    font-weight: var(--weight-strong);
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+  }
+  .paste-attr-row {
+    display: flex;
+    gap: var(--space-1-5);
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .paste-attr-name {
+    font-family: var(--font-code);
+    font-size: var(--text-s);
+    color: var(--color-text-muted);
+  }
+  .paste-attr-row select {
+    padding: var(--space-1) var(--space-2);
+    border: var(--line-thin) solid var(--color-control);
+    border-radius: var(--radius-m);
+    font-size: var(--text-s);
+    background: var(--color-surface);
+    color: var(--color-text);
+  }
 
-  .collapse-toggle { flex-shrink: 0; }
+  .collapse-toggle {
+    flex-shrink: 0;
+  }
 
-  .nested-block { margin-top: var(--space-1); padding-left: var(--space-3); border-left: var(--line-thick) solid var(--color-primary); }
+  .nested-block {
+    margin-top: var(--space-1);
+    padding-left: var(--space-3);
+    border-left: var(--line-thick) solid var(--color-primary);
+  }
 
-  .breadcrumb-link { background: none; border: none; padding: 0; color: var(--color-primary); cursor: pointer; font: inherit; text-decoration: underline; text-underline-offset: 2px; }
-  .breadcrumb-link:hover { color: var(--color-primary-hover); }
+  .breadcrumb-link {
+    background: none;
+    border: none;
+    padding: 0;
+    color: var(--color-primary);
+    cursor: pointer;
+    font: inherit;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .breadcrumb-link:hover {
+    color: var(--color-primary-hover);
+  }
 </style>

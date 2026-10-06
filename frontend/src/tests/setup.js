@@ -7,7 +7,10 @@ import { setLocale } from '../lib/i18n.svelte.js';
 // developer's machine, en-US on a CI runner, so a test could pass on one and fail on the other.
 process.env.TZ = 'UTC';
 const BROWSER_LOCALE = 'en-US';
-for (const [type, methods] of [[Date, ['toLocaleString', 'toLocaleDateString', 'toLocaleTimeString']], [Number, ['toLocaleString']]]) {
+for (const [type, methods] of [
+  [Date, ['toLocaleString', 'toLocaleDateString', 'toLocaleTimeString']],
+  [Number, ['toLocaleString']],
+]) {
   for (const method of methods) {
     const original = type.prototype[method];
     if (original.machineLocale) continue;

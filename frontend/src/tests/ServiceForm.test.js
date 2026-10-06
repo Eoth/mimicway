@@ -146,7 +146,7 @@ describe('ServiceForm validation', () => {
     expect(getByLabelText('Service name')).toBeDisabled();
   });
 
-  it('laisse le champ nom editable lors d\'un clonage (service pre-rempli sans isEdit)', async () => {
+  it("laisse le champ nom editable lors d'un clonage (service pre-rempli sans isEdit)", async () => {
     const clonedService = {
       name: 'existing-svc-copy',
       listen_path: '/v1/*',
@@ -177,7 +177,9 @@ describe('ServiceForm validation', () => {
     await setInput(getByLabelText('Service name'), 'my svc');
     await submitForm(container);
     expect(onSave).not.toHaveBeenCalled();
-    expect(getByRole('alert')).toHaveTextContent('A service name can only contain letters, digits, dashes (-) and underscores (_).');
+    expect(getByRole('alert')).toHaveTextContent(
+      'A service name can only contain letters, digits, dashes (-) and underscores (_).',
+    );
   });
 
   it('refuse un nom contenant un caractere special', async () => {
@@ -187,7 +189,9 @@ describe('ServiceForm validation', () => {
     await setInput(getByLabelText('Service name'), 'svc@name!');
     await submitForm(container);
     expect(onSave).not.toHaveBeenCalled();
-    expect(getByRole('alert')).toHaveTextContent('A service name can only contain letters, digits, dashes (-) and underscores (_).');
+    expect(getByRole('alert')).toHaveTextContent(
+      'A service name can only contain letters, digits, dashes (-) and underscores (_).',
+    );
   });
 
   it('accepte un nom avec underscores et chiffres', async () => {
@@ -215,11 +219,13 @@ describe('ServiceForm service purement mocké', () => {
     await setInput(getByLabelText('Service name'), 'sans-cible');
     await submitForm(container);
 
-    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
-      name: 'sans-cible',
-      real_target_url: '',
-      is_mocked: true,
-    }));
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'sans-cible',
+        real_target_url: '',
+        is_mocked: true,
+      }),
+    );
   });
 
   it('un service existant sans cible ouvre le formulaire avec la case deja cochee', () => {
@@ -259,10 +265,12 @@ describe('ServiceForm service purement mocké', () => {
     await setInput(targetInput, 'http://nouvelle-cible:8080');
     await submitForm(container);
 
-    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
-      real_target_url: 'http://nouvelle-cible:8080',
-      rules: existingRules,
-    }));
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        real_target_url: 'http://nouvelle-cible:8080',
+        rules: existingRules,
+      }),
+    );
   });
 
   it("bascule a posteriori : avertit sans bloquer quand des regles Proxy existent deja, 'Enregistrer quand meme' sauvegarde", async () => {
@@ -273,7 +281,10 @@ describe('ServiceForm service purement mocké', () => {
       real_target_url: 'http://backend:8080',
       is_mocked: true,
       rewrite_directory_urls: false,
-      rules: [{ name: 'proxy-rule', action: 'proxy' }, { name: 'mock-rule', action: 'mock' }],
+      rules: [
+        { name: 'proxy-rule', action: 'proxy' },
+        { name: 'mock-rule', action: 'mock' },
+      ],
     };
     const { getByRole, container, queryByTestId, getByTestId } = render(ServiceForm, {
       props: { service: existingService, isEdit: true, onSave },
@@ -315,7 +326,7 @@ describe('ServiceForm service purement mocké', () => {
     expect(queryByTestId('service-form-purely-mocked-warning')).not.toBeInTheDocument();
   });
 
-  it('aucun avertissement quand le service purement mocke n\'a aucune regle Proxy', async () => {
+  it("aucun avertissement quand le service purement mocke n'a aucune regle Proxy", async () => {
     const onSave = vi.fn().mockResolvedValue({});
     const existingService = {
       name: 'sans-regle-proxy',
@@ -338,8 +349,14 @@ describe('ServiceForm service purement mocké', () => {
 
 describe('ServiceForm: settings the form does not show', () => {
   const soapService = (wsdl_mode) => ({
-    name: 'soap-svc', listen_path: '', real_target_url: 'http://backend:8080', is_mocked: true,
-    rewrite_directory_urls: true, group_name: null, wsdl_mode, rules: [],
+    name: 'soap-svc',
+    listen_path: '',
+    real_target_url: 'http://backend:8080',
+    is_mocked: true,
+    rewrite_directory_urls: true,
+    group_name: null,
+    wsdl_mode,
+    rules: [],
   });
 
   it.each(['mock', 'proxy'])('keeps a WSDL mode set to %s when the service is saved', async (wsdl_mode) => {

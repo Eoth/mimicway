@@ -33,7 +33,11 @@ describe('migrateLegacyStorage', () => {
   });
 
   it('survives a storage that refuses access', () => {
-    const refusing = { getItem() { throw new Error('denied'); } };
+    const refusing = {
+      getItem() {
+        throw new Error('denied');
+      },
+    };
     expect(() => migrateLegacyStorage(refusing)).not.toThrow();
   });
 });

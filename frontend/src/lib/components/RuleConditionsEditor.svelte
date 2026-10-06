@@ -62,15 +62,15 @@
   }
 
   function conditionLabel(c) {
-    const src = c.source.type === 'BodyRaw' ? t("Raw body") : `${c.source.type}(${c.source.key})`;
-    const op = c.operator.type === 'Exists' ? t("exists") : `${c.operator.type}(${c.operator.value})`;
+    const src = c.source.type === 'BodyRaw' ? t('Raw body') : `${c.source.type}(${c.source.key})`;
+    const op = c.operator.type === 'Exists' ? t('exists') : `${c.operator.type}(${c.operator.value})`;
     return `${src} ${op}`;
   }
 </script>
 
 <fieldset class="section" data-testid="rule-form-conditions-allof">
-  <legend>{t("AND conditions (all must match)")}</legend>
-  <p class="section-help">{t("Without any condition, the rule matches every request.")}</p>
+  <legend>{t('AND conditions (all must match)')}</legend>
+  <p class="section-help">{t('Without any condition, the rule matches every request.')}</p>
   {#if allOf.length > 0}
     <ul class="cond-list" role="list">
       {#each allOf as cond, idx}
@@ -90,12 +90,18 @@
               type="button"
               class="cond-label-button"
               onclick={() => startEdit('all_of', idx)}
-              aria-label={t("Edit the condition: {0}", conditionLabel(cond))}
+              aria-label={t('Edit the condition: {0}', conditionLabel(cond))}
               data-testid="rule-form-edit-condition-allof-button-{idx}"
             >
               <span translate="no">{conditionLabel(cond)}</span>
             </button>
-            <button type="button" class="btn-icon btn-icon-s btn-delete" onclick={() => removeCondition('all_of', idx)} aria-label={t("Delete")} data-testid="rule-form-remove-condition-allof-button-{idx}">&#10005;</button>
+            <button
+              type="button"
+              class="btn-icon btn-icon-s btn-delete"
+              onclick={() => removeCondition('all_of', idx)}
+              aria-label={t('Delete')}
+              data-testid="rule-form-remove-condition-allof-button-{idx}">&#10005;</button
+            >
           </li>
         {/if}
       {/each}
@@ -106,15 +112,20 @@
       {availablePathParams}
       {queryParamSuggestions}
       onSave={(c) => addCondition('all_of', c)}
-      onCancel={() => addingConditionTo = null}
+      onCancel={() => (addingConditionTo = null)}
     />
   {:else}
-    <button type="button" class="btn btn-sm btn-outline" onclick={() => startAdd('all_of')} data-testid="rule-form-add-condition-allof-button">{t("+ AND condition")}</button>
+    <button
+      type="button"
+      class="btn btn-sm btn-outline"
+      onclick={() => startAdd('all_of')}
+      data-testid="rule-form-add-condition-allof-button">{t('+ AND condition')}</button
+    >
   {/if}
 </fieldset>
 
 <fieldset class="section" data-testid="rule-form-conditions-anyof">
-  <legend>{t("OR conditions (at least one must match)")}</legend>
+  <legend>{t('OR conditions (at least one must match)')}</legend>
   {#if anyOf.length > 0}
     <ul class="cond-list" role="list">
       {#each anyOf as cond, idx}
@@ -134,12 +145,18 @@
               type="button"
               class="cond-label-button"
               onclick={() => startEdit('any_of', idx)}
-              aria-label={t("Edit the condition: {0}", conditionLabel(cond))}
+              aria-label={t('Edit the condition: {0}', conditionLabel(cond))}
               data-testid="rule-form-edit-condition-anyof-button-{idx}"
             >
               <span translate="no">{conditionLabel(cond)}</span>
             </button>
-            <button type="button" class="btn-icon btn-icon-s btn-delete" onclick={() => removeCondition('any_of', idx)} aria-label={t("Delete")} data-testid="rule-form-remove-condition-anyof-button-{idx}">&#10005;</button>
+            <button
+              type="button"
+              class="btn-icon btn-icon-s btn-delete"
+              onclick={() => removeCondition('any_of', idx)}
+              aria-label={t('Delete')}
+              data-testid="rule-form-remove-condition-anyof-button-{idx}">&#10005;</button
+            >
           </li>
         {/if}
       {/each}
@@ -150,18 +167,39 @@
       {availablePathParams}
       {queryParamSuggestions}
       onSave={(c) => addCondition('any_of', c)}
-      onCancel={() => addingConditionTo = null}
+      onCancel={() => (addingConditionTo = null)}
     />
   {:else}
-    <button type="button" class="btn btn-sm btn-outline" onclick={() => startAdd('any_of')} data-testid="rule-form-add-condition-anyof-button">{t("+ OR condition")}</button>
+    <button
+      type="button"
+      class="btn btn-sm btn-outline"
+      onclick={() => startAdd('any_of')}
+      data-testid="rule-form-add-condition-anyof-button">{t('+ OR condition')}</button
+    >
   {/if}
 </fieldset>
 
 <style>
-
-  .cond-list { list-style: none; padding: 0; margin: 0 0 var(--space-2); }
-  .cond-item { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); padding: var(--space-1-5) var(--space-2); border: var(--line-thin) solid var(--color-border); border-radius: var(--radius-m); margin-bottom: var(--space-1); background: var(--color-bg); font-size: var(--text-m); }
-  .cond-item-editing { margin-bottom: var(--space-1); }
+  .cond-list {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 var(--space-2);
+  }
+  .cond-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    padding: var(--space-1-5) var(--space-2);
+    border: var(--line-thin) solid var(--color-border);
+    border-radius: var(--radius-m);
+    margin-bottom: var(--space-1);
+    background: var(--color-bg);
+    font-size: var(--text-m);
+  }
+  .cond-item-editing {
+    margin-bottom: var(--space-1);
+  }
 
   .cond-label-button {
     flex: 1;
@@ -177,6 +215,8 @@
     cursor: pointer;
     overflow-wrap: anywhere;
   }
-  .cond-label-button:hover { background: var(--color-surface); text-decoration: underline; }
-
+  .cond-label-button:hover {
+    background: var(--color-surface);
+    text-decoration: underline;
+  }
 </style>

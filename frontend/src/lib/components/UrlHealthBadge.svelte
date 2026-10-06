@@ -16,7 +16,9 @@
   // Every 15 s, recomputes the display only (no request), so that the badge does not keep showing "Reachable" once the
   // server's cached result has expired.
   $effect(() => {
-    const id = setInterval(() => { nowTick = Date.now(); }, 15_000);
+    const id = setInterval(() => {
+      nowTick = Date.now();
+    }, 15_000);
     return () => clearInterval(id);
   });
 
@@ -33,7 +35,7 @@
     }
   }
 
-  let isExpired = $derived(!!status && (nowTick - status.checked_at) >= PING_TTL_MS);
+  let isExpired = $derived(!!status && nowTick - status.checked_at >= PING_TTL_MS);
 
   let state = $derived(() => {
     if (loading) return 'testing';
@@ -44,11 +46,16 @@
 
   function label(current) {
     switch (current) {
-      case 'testing': return t("Testing...");
-      case 'expired': return t("Expired");
-      case 'reachable': return t("Reachable");
-      case 'unreachable': return t("Unreachable");
-      default: return t("Not tested");
+      case 'testing':
+        return t('Testing...');
+      case 'expired':
+        return t('Expired');
+      case 'reachable':
+        return t('Reachable');
+      case 'unreachable':
+        return t('Unreachable');
+      default:
+        return t('Not tested');
     }
   }
 </script>
@@ -62,15 +69,23 @@
   >
     {label(state())}
   </span>
-  <button type="button" class="btn btn-sm btn-outline" onclick={handleTest} disabled={loading} data-testid="url-health-badge-test-button-{serviceName}">
-    {t("Test the target (network only)")}
+  <button
+    type="button"
+    class="btn btn-sm btn-outline"
+    onclick={handleTest}
+    disabled={loading}
+    data-testid="url-health-badge-test-button-{serviceName}"
+  >
+    {t('Test the target (network only)')}
   </button>
   {#if error}
     <span class="ping-error" role="alert" data-testid="url-health-badge-error-{serviceName}">{error}</span>
   {/if}
   {#if status && !isExpired && !status.reachable}
     <p class="ping-warning" role="alert" data-testid="url-health-badge-warning-{serviceName}">
-      {t("Only the mock mode can be used for this service while its target is unreachable (network test only: a TCP connection, no application call).")}
+      {t(
+        'Only the mock mode can be used for this service while its target is unreachable (network test only: a TCP connection, no application call).',
+      )}
     </p>
   {/if}
 </div>

@@ -14,8 +14,14 @@
     e.preventDefault();
     error = '';
 
-    if (!username.trim()) { error = t("The user name is required."); return; }
-    if (!password) { error = t("The password is required."); return; }
+    if (!username.trim()) {
+      error = t('The user name is required.');
+      return;
+    }
+    if (!password) {
+      error = t('The password is required.');
+      return;
+    }
 
     loading = true;
     try {
@@ -33,7 +39,7 @@
 <div class="login-container">
   <div class="login-card">
     <h1 class="login-title">Mimicway</h1>
-    <p class="login-subtitle">{t("Sign-in required")}</p>
+    <p class="login-subtitle">{t('Sign-in required')}</p>
 
     <form class="login-form" onsubmit={handleSubmit}>
       {#if error}
@@ -41,7 +47,7 @@
       {/if}
 
       <div class="form-field">
-        <label for="login-user">{t("User name")}</label>
+        <label for="login-user">{t('User name')}</label>
         <input
           id="login-user"
           type="text"
@@ -54,7 +60,7 @@
       </div>
 
       <div class="form-field">
-        <label for="login-pass">{t("Password")}</label>
+        <label for="login-pass">{t('Password')}</label>
         <input
           id="login-pass"
           type="password"
@@ -67,7 +73,7 @@
       </div>
 
       <button type="submit" class="btn btn-primary btn-login" disabled={loading} data-testid="login-form-submit-button">
-        {loading ? t("Signing in...") : t("Sign in")}
+        {loading ? t('Signing in...') : t('Sign in')}
       </button>
     </form>
   </div>

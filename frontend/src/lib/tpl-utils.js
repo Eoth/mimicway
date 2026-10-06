@@ -15,7 +15,7 @@ import { t } from './i18n.svelte.js';
 
 export function fieldsToTemplate(fields) {
   if (fields.length === 0) return '{}';
-  const parts = fields.filter(f => f.key?.trim()).map(f => fieldToTpl(f));
+  const parts = fields.filter((f) => f.key?.trim()).map((f) => fieldToTpl(f));
   return `{${parts.join(',')}}`;
 }
 
@@ -29,18 +29,26 @@ function fieldToTpl(field) {
     return field.asNumber ? `"${k}":${expr}` : `"${k}":"${expr}"`;
   }
   if (ft === 'object') {
-    const inner = (field.children || []).filter(c => c.key?.trim()).map(c => fieldToTpl(c)).join(',');
+    const inner = (field.children || [])
+      .filter((c) => c.key?.trim())
+      .map((c) => fieldToTpl(c))
+      .join(',');
     return `"${k}":{${inner}}`;
   }
   if (ft === 'array-values') {
-    const items = (field.items || []).map(item => {
-      const expr = buildExpr(item);
-      return item.asNumber ? expr : `"${expr}"`;
-    }).join(',');
+    const items = (field.items || [])
+      .map((item) => {
+        const expr = buildExpr(item);
+        return item.asNumber ? expr : `"${expr}"`;
+      })
+      .join(',');
     return `"${k}":[${items}]`;
   }
   if (ft === 'array-objects') {
-    const inner = (field.template || []).filter(c => c.key?.trim()).map(c => fieldToTpl(c)).join(',');
+    const inner = (field.template || [])
+      .filter((c) => c.key?.trim())
+      .map((c) => fieldToTpl(c))
+      .join(',');
     return `"${k}":[{${inner}}]`;
   }
   return '';
@@ -50,18 +58,41 @@ export function buildExpr(f) {
   if (f.source === 'fixed') return f.value ?? '';
   let varPart;
   switch (f.source) {
-    case 'path': varPart = `path.${f.value}`; break;
-    case 'query': varPart = `query.${f.value}`; break;
-    case 'header': varPart = `header.${f.value}`; break;
-    case 'body': varPart = `body.${f.value}`; break;
-    case 'xpath': varPart = `xpath.${f.value}`; break;
-    case 'fake': varPart = `fake.${f.value}`; break;
-    case 'script': varPart = f.value ? `script.${f.value}` : 'script'; break;
-    case 'uuid': varPart = 'uuid'; break;
-    case 'now_ms': varPart = 'now_ms'; break;
-    case 'now_iso': varPart = 'now_iso'; break;
-    case 'seq': varPart = 'seq'; break;
-    default: return f.value ?? '';
+    case 'path':
+      varPart = `path.${f.value}`;
+      break;
+    case 'query':
+      varPart = `query.${f.value}`;
+      break;
+    case 'header':
+      varPart = `header.${f.value}`;
+      break;
+    case 'body':
+      varPart = `body.${f.value}`;
+      break;
+    case 'xpath':
+      varPart = `xpath.${f.value}`;
+      break;
+    case 'fake':
+      varPart = `fake.${f.value}`;
+      break;
+    case 'script':
+      varPart = f.value ? `script.${f.value}` : 'script';
+      break;
+    case 'uuid':
+      varPart = 'uuid';
+      break;
+    case 'now_ms':
+      varPart = 'now_ms';
+      break;
+    case 'now_iso':
+      varPart = 'now_iso';
+      break;
+    case 'seq':
+      varPart = 'seq';
+      break;
+    default:
+      return f.value ?? '';
   }
   const pipe = f.pipe?.trim();
   return pipe ? `{{${varPart} | ${pipe}}}` : `{{${varPart}}}`;
@@ -75,7 +106,9 @@ export function templateToTestJson(tpl) {
   let inString = false;
   while (i < tpl.length) {
     if (tpl[i] === '\\' && inString) {
-      out += tpl[i] + tpl[i + 1]; i += 2; continue;
+      out += tpl[i] + tpl[i + 1];
+      i += 2;
+      continue;
     }
     if (tpl[i] === '{' && i + 1 < tpl.length && tpl[i + 1] === '{') {
       const end = findDoubleClose(tpl, i + 2);
@@ -86,7 +119,8 @@ export function templateToTestJson(tpl) {
       }
     }
     if (tpl[i] === '"') inString = !inString;
-    out += tpl[i]; i++;
+    out += tpl[i];
+    i++;
   }
   return out;
 }
@@ -110,7 +144,7 @@ export function validateTemplateAsJson(tpl) {
     JSON.parse(testStr);
     return null;
   } catch (e) {
-    return t("Invalid JSON: {0}", e.message);
+    return t('Invalid JSON: {0}', e.message);
   }
 }
 
@@ -121,11 +155,11 @@ export function validateTemplateAsXml(tpl) {
     const parser = new DOMParser();
     const doc = parser.parseFromString(testXml, 'application/xml');
     if (doc.querySelector('parsererror')) {
-      return t("Invalid XML: check the tags (empty names, wrong nesting).");
+      return t('Invalid XML: check the tags (empty names, wrong nesting).');
     }
     return null;
   } catch {
-    return t("Malformed XML.");
+    return t('Malformed XML.');
   }
 }
 
@@ -135,9 +169,14 @@ function stripTemplateVars(tpl) {
   while (i < tpl.length) {
     if (tpl[i] === '{' && i + 1 < tpl.length && tpl[i + 1] === '{') {
       const end = findDoubleClose(tpl, i + 2);
-      if (end !== -1) { out += 'x'; i = end + 2; continue; }
+      if (end !== -1) {
+        out += 'x';
+        i = end + 2;
+        continue;
+      }
     }
-    out += tpl[i]; i++;
+    out += tpl[i];
+    i++;
   }
   return out;
 }
@@ -156,7 +195,8 @@ export function templateToPreview(tpl) {
         continue;
       }
     }
-    out += tpl[i]; i++;
+    out += tpl[i];
+    i++;
   }
   return out;
 }
@@ -169,7 +209,7 @@ export function templateToFields(tpl) {
   const testStr = templateToTestJson(trimmed);
   const parsed = JSON.parse(testStr);
   if (typeof parsed !== 'object' || Array.isArray(parsed)) {
-    throw new TypeError(t("The JSON must be an object to be shown in the guided view."));
+    throw new TypeError(t('The JSON must be an object to be shown in the guided view.'));
   }
   return parseTplObject(trimmed);
 }
@@ -181,7 +221,9 @@ function parseTplObject(tpl) {
     if (trimmed.startsWith('{') && !isVarOpen(trimmed, 0)) {
       try {
         return { key, fieldType: 'object', children: parseTplObject(trimmed) };
-      } catch { /* fall through */ }
+      } catch {
+        /* fall through */
+      }
     }
     if (trimmed.startsWith('[')) {
       return parseTplArray(key, trimmed);
@@ -234,9 +276,11 @@ function parseTplArray(key, raw) {
     try {
       const template = parseTplObject(inner);
       return { key, fieldType: 'array-objects', template };
-    } catch { /* fall through */ }
+    } catch {
+      /* fall through */
+    }
   }
-  const items = splitTplArray(inner).map(item => {
+  const items = splitTplArray(inner).map((item) => {
     const f = parseTplValue('', item.trim());
     return { source: f.source, value: f.value, pipe: f.pipe || '', asNumber: f.asNumber };
   });
@@ -270,7 +314,7 @@ export function varNameToSource(varName) {
 
 export function exampleJsonToFields(value) {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
-    throw new TypeError(t("The example must be a JSON object at its root."));
+    throw new TypeError(t('The example must be a JSON object at its root.'));
   }
   return objectToFields(value);
 }
@@ -285,7 +329,11 @@ function objectToFields(obj) {
       if (value.length > 0 && typeof value[0] === 'object' && value[0] !== null) {
         return { key, fieldType: 'array-objects', template: objectToFields(value[0]) };
       }
-      return { key, fieldType: 'array-values', items: value.map(v => ({ source: 'fixed', ...rawJsonValue(v), pipe: '' })) };
+      return {
+        key,
+        fieldType: 'array-values',
+        items: value.map((v) => ({ source: 'fixed', ...rawJsonValue(v), pipe: '' })),
+      };
     }
     return { key, fieldType: 'value', source: 'fixed', ...rawJsonValue(value), pipe: '' };
   });
@@ -335,7 +383,10 @@ function readTplToken(str, start) {
   if (str[i] === '"') {
     let j = i + 1;
     while (j < str.length) {
-      if (str[j] === '\\') { j += 2; continue; }
+      if (str[j] === '\\') {
+        j += 2;
+        continue;
+      }
       if (str[j] === '"') return [str.slice(i, j + 1), j + 1 - i];
       j++;
     }
@@ -348,20 +399,37 @@ function readTplToken(str, start) {
   }
 
   if (str[i] === '{') {
-    let depth = 0, j = i, inStr = false;
+    let depth = 0,
+      j = i,
+      inStr = false;
     while (j < str.length) {
-      if (str[j] === '\\' && inStr) { j += 2; continue; }
-      if (str[j] === '"') { inStr = !inStr; j++; continue; }
+      if (str[j] === '\\' && inStr) {
+        j += 2;
+        continue;
+      }
+      if (str[j] === '"') {
+        inStr = !inStr;
+        j++;
+        continue;
+      }
       if (!inStr) {
         if (str[j] === '{' && j + 1 < str.length && str[j + 1] === '{') {
           const end = findDoubleClose(str, j + 2);
-          if (end !== -1) { j = end + 2; continue; }
+          if (end !== -1) {
+            j = end + 2;
+            continue;
+          }
         }
-        if (str[j] === '{') { depth++; j++; continue; }
+        if (str[j] === '{') {
+          depth++;
+          j++;
+          continue;
+        }
         if (str[j] === '}') {
           depth--;
           if (depth === 0) return [str.slice(i, j + 1), j + 1 - i];
-          j++; continue;
+          j++;
+          continue;
         }
       }
       j++;
@@ -370,16 +438,30 @@ function readTplToken(str, start) {
   }
 
   if (str[i] === '[') {
-    let depth = 0, j = i, inStr = false;
+    let depth = 0,
+      j = i,
+      inStr = false;
     while (j < str.length) {
-      if (str[j] === '\\' && inStr) { j += 2; continue; }
-      if (str[j] === '"') { inStr = !inStr; j++; continue; }
+      if (str[j] === '\\' && inStr) {
+        j += 2;
+        continue;
+      }
+      if (str[j] === '"') {
+        inStr = !inStr;
+        j++;
+        continue;
+      }
       if (!inStr) {
-        if (str[j] === '[') { depth++; j++; continue; }
+        if (str[j] === '[') {
+          depth++;
+          j++;
+          continue;
+        }
         if (str[j] === ']') {
           depth--;
           if (depth === 0) return [str.slice(i, j + 1), j + 1 - i];
-          j++; continue;
+          j++;
+          continue;
         }
       }
       j++;
@@ -394,13 +476,35 @@ function readTplToken(str, start) {
 
 function splitTplArray(inner) {
   const items = [];
-  let i = 0, start = 0;
+  let i = 0,
+    start = 0;
   while (i < inner.length) {
-    if (inner[i] === '"') { const [, c] = readTplToken(inner, i); i += c; continue; }
-    if (isVarOpen(inner, i)) { const end = findDoubleClose(inner, i + 2); if (end !== -1) { i = end + 2; continue; } }
-    if (inner[i] === '{') { const [, c] = readTplToken(inner, i); i += c; continue; }
-    if (inner[i] === '[') { const [, c] = readTplToken(inner, i); i += c; continue; }
-    if (inner[i] === ',') { items.push(inner.slice(start, i)); start = i + 1; }
+    if (inner[i] === '"') {
+      const [, c] = readTplToken(inner, i);
+      i += c;
+      continue;
+    }
+    if (isVarOpen(inner, i)) {
+      const end = findDoubleClose(inner, i + 2);
+      if (end !== -1) {
+        i = end + 2;
+        continue;
+      }
+    }
+    if (inner[i] === '{') {
+      const [, c] = readTplToken(inner, i);
+      i += c;
+      continue;
+    }
+    if (inner[i] === '[') {
+      const [, c] = readTplToken(inner, i);
+      i += c;
+      continue;
+    }
+    if (inner[i] === ',') {
+      items.push(inner.slice(start, i));
+      start = i + 1;
+    }
     i++;
   }
   if (start < inner.length) items.push(inner.slice(start));
@@ -416,14 +520,17 @@ function splitTplArray(inner) {
 
 export function xmlFieldsToTemplate(fields, rootTag = 'response', rootAttributes = []) {
   const attrs = xmlAttrsToTpl(rootAttributes);
-  const inner = fields.filter(f => f.tag?.trim()).map(f => xmlNodeToTpl(f)).join('');
+  const inner = fields
+    .filter((f) => f.tag?.trim())
+    .map((f) => xmlNodeToTpl(f))
+    .join('');
   return `<${rootTag}${attrs}>${inner}</${rootTag}>`;
 }
 
 function xmlAttrsToTpl(attributes) {
   return (attributes || [])
-    .filter(a => a.name?.trim())
-    .map(a => ` ${a.name.trim()}="${buildExpr(a)}"`)
+    .filter((a) => a.name?.trim())
+    .map((a) => ` ${a.name.trim()}="${buildExpr(a)}"`)
     .join('');
 }
 
@@ -432,7 +539,10 @@ function xmlNodeToTpl(field) {
   if (!t) return '';
   const attrs = xmlAttrsToTpl(field.attributes);
   if ((field.nodeType || 'value') === 'parent') {
-    const inner = (field.children || []).filter(c => c.tag?.trim()).map(c => xmlNodeToTpl(c)).join('');
+    const inner = (field.children || [])
+      .filter((c) => c.tag?.trim())
+      .map((c) => xmlNodeToTpl(c))
+      .join('');
     return `<${t}${attrs}>${inner}</${t}>`;
   }
   return `<${t}${attrs}>${buildExpr(field)}</${t}>`;
@@ -465,20 +575,20 @@ function rawXmlAttribute(text) {
 export function exampleXmlToFields(xmlString) {
   const text = xmlString.trim();
   if (!text) {
-    throw new TypeError(t("Paste valid XML."));
+    throw new TypeError(t('Paste valid XML.'));
   }
   const parser = new DOMParser();
   const doc = parser.parseFromString(text, 'application/xml');
   if (doc.querySelector('parsererror')) {
-    throw new TypeError(t("Invalid XML: check the tags (empty names, wrong nesting)."));
+    throw new TypeError(t('Invalid XML: check the tags (empty names, wrong nesting).'));
   }
   const root = doc.documentElement;
   if (!root) {
-    throw new TypeError(t("Invalid XML: no root element found."));
+    throw new TypeError(t('Invalid XML: no root element found.'));
   }
   const childElements = Array.from(root.children || []);
   if (childElements.length === 0) {
-    throw new TypeError(t("The XML root holds no nested element. Paste XML with at least one child element."));
+    throw new TypeError(t('The XML root holds no nested element. Paste XML with at least one child element.'));
   }
   return {
     rootTag: root.tagName,
@@ -497,16 +607,16 @@ export function exampleXmlToFields(xmlString) {
 export function templateToXmlFields(tpl) {
   const text = tpl.trim();
   if (!text) {
-    throw new TypeError(t("Empty XML template."));
+    throw new TypeError(t('Empty XML template.'));
   }
   const parser = new DOMParser();
   const doc = parser.parseFromString(text, 'application/xml');
   if (doc.querySelector('parsererror')) {
-    throw new TypeError(t("Invalid XML template: it cannot be parsed back into the structured view."));
+    throw new TypeError(t('Invalid XML template: it cannot be parsed back into the structured view.'));
   }
   const root = doc.documentElement;
   if (!root) {
-    throw new TypeError(t("Invalid XML template: no root element found."));
+    throw new TypeError(t('Invalid XML template: no root element found.'));
   }
   return {
     rootTag: root.tagName,
@@ -516,8 +626,9 @@ export function templateToXmlFields(tpl) {
 }
 
 function xmlAttributesToTplFields(el) {
-  return Array.from(el.attributes || []).map(attr => ({
-    name: attr.name, ...parseXmlLeafExpr(attr.value, rawXmlAttribute),
+  return Array.from(el.attributes || []).map((attr) => ({
+    name: attr.name,
+    ...parseXmlLeafExpr(attr.value, rawXmlAttribute),
   }));
 }
 
@@ -555,8 +666,11 @@ function parseXmlLeafExpr(raw, toRaw) {
 }
 
 function xmlAttributesToFields(el) {
-  return Array.from(el.attributes || []).map(attr => ({
-    name: attr.name, source: 'fixed', value: rawXmlAttribute(attr.value), pipe: '',
+  return Array.from(el.attributes || []).map((attr) => ({
+    name: attr.name,
+    source: 'fixed',
+    value: rawXmlAttribute(attr.value),
+    pipe: '',
   }));
 }
 

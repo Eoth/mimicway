@@ -34,12 +34,15 @@ export function logout() {
 }
 
 export function persistAuth() {
-  localStorage.setItem('mimicway-auth', JSON.stringify({
-    token: auth.token,
-    refreshToken: auth.refreshToken,
-    username: auth.username,
-    isSuperAdmin: auth.isSuperAdmin,
-  }));
+  localStorage.setItem(
+    'mimicway-auth',
+    JSON.stringify({
+      token: auth.token,
+      refreshToken: auth.refreshToken,
+      username: auth.username,
+      isSuperAdmin: auth.isSuperAdmin,
+    }),
+  );
 }
 
 export function restoreAuth() {

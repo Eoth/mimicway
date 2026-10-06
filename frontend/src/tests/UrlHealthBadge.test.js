@@ -35,7 +35,7 @@ describe('UrlHealthBadge', () => {
     expect(getByText(/^Only the mock mode can be used for this service/)).toBeInTheDocument();
   });
 
-  it('affiche une erreur si l\'appel echoue', async () => {
+  it("affiche une erreur si l'appel echoue", async () => {
     pingService.mockRejectedValue(new Error('502 Bad Gateway'));
     const { getByText } = render(UrlHealthBadge, { props: { serviceName: 'svc-c' } });
 
@@ -44,7 +44,7 @@ describe('UrlHealthBadge', () => {
     await waitFor(() => expect(getByText('502 Bad Gateway')).toBeInTheDocument());
   });
 
-  it('mentionne explicitement qu\'il s\'agit d\'un test reseau, pas applicatif', () => {
+  it("mentionne explicitement qu'il s'agit d'un test reseau, pas applicatif", () => {
     const { getByText } = render(UrlHealthBadge, { props: { serviceName: 'svc-d' } });
     expect(getByText(/network only/)).toBeInTheDocument();
   });
@@ -66,7 +66,8 @@ describe('UrlHealthBadge', () => {
 
 describe('UrlHealthBadge: the lifetime of a result', () => {
   it('expires a result when the server forgets it (PING_TTL_MS of src/server/ping.rs)', () => {
-    const constant = (file, pattern) => Number(readFileSync(join(__dirname, file), 'utf8').match(pattern)[1].replaceAll('_', ''));
+    const constant = (file, pattern) =>
+      Number(readFileSync(join(__dirname, file), 'utf8').match(pattern)[1].replaceAll('_', ''));
     const server = constant('../../../src/server/ping.rs', /pub const PING_TTL_MS: u64 = ([\d_]+);/);
     const badge = constant('../lib/components/UrlHealthBadge.svelte', /const PING_TTL_MS = ([\d_]+);/);
     expect(badge).toBe(server);

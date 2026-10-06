@@ -37,7 +37,9 @@ function levelCounts(levels) {
 // README.md shows docs/en/screenshots/x.png, and both are the same image.
 function images(text, language) {
   const own = new RegExp(`(^|/)${language}/`);
-  return [...withoutCode(text).matchAll(/!\[[^\]]*\]\(([^)\s]+)/g)].map(([, target]) => target.replace(own, '$1{lang}/'));
+  return [...withoutCode(text).matchAll(/!\[[^\]]*\]\(([^)\s]+)/g)].map(([, target]) =>
+    target.replace(own, '$1{lang}/'),
+  );
 }
 
 function firstLine(text) {
@@ -71,11 +73,12 @@ function compareVersions(versions, problems) {
     if (shown.join('\n') !== referenceImages.join('\n')) {
       const missing = referenceImages.filter((image) => !shown.includes(image));
       const extra = shown.filter((image) => !referenceImages.includes(image));
-      const detail = missing.length || extra.length
-        ? [missing.length && `missing ${missing.join(', ')}`, extra.length && `extra ${extra.join(', ')}`]
-          .filter(Boolean)
-          .join('; ')
-        : 'same images in another order';
+      const detail =
+        missing.length || extra.length
+          ? [missing.length && `missing ${missing.join(', ')}`, extra.length && `extra ${extra.join(', ')}`]
+              .filter(Boolean)
+              .join('; ')
+          : 'same images in another order';
       problems.push(`${version.file}: images differ from ${reference.file} (${detail})`);
     }
   }
@@ -129,7 +132,9 @@ export function checkTranslations(files, read) {
   }
   for (const language of languages) {
     if (!readmes.has(language)) {
-      problems.push(`${language === SOURCE_LANGUAGE ? 'README.md' : `README.${language}.md`}: missing (the guide exists in docs/${language}/)`);
+      problems.push(
+        `${language === SOURCE_LANGUAGE ? 'README.md' : `README.${language}.md`}: missing (the guide exists in docs/${language}/)`,
+      );
     }
   }
   const readmeVersions = sourceFirst(readmes.keys()).map((language) => {

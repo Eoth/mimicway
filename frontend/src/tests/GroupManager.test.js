@@ -19,7 +19,9 @@ describe('GroupManager - creation form', () => {
 
   it('n\'affiche plus qu\'un champ "Nom" (pas de champ code/cle manuel)', async () => {
     const { getByText, container } = render(GroupManager);
-    await waitFor(() => expect(getByText('No group. Create one to organize your services by domain.')).toBeInTheDocument());
+    await waitFor(() =>
+      expect(getByText('No group. Create one to organize your services by domain.')).toBeInTheDocument(),
+    );
 
     await fireEvent.click(getByText('+ New group'));
 
@@ -34,7 +36,9 @@ describe('GroupManager - creation form', () => {
     createGroup.mockResolvedValue({ name: 'Internal APIs', code: 'ab3f9', admins: [], members: [] });
     const onNotify = vi.fn();
     const { getByText, container } = render(GroupManager, { props: { onNotify } });
-    await waitFor(() => expect(getByText('No group. Create one to organize your services by domain.')).toBeInTheDocument());
+    await waitFor(() =>
+      expect(getByText('No group. Create one to organize your services by domain.')).toBeInTheDocument(),
+    );
 
     await fireEvent.click(getByText('+ New group'));
     const nameInput = container.querySelector('#new-group-name');
@@ -42,19 +46,23 @@ describe('GroupManager - creation form', () => {
     await fireEvent.input(nameInput);
     await fireEvent.submit(container.querySelector('form'));
 
-    await waitFor(() => expect(createGroup).toHaveBeenCalledWith({
-      name: 'Internal APIs',
-      code: '',
-      admins: [],
-      members: [],
-    }));
+    await waitFor(() =>
+      expect(createGroup).toHaveBeenCalledWith({
+        name: 'Internal APIs',
+        code: '',
+        admins: [],
+        members: [],
+      }),
+    );
     expect(onNotify).toHaveBeenCalledWith('Group "Internal APIs" created', 'success');
   });
 
   it('accepte un nom avec accents/espaces (la generation du code est laissee au backend)', async () => {
     createGroup.mockResolvedValue({ name: 'Équipe Café', code: 'k2m81', admins: [], members: [] });
     const { getByText, container } = render(GroupManager);
-    await waitFor(() => expect(getByText('No group. Create one to organize your services by domain.')).toBeInTheDocument());
+    await waitFor(() =>
+      expect(getByText('No group. Create one to organize your services by domain.')).toBeInTheDocument(),
+    );
 
     await fireEvent.click(getByText('+ New group'));
     const nameInput = container.querySelector('#new-group-name');
@@ -62,18 +70,22 @@ describe('GroupManager - creation form', () => {
     await fireEvent.input(nameInput);
     await fireEvent.submit(container.querySelector('form'));
 
-    await waitFor(() => expect(createGroup).toHaveBeenCalledWith({
-      name: 'Équipe Café',
-      code: '',
-      admins: [],
-      members: [],
-    }));
+    await waitFor(() =>
+      expect(createGroup).toHaveBeenCalledWith({
+        name: 'Équipe Café',
+        code: '',
+        admins: [],
+        members: [],
+      }),
+    );
   });
 
-  it('affiche l\'erreur du backend (ex: collision de nom) au niveau du champ nom', async () => {
+  it("affiche l'erreur du backend (ex: collision de nom) au niveau du champ nom", async () => {
     createGroup.mockRejectedValue(new Error('A group named "Ops" already exists.'));
     const { getByText, container } = render(GroupManager);
-    await waitFor(() => expect(getByText('No group. Create one to organize your services by domain.')).toBeInTheDocument());
+    await waitFor(() =>
+      expect(getByText('No group. Create one to organize your services by domain.')).toBeInTheDocument(),
+    );
 
     await fireEvent.click(getByText('+ New group'));
     const nameInput = container.querySelector('#new-group-name');
@@ -85,9 +97,11 @@ describe('GroupManager - creation form', () => {
     expect(nameInput.getAttribute('aria-invalid')).toBe('true');
   });
 
-  it('rejette localement un nom vide sans appeler l\'API', async () => {
+  it("rejette localement un nom vide sans appeler l'API", async () => {
     const { getByText, container } = render(GroupManager);
-    await waitFor(() => expect(getByText('No group. Create one to organize your services by domain.')).toBeInTheDocument());
+    await waitFor(() =>
+      expect(getByText('No group. Create one to organize your services by domain.')).toBeInTheDocument(),
+    );
 
     await fireEvent.click(getByText('+ New group'));
     await fireEvent.submit(container.querySelector('form'));

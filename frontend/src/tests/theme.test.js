@@ -32,8 +32,12 @@ describe('initialTheme', () => {
 
   test('blocked storage falls back to the system preference, and saving does not throw', () => {
     prefersDark(true);
-    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('blocked'); });
-    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('blocked'); });
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('blocked');
+    });
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('blocked');
+    });
     expect(initialTheme()).toBe('dark');
     expect(() => saveTheme('light')).not.toThrow();
   });

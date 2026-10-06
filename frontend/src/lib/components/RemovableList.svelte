@@ -12,7 +12,7 @@
 </script>
 
 {#if items.length === 0}
-  <p class="removable-list-empty">{emptyText ?? t("No item.")}</p>
+  <p class="removable-list-empty">{emptyText ?? t('No item.')}</p>
 {:else}
   <ul class="removable-list">
     {#each items as item (getKey(item))}
@@ -22,8 +22,8 @@
           type="button"
           class="chip-remove"
           onclick={() => onRemove(item)}
-          aria-label={t("Remove {0}", getLabel(item))}
-          title={t("Remove")}
+          aria-label={t('Remove {0}', getLabel(item))}
+          title={t('Remove')}
           data-testid="removable-list-remove-button-{getKey(item)}"
         >
           &times;

@@ -10,7 +10,7 @@ describe('hex-utils', () => {
     expect(textToHex('')).toBe('');
   });
 
-  it('textToHex gere l\'UTF-8 multi-octets', () => {
+  it("textToHex gere l'UTF-8 multi-octets", () => {
     expect(textToHex('é')).toBe('c3a9');
   });
 
@@ -39,7 +39,7 @@ describe('hex-utils', () => {
     }
   });
 
-  it('hexToTextOrNull fait l\'aller-retour avec textToHex', () => {
+  it("hexToTextOrNull fait l'aller-retour avec textToHex", () => {
     expect(hexToTextOrNull(textToHex('hello world'))).toBe('hello world');
   });
 
@@ -47,7 +47,7 @@ describe('hex-utils', () => {
     expect(hexToTextOrNull('zz')).toBeNull();
   });
 
-  it('hexToTextOrNull renvoie null sur des octets qui ne forment pas de l\'UTF-8 valide', () => {
+  it("hexToTextOrNull renvoie null sur des octets qui ne forment pas de l'UTF-8 valide", () => {
     // 0xff seul n'est jamais un debut de sequence UTF-8 valide.
     expect(hexToTextOrNull('ff')).toBeNull();
   });

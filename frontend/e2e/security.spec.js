@@ -145,7 +145,17 @@ test.describe('Rule name uniqueness', () => {
   });
 
   function rule(name) {
-    return { name, method: 'GET', sub_path: null, action: 'mock', pre_script: null, script: null, post_script: null, conditions: { all_of: [], any_of: [] }, response: { status: 200, headers: [], body: [{ type: 'Literal', value: 'ok' }], chaos: null } };
+    return {
+      name,
+      method: 'GET',
+      sub_path: null,
+      action: 'mock',
+      pre_script: null,
+      script: null,
+      post_script: null,
+      conditions: { all_of: [], any_of: [] },
+      response: { status: 200, headers: [], body: [{ type: 'Literal', value: 'ok' }], chaos: null },
+    };
   }
 
   test('rejects duplicate rule names in the same service', async ({ request }) => {

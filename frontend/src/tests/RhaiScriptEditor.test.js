@@ -13,7 +13,7 @@ async function typeAtEnd(el, text) {
 }
 
 describe('RhaiScriptEditor : autocompletion des fonctions Rhai', () => {
-  it('n\'affiche aucune suggestion tant que rien n\'est tape', () => {
+  it("n'affiche aucune suggestion tant que rien n'est tape", () => {
     const { queryByRole } = render(RhaiScriptEditorHarness, { props: { id: 'sc' } });
     expect(queryByRole('listbox')).not.toBeInTheDocument();
   });
@@ -27,7 +27,7 @@ describe('RhaiScriptEditor : autocompletion des fonctions Rhai', () => {
     expect(getByRole('listbox')).toBeInTheDocument();
     const options = getAllByRole('option');
     expect(options.map((o) => o.textContent)).toEqual(
-      expect.arrayContaining([expect.stringContaining('seeded_int'), expect.stringContaining('seeded_pick')])
+      expect.arrayContaining([expect.stringContaining('seeded_int'), expect.stringContaining('seeded_pick')]),
     );
   });
 

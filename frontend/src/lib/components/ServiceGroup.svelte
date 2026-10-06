@@ -26,8 +26,8 @@
     data-testid="service-group-header-{groupId}"
   >
     <span class="group-chevron" class:expanded aria-hidden="true">&#9654;</span>
-    <h3 class="group-name">{groupName ?? t("No group")}</h3>
-    <span class="group-count">{tCount(services.length, "{0} service", "{0} services")}</span>
+    <h3 class="group-name">{groupName ?? t('No group')}</h3>
+    <span class="group-count">{tCount(services.length, '{0} service', '{0} services')}</span>
   </button>
 
   {#if expanded}

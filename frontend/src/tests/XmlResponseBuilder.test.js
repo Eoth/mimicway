@@ -11,9 +11,7 @@ const nestedFields = [
       {
         tag: 'adresse',
         nodeType: 'parent',
-        children: [
-          { tag: 'ville', nodeType: 'value', source: 'fixed', value: 'Paris' },
-        ],
+        children: [{ tag: 'ville', nodeType: 'value', source: 'fixed', value: 'Paris' }],
       },
     ],
   },
@@ -30,7 +28,9 @@ describe('XmlResponseBuilder — pliage/depliage des noeuds parents', () => {
 
   it('replier un noeud parent masque ses enfants et affiche un indicateur, sans muter les donnees', async () => {
     const onUpdate = vi.fn();
-    const { getByLabelText, getByDisplayValue } = render(XmlResponseBuilder, { props: { fields: nestedFields, onUpdate } });
+    const { getByLabelText, getByDisplayValue } = render(XmlResponseBuilder, {
+      props: { fields: nestedFields, onUpdate },
+    });
 
     await fireEvent.click(getByLabelText('Collapse unite_legale'));
 
@@ -62,7 +62,7 @@ describe('XmlResponseBuilder — pliage/depliage des noeuds parents', () => {
 describe('XmlResponseBuilder — source "XPath (XML/SOAP)"', () => {
   const flatValueField = [{ tag: 'siret', nodeType: 'value', source: 'fixed', value: '' }];
 
-  it('propose l\'option XPath (XML/SOAP) dans le menu de source', () => {
+  it("propose l'option XPath (XML/SOAP) dans le menu de source", () => {
     const { getByLabelText } = render(XmlResponseBuilder, { props: { fields: flatValueField } });
     const option = getByLabelText('Source').querySelector('option[value="xpath"]');
     expect(option).not.toBeNull();
@@ -109,7 +109,11 @@ describe('XmlResponseBuilder — source "Resultat script"', () => {
 });
 
 describe('XmlResponseBuilder: a fold follows its node', () => {
-  const parent = (tag) => ({ tag, nodeType: 'parent', children: [{ tag: `${tag}-child`, nodeType: 'value', source: 'fixed', value: '1' }] });
+  const parent = (tag) => ({
+    tag,
+    nodeType: 'parent',
+    children: [{ tag: `${tag}-child`, nodeType: 'value', source: 'fixed', value: '1' }],
+  });
   const expanded = (container, testPath) =>
     container.querySelector(`[data-testid="xml-builder-collapse-button-${testPath}"]`).getAttribute('aria-expanded');
 

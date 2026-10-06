@@ -74,7 +74,10 @@ test('an unknown kind of file, the CI workflow or the plan itself runs every job
   }
   assert.deepEqual(jobsOf('push', null), BY_FILES);
   assert.deepEqual(jobsOf('workflow_dispatch', []), BY_FILES);
-  assert.deepEqual(jobsOf('pull_request', null), JOBS.filter((job) => job !== 'fuzz-batch'));
+  assert.deepEqual(
+    jobsOf('pull_request', null),
+    JOBS.filter((job) => job !== 'fuzz-batch'),
+  );
   assert.deepEqual(planFor('workflow_dispatch', []).codeql, ['actions', 'javascript-typescript', 'rust']);
 });
 
@@ -93,7 +96,10 @@ test('every file outside frontend/ that a UI test reads runs the UI job', () => 
     if (!/\.(js|mjs)$/.test(name)) continue;
     const text = readFileSync(path.join(dir, name), 'utf8');
     for (const [, relative] of text.matchAll(/['"`]((?:\.\.\/){3,}[^'"`]+)['"`]/g)) {
-      const file = path.relative(ROOT, path.resolve(dir, path.dirname(name), relative)).split(path.sep).join('/');
+      const file = path
+        .relative(ROOT, path.resolve(dir, path.dirname(name), relative))
+        .split(path.sep)
+        .join('/');
       if (!file.startsWith('frontend/')) read.add(file);
     }
   }
@@ -141,7 +147,12 @@ function needsOf(jobText) {
   const single = jobText.match(/^ {4}needs: ([a-z0-9-]+)\s*$/m);
   if (single) return [single[1]];
   const block = jobText.match(/^ {4}needs:\n((?: {6}- [a-z0-9-]+\n)+)/m);
-  return block ? block[1].split('\n').filter(Boolean).map((line) => line.replace(/^ {6}- /, '')) : [];
+  return block
+    ? block[1]
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => line.replace(/^ {6}- /, ''))
+    : [];
 }
 
 test('ci.yml runs every job of the plan only when planned, and "CI passed" waits for all of them', () => {

@@ -50,7 +50,7 @@ function draft(overrides = {}) {
 }
 
 describe('RuleTester: filtrage des entrees sans detail', () => {
-  it('affiche un message quand aucune requete n\'a ete capturee', () => {
+  it("affiche un message quand aucune requete n'a ete capturee", () => {
     const { getByText } = render(RuleTester, {
       props: { serviceName: 'svc-a', logs: [], getDraftRule: draft() },
     });
@@ -109,7 +109,7 @@ describe('RuleTester: appel API et affichage du resultat', () => {
     expect(payload.request.remaining_path).toBe('/orders/42');
   });
 
-  it('envoie l\'action et les 3 blocs de script du brouillon (pas seulement le matching)', async () => {
+  it("envoie l'action et les 3 blocs de script du brouillon (pas seulement le matching)", async () => {
     testRule.mockResolvedValue({
       method_matches: true,
       sub_path_matches: true,
@@ -179,7 +179,7 @@ describe('RuleTester: appel API et affichage du resultat', () => {
     expect(getByText(/present as a path parameter/)).toBeInTheDocument();
   });
 
-  it('affiche une banniere d\'avertissement quand le corps capture est tronque', async () => {
+  it("affiche une banniere d'avertissement quand le corps capture est tronque", async () => {
     testRule.mockResolvedValue({
       method_matches: true,
       sub_path_matches: true,
@@ -204,10 +204,14 @@ describe('RuleTester: appel API et affichage du resultat', () => {
     await fireEvent.change(getByLabelText('Captured request'), { target: { value: '0' } });
     await fireEvent.click(getByRole('button', { name: /Test against this request/ }));
 
-    await waitFor(() => expect(getByText('⚠ The body of this request was truncated in the log: comparisons on the body may be wrong.')).toBeInTheDocument());
+    await waitFor(() =>
+      expect(
+        getByText('⚠ The body of this request was truncated in the log: comparisons on the body may be wrong.'),
+      ).toBeInTheDocument(),
+    );
   });
 
-  it('affiche un message clair quand un script echoue a l\'execution', async () => {
+  it("affiche un message clair quand un script echoue a l'execution", async () => {
     testRule.mockResolvedValue({
       method_matches: true,
       sub_path_matches: true,
@@ -238,7 +242,7 @@ describe('RuleTester: appel API et affichage du resultat', () => {
     expect(getByText(/totally_undefined_fn/)).toBeInTheDocument();
   });
 
-  it('n\'affiche aucune banniere d\'erreur de script quand tous les scripts reussissent', async () => {
+  it("n'affiche aucune banniere d'erreur de script quand tous les scripts reussissent", async () => {
     testRule.mockResolvedValue({
       method_matches: true,
       sub_path_matches: true,
@@ -281,9 +285,7 @@ describe('RuleTester: appel API et affichage du resultat', () => {
       all_of: [],
       any_of: [],
       script_errors: [],
-      script_results: [
-        { slot: 'script', value: '', fields: { name: 'Lyon', cp: '69000', insee: '69123' } },
-      ],
+      script_results: [{ slot: 'script', value: '', fields: { name: 'Lyon', cp: '69000', insee: '69123' } }],
     });
 
     const { getByLabelText, getByRole, getByTestId, getByText } = render(RuleTester, {
@@ -305,7 +307,7 @@ describe('RuleTester: appel API et affichage du resultat', () => {
     expect(getByText('69000')).toBeInTheDocument();
   });
 
-  it('affiche la valeur JSON reelle d\'un champ imbrique (pas la syntaxe Rhai #{...})', async () => {
+  it("affiche la valeur JSON reelle d'un champ imbrique (pas la syntaxe Rhai #{...})", async () => {
     // Cas precis diagnostique : un objet pioche imbrique sous une cle
     // ("ville") reste une seule cle plate cote {{script.champ}} — le
     // testeur doit exposer ca clairement, ce qui permet a l'utilisateur de
@@ -320,7 +322,11 @@ describe('RuleTester: appel API et affichage du resultat', () => {
       any_of: [],
       script_errors: [],
       script_results: [
-        { slot: 'script', value: '', fields: { ville: '{"cp":"69000","insee":"69123","name":"Lyon"}', id: 'fixed-id' } },
+        {
+          slot: 'script',
+          value: '',
+          fields: { ville: '{"cp":"69000","insee":"69123","name":"Lyon"}', id: 'fixed-id' },
+        },
       ],
     });
 
@@ -369,7 +375,7 @@ describe('RuleTester: appel API et affichage du resultat', () => {
     expect(getByText('hello')).toBeInTheDocument();
   });
 
-  it('n\'affiche aucun panneau de resultat de script quand aucun script n\'est configure', async () => {
+  it("n'affiche aucun panneau de resultat de script quand aucun script n'est configure", async () => {
     testRule.mockResolvedValue({
       method_matches: true,
       sub_path_matches: true,
@@ -397,13 +403,21 @@ describe('RuleTester: appel API et affichage du resultat', () => {
 describe('RuleTester: script errors', () => {
   async function scriptErrorText() {
     testRule.mockResolvedValue({
-      method_matches: true, sub_path_matches: true, path_params: {}, overall_matched: true, body_truncated: false,
-      all_of: [], any_of: [], script_errors: [{ slot: 'script', message: 'boom' }],
+      method_matches: true,
+      sub_path_matches: true,
+      path_params: {},
+      overall_matched: true,
+      body_truncated: false,
+      all_of: [],
+      any_of: [],
+      script_errors: [{ slot: 'script', message: 'boom' }],
     });
     const { container, getByTestId } = render(RuleTester, {
       props: { serviceName: 'svc-a', logs: [logWithDetail], getDraftRule: draft({ script: 'boom()' }) },
     });
-    await fireEvent.change(container.querySelector('[data-testid="rule-tester-log-select"]'), { target: { value: '0' } });
+    await fireEvent.change(container.querySelector('[data-testid="rule-tester-log-select"]'), {
+      target: { value: '0' },
+    });
     await fireEvent.click(container.querySelector('[data-testid="rule-tester-test-button"]'));
     await waitFor(() => expect(getByTestId('rule-tester-script-error-script')).toBeInTheDocument());
     return getByTestId('rule-tester-script-error-script').textContent.trim();

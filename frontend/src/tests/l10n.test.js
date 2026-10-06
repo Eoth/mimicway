@@ -118,7 +118,7 @@ const placeholders = (text) => (text.match(/\{\d+\}/g) ?? []).sort().join(' ');
 const catalogues = Object.fromEntries(
   readdirSync(join(SRC, 'locales'))
     .filter((name) => name.endsWith('.json'))
-    .map((name) => [name, JSON.parse(readFileSync(join(SRC, 'locales', name), 'utf8'))])
+    .map((name) => [name, JSON.parse(readFileSync(join(SRC, 'locales', name), 'utf8'))]),
 );
 
 describe('translations', () => {
@@ -169,8 +169,21 @@ vi.mock('../lib/format-date.js', async (importOriginal) => {
 
 // Words that are the same in every language: product name, protocol and data-format identifiers, and examples of
 // code. Anything else visible must come from t.
-const UNTRANSLATED = new Set(['Mimicway', 'GET', 'POST', 'mock', 'proxy', 'no-rule', 'Content-Type', 'application/json',
-  'orders.in', '/user/role', 'Envelope/Body/id', 'English', 'Français']);
+const UNTRANSLATED = new Set([
+  'Mimicway',
+  'GET',
+  'POST',
+  'mock',
+  'proxy',
+  'no-rule',
+  'Content-Type',
+  'application/json',
+  'orders.in',
+  '/user/role',
+  'Envelope/Body/id',
+  'English',
+  'Français',
+]);
 
 const marked = (text) => `⟦${text}⟧`;
 
@@ -180,7 +193,7 @@ const marked = (text) => `⟦${text}⟧`;
  */
 function unmarked(text, by = ' ') {
   let rest = text;
-  for (let previous = ''; previous !== rest; ) {
+  for (let previous = ''; previous !== rest;) {
     previous = rest;
     rest = rest.replace(/⟦[^⟦⟧]*⟧/g, by);
   }

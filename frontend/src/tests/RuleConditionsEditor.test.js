@@ -8,7 +8,7 @@ async function setInput(el, value) {
   await fireEvent.input(el);
 }
 
-describe('RuleConditionsEditor: edition en place d\'une condition existante', () => {
+describe("RuleConditionsEditor: edition en place d'une condition existante", () => {
   const allOf = [
     { source: { type: 'QueryParam', key: 'debug' }, operator: { type: 'Eq', value: '1' } },
     { source: { type: 'Header', key: 'X-Trace' }, operator: { type: 'Exists' } },
@@ -53,7 +53,7 @@ describe('RuleConditionsEditor: edition en place d\'une condition existante', ()
     expect(updated[1]).toEqual(allOf[1]);
   });
 
-  it('permet de changer le type de source d\'une condition existante (ex. QueryParam -> Header)', async () => {
+  it("permet de changer le type de source d'une condition existante (ex. QueryParam -> Header)", async () => {
     const onAllOfChange = vi.fn();
     const { getByTestId, getByLabelText, container } = render(RuleConditionsEditor, {
       props: { allOf, onAllOfChange },
@@ -69,7 +69,7 @@ describe('RuleConditionsEditor: edition en place d\'une condition existante', ()
     expect(updated[0]).toEqual({ source: { type: 'Header', key: 'X-Custom' }, operator: { type: 'Eq', value: 'yes' } });
   });
 
-  it('annuler l\'edition referme le formulaire sans rien modifier', async () => {
+  it("annuler l'edition referme le formulaire sans rien modifier", async () => {
     const onAllOfChange = vi.fn();
     const { getByTestId, getByLabelText } = render(RuleConditionsEditor, {
       props: { allOf, onAllOfChange },
@@ -83,7 +83,7 @@ describe('RuleConditionsEditor: edition en place d\'une condition existante', ()
     expect(getByTestId('rule-form-edit-condition-allof-button-0')).toHaveTextContent('QueryParam(debug) Eq(1)');
   });
 
-  it('ouvrir l\'ajout referme une edition en cours (un seul mini-formulaire a la fois)', async () => {
+  it("ouvrir l'ajout referme une edition en cours (un seul mini-formulaire a la fois)", async () => {
     const { getByTestId, getByLabelText } = render(RuleConditionsEditor, { props: { allOf } });
 
     await fireEvent.click(getByTestId('rule-form-edit-condition-allof-button-0'));
@@ -97,7 +97,7 @@ describe('RuleConditionsEditor: edition en place d\'une condition existante', ()
     expect(getByLabelText('Expected value').value).toBe('');
   });
 
-  it('supprimer une condition avant celle en cours d\'edition garde l\'edition alignee sur la bonne condition', async () => {
+  it("supprimer une condition avant celle en cours d'edition garde l'edition alignee sur la bonne condition", async () => {
     // Utilise le harness (allOf reellement en $state, comme RuleForm.svelte) :
     // la mise a jour du tableau et l'ajustement interne de l'index edite se
     // produisent dans le meme tick synchrone, exactement comme en production.

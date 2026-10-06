@@ -3,13 +3,7 @@
 </script>
 
 {#if visible}
-  <div
-    class="notification {type}"
-    role="alert"
-    aria-live="assertive"
-    aria-atomic="true"
-    data-testid="notification"
-  >
+  <div class="notification {type}" role="alert" aria-live="assertive" aria-atomic="true" data-testid="notification">
     <span class="notification-icon">
       {#if type === 'success'}&#10003;{:else if type === 'error'}&#10007;{:else}&#9432;{/if}
     </span>

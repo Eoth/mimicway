@@ -26,7 +26,8 @@ const templateSvc = {
         body: [
           {
             type: 'Template',
-            template: '{"id":"{{path.id}}","short":"{{path.id | first(3)}}","company":"{{fake.CompanyName}}","ts":{{now_ms}},"seq":{{seq}}}',
+            template:
+              '{"id":"{{path.id}}","short":"{{path.id | first(3)}}","company":"{{fake.CompanyName}}","ts":{{now_ms}},"seq":{{seq}}}',
           },
         ],
         chaos: null,
@@ -88,13 +89,7 @@ test('seeded_pick/seeded_int return the same value for the same SIRET across cal
 });
 
 test('seeded_pick/seeded_int can vary across different SIRETs', async ({ request }) => {
-  const sirets = [
-    '44306184100047',
-    '12345678901234',
-    '98765432109876',
-    '11111111111111',
-    '22222222222222',
-  ];
+  const sirets = ['44306184100047', '12345678901234', '98765432109876', '11111111111111', '22222222222222'];
   const results = [];
   for (const siret of sirets) {
     const resp = await request.get(`http://localhost:7342/seeded-test/entreprise/${siret}`);

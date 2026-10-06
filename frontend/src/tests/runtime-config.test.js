@@ -18,10 +18,13 @@ describe('runtime-config', () => {
   });
 
   it('adopte l URL configuree renvoyee par /runtime-config.json', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ api_base_url: 'https://api.example.com' }),
-    }));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ api_base_url: 'https://api.example.com' }),
+      }),
+    );
 
     await loadRuntimeConfig();
 
@@ -30,10 +33,13 @@ describe('runtime-config', () => {
   });
 
   it('retire un slash final de l URL configuree', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ api_base_url: 'https://api.example.com/' }),
-    }));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ api_base_url: 'https://api.example.com/' }),
+      }),
+    );
 
     await loadRuntimeConfig();
 
@@ -41,10 +47,13 @@ describe('runtime-config', () => {
   });
 
   it('reste vide (comportement par defaut) si api_base_url est absent ou vide', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({}),
-    }));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({}),
+      }),
+    );
 
     await loadRuntimeConfig();
 
@@ -67,10 +76,15 @@ describe('runtime-config', () => {
   });
 
   it('reste vide si la reponse n est pas un JSON valide (jamais bloquant)', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => { throw new Error('invalid json'); },
-    }));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => {
+          throw new Error('invalid json');
+        },
+      }),
+    );
 
     await expect(loadRuntimeConfig()).resolves.toBeUndefined();
     expect(getApiBaseUrl()).toBe('');

@@ -35,7 +35,17 @@ function check(files) {
 
 test('words are split on case, digits and every separator, and lowercased', () => {
   assert.deepEqual(words('--color-primary-500 tokens_Theme fooBar XMLHttp v2'), [
-    'color', 'primary', '500', 'tokens', 'theme', 'foo', 'bar', 'xml', 'http', 'v', '2',
+    'color',
+    'primary',
+    '500',
+    'tokens',
+    'theme',
+    'foo',
+    'bar',
+    'xml',
+    'http',
+    'v',
+    '2',
   ]);
 });
 
@@ -76,7 +86,9 @@ test('the command fails on a listed name in a tracked file or on standard input,
     assert.match(broken.stderr, /^src\/app\.css:1:11$/m);
     assert.doesNotMatch(broken.stderr, new RegExp(NAME, 'i'));
 
-    const message = spawnSync(process.execPath, [SCRIPT, '--stdin'], { input: `fix: drop the ${CAPITALIZED} tokens\n` });
+    const message = spawnSync(process.execPath, [SCRIPT, '--stdin'], {
+      input: `fix: drop the ${CAPITALIZED} tokens\n`,
+    });
     assert.equal(message.status, 1);
     const fine = spawnSync(process.execPath, [SCRIPT, '--stdin'], { input: 'fix: drop the former tokens\n' });
     assert.equal(fine.status, 0);

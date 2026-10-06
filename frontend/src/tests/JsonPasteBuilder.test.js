@@ -9,7 +9,7 @@ async function pasteAndParse(getByLabelText, getByText, json) {
 }
 
 describe('JsonPasteBuilder (exampleJsonToFields via tpl-utils.js)', () => {
-  it('detecte les champs d\'un objet colle et les affiche', async () => {
+  it("detecte les champs d'un objet colle et les affiche", async () => {
     const onUpdate = vi.fn();
     const { getByLabelText, getByText } = render(JsonPasteBuilder, { props: { onUpdate } });
 
@@ -40,7 +40,9 @@ describe('JsonPasteBuilder (exampleJsonToFields via tpl-utils.js)', () => {
   it('rejette un tableau vide avec un message explicite', async () => {
     const { getByLabelText, getByText } = render(JsonPasteBuilder);
     await pasteAndParse(getByLabelText, getByText, '[]');
-    await waitFor(() => expect(getByText('The array is empty. Paste an array with at least one element.')).toBeInTheDocument());
+    await waitFor(() =>
+      expect(getByText('The array is empty. Paste an array with at least one element.')).toBeInTheDocument(),
+    );
   });
 });
 
@@ -49,7 +51,7 @@ describe('JsonPasteBuilder (exampleJsonToFields via tpl-utils.js)', () => {
 // composant affiche toujours la zone de collage en premier, meme avec des
 // `fields` deja peuples -- exactement le comportement a eviter a la
 // restauration.
-describe('JsonPasteBuilder — startParsed (restauration a l\'edition, retour 1)', () => {
+describe("JsonPasteBuilder — startParsed (restauration a l'edition, retour 1)", () => {
   it('affiche directement la liste de champs quand startParsed=true et fields deja peuple', () => {
     const fields = [{ key: 'siret', fieldType: 'value', source: 'path', value: 'siret', pipe: '', asNumber: false }];
     const { getByText, queryByLabelText } = render(JsonPasteBuilder, { props: { fields, startParsed: true } });
@@ -98,7 +100,7 @@ describe('JsonPasteBuilder — pliage des champs objet (correctif diagnostic)', 
     expect(onUpdate).not.toHaveBeenCalled();
   });
 
-  it('deplier restaure l\'affichage des enfants', async () => {
+  it("deplier restaure l'affichage des enfants", async () => {
     const { getByLabelText, getByText, queryByText } = render(JsonPasteBuilder);
     await pasteAndParse(getByLabelText, getByText, nestedJson);
     await waitFor(() => expect(getByLabelText('Collapse client')).toBeInTheDocument());
@@ -129,7 +131,7 @@ describe('JsonPasteBuilder — pipes (retour 2)', () => {
     expect(queryByLabelText('Transformation pipe for nom')).not.toBeInTheDocument();
   });
 
-  it('affiche un champ pipe des qu\'une source non-fixe est choisie, et le transmet via onUpdate', async () => {
+  it("affiche un champ pipe des qu'une source non-fixe est choisie, et le transmet via onUpdate", async () => {
     const onUpdate = vi.fn();
     const { getByLabelText, getByText } = render(JsonPasteBuilder, { props: { onUpdate } });
     await pasteAndParse(getByLabelText, getByText, '{"siret":"123"}');

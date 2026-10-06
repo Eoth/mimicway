@@ -14,12 +14,7 @@ import { fileURLToPath } from 'node:url';
 // on different origins. It needs the binary built (`cargo build`) and frontend/dist, like the rest of the suite.
 
 const repoRoot = path.resolve(fileURLToPath(new URL('.', import.meta.url)), '..', '..');
-const binaryPath = path.join(
-  repoRoot,
-  'target',
-  'debug',
-  process.platform === 'win32' ? 'mimicway.exe' : 'mimicway',
-);
+const binaryPath = path.join(repoRoot, 'target', 'debug', process.platform === 'win32' ? 'mimicway.exe' : 'mimicway');
 const staticDir = path.join(repoRoot, 'frontend', 'dist');
 
 function getFreePort() {
@@ -45,9 +40,7 @@ async function waitForHealth(baseUrl, timeoutMs = 15000) {
     }
     await new Promise((r) => setTimeout(r, 150));
   }
-  throw new Error(
-    `Mimicway (instance started by this spec) did not start in time on ${baseUrl}: ${lastError}`,
-  );
+  throw new Error(`Mimicway (instance started by this spec) did not start in time on ${baseUrl}: ${lastError}`);
 }
 
 async function spawnMimicway({ port, dataDir, extraEnv = {} }) {
@@ -69,7 +62,9 @@ async function spawnMimicway({ port, dataDir, extraEnv = {} }) {
 }
 
 test.describe('API base URL apart from the origin of the interface', () => {
-  test('by default, /runtime-config.json gives an empty base and the interface uses its own origin', async ({ page }) => {
+  test('by default, /runtime-config.json gives an empty base and the interface uses its own origin', async ({
+    page,
+  }) => {
     const dataDir = mkdtempSync(path.join(tmpdir(), 'mimicway-apibase-default-'));
     const port = await getFreePort();
     let child;
@@ -154,7 +149,9 @@ test.describe('API base URL apart from the origin of the interface', () => {
     }
   });
 
-  test('an origin missing from CORS_ALLOWED_ORIGINS cannot call the management API from a browser', async ({ page }) => {
+  test('an origin missing from CORS_ALLOWED_ORIGINS cannot call the management API from a browser', async ({
+    page,
+  }) => {
     const backDataDir = mkdtempSync(path.join(tmpdir(), 'mimicway-apibase-cors-back-'));
     const frontDataDir = mkdtempSync(path.join(tmpdir(), 'mimicway-apibase-cors-front-'));
     const backPort = await getFreePort();

@@ -13,7 +13,7 @@ describe('BackupManager', () => {
     vi.clearAllMocks();
   });
 
-  it('affiche un etat vide quand aucune sauvegarde n\'existe', async () => {
+  it("affiche un etat vide quand aucune sauvegarde n'existe", async () => {
     getBackups.mockResolvedValue([]);
     const { getByText } = render(BackupManager);
     await waitFor(() => expect(getByText('No backup available yet.')).toBeInTheDocument());
@@ -21,7 +21,12 @@ describe('BackupManager', () => {
 
   it('affiche la liste des sauvegardes avec nom, taille et badge protege', async () => {
     getBackups.mockResolvedValue([
-      { filename: 'mock-config-1690000000000-000001.yaml', protected: false, size_bytes: 2048, created_at_ms: 1690000000000 },
+      {
+        filename: 'mock-config-1690000000000-000001.yaml',
+        protected: false,
+        size_bytes: 2048,
+        created_at_ms: 1690000000000,
+      },
       { filename: 'pre-reset-1690000000000.yaml', protected: true, size_bytes: 512, created_at_ms: 1690000000000 },
     ]);
     const { getByText, container } = render(BackupManager);
@@ -35,7 +40,7 @@ describe('BackupManager', () => {
     expect(metas[1].textContent).toContain('512 B');
   });
 
-  it('ouvre la confirmation au clic sur Restaurer sans appeler l\'API tout de suite', async () => {
+  it("ouvre la confirmation au clic sur Restaurer sans appeler l'API tout de suite", async () => {
     getBackups.mockResolvedValue([
       { filename: 'mock-config-1-000001.yaml', protected: false, size_bytes: 100, created_at_ms: 1690000000000 },
     ]);
@@ -69,7 +74,7 @@ describe('BackupManager', () => {
     expect(onNotify).toHaveBeenCalledWith('Configuration restored from "mock-config-1-000001.yaml"', 'success');
   });
 
-  it('annule sans appeler l\'API', async () => {
+  it("annule sans appeler l'API", async () => {
     getBackups.mockResolvedValue([
       { filename: 'mock-config-1-000001.yaml', protected: false, size_bytes: 100, created_at_ms: 1690000000000 },
     ]);
@@ -87,10 +92,7 @@ describe('BackupManager', () => {
     const onNotify = vi.fn();
     render(BackupManager, { props: { onNotify } });
 
-    await waitFor(() => expect(onNotify).toHaveBeenCalledWith(
-      expect.stringContaining('Access denied'),
-      'error',
-    ));
+    await waitFor(() => expect(onNotify).toHaveBeenCalledWith(expect.stringContaining('Access denied'), 'error'));
   });
 
   it('notifie une erreur si la restauration est refusee (403)', async () => {
@@ -107,10 +109,7 @@ describe('BackupManager', () => {
     await fireEvent.input(keywordInput, { target: { value: 'RESTORE' } });
     await fireEvent.click(getByText('Restore', { selector: '.btn-danger' }));
 
-    await waitFor(() => expect(onNotify).toHaveBeenCalledWith(
-      expect.stringContaining('Access denied'),
-      'error',
-    ));
+    await waitFor(() => expect(onNotify).toHaveBeenCalledWith(expect.stringContaining('Access denied'), 'error'));
   });
 
   it('appelle onBack au clic sur Retour', async () => {

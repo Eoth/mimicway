@@ -26,10 +26,13 @@ async function openAddRuleForm(page) {
   await page.goto('/');
   await page.waitForLoadState('networkidle');
   const group = page.locator('button[aria-expanded]').first();
-  if (await group.getAttribute('aria-expanded') === 'false') {
+  if ((await group.getAttribute('aria-expanded')) === 'false') {
     await group.click();
   }
-  await page.getByRole('button', { name: /Configure/ }).first().click();
+  await page
+    .getByRole('button', { name: /Configure/ })
+    .first()
+    .click();
   await page.getByRole('button', { name: /Add a rule/ }).click();
 }
 

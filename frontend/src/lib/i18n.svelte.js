@@ -33,7 +33,7 @@ function detectLocale() {
   } catch {
     // Storage unavailable (private mode, sandboxed frame): fall back to the browser's languages.
   }
-  const languages = typeof navigator === 'undefined' ? [] : navigator.languages ?? [navigator.language];
+  const languages = typeof navigator === 'undefined' ? [] : (navigator.languages ?? [navigator.language]);
   for (const language of languages) {
     const code = String(language).toLowerCase().split('-')[0];
     if (supported(code)) return code;

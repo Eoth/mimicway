@@ -22,84 +22,215 @@ body {
   background: var(--color-bg);
 }
 
-h1, h2, h3 { margin: 0 0 var(--space-2); line-height: var(--leading-tight); }
-button { cursor: pointer; font-family: inherit; font-size: inherit; }
-input, select, textarea { font-family: inherit; background: var(--color-surface); color: var(--color-text); border-color: var(--color-control); }
-code, kbd, pre, samp { font-family: var(--font-code); }
+h1,
+h2,
+h3 {
+  margin: 0 0 var(--space-2);
+  line-height: var(--leading-tight);
+}
+button {
+  cursor: pointer;
+  font-family: inherit;
+  font-size: inherit;
+}
+input,
+select,
+textarea {
+  font-family: inherit;
+  background: var(--color-surface);
+  color: var(--color-text);
+  border-color: var(--color-control);
+}
+code,
+kbd,
+pre,
+samp {
+  font-family: var(--font-code);
+}
 /* Figures line up in columns: times, sizes, counts and status codes do not shift as they change. */
-table, code { font-variant-numeric: tabular-nums; }
+table,
+code {
+  font-variant-numeric: tabular-nums;
+}
 /* One focus ring everywhere: solid, in the focus color, clear of the control it surrounds. */
-:focus-visible { outline: var(--line-thick) solid var(--color-focus); outline-offset: var(--line-thick); }
+:focus-visible {
+  outline: var(--line-thick) solid var(--color-focus);
+  outline-offset: var(--line-thick);
+}
 
 /* ── Accessibility ──────────────────────────────────────────── */
 
 .sr-only {
-  position: absolute; width: 1px; height: 1px; padding: 0; margin: calc(-1 * var(--line-thin));
-  overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: calc(-1 * var(--line-thin));
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 /* ── Buttons ────────────────────────────────────────────────── */
 
 .btn {
-  display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2);
-  padding: var(--space-2) var(--space-5); border-radius: var(--radius-m);
-  border: var(--line-thin) solid transparent; font-weight: var(--weight-strong); font-size: var(--text-m);
-  cursor: pointer; text-decoration: none; min-height: 40px;
-  transition: background var(--duration-quick), border-color var(--duration-quick), color var(--duration-quick);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-5);
+  border-radius: var(--radius-m);
+  border: var(--line-thin) solid transparent;
+  font-weight: var(--weight-strong);
+  font-size: var(--text-m);
+  cursor: pointer;
+  text-decoration: none;
+  min-height: 40px;
+  transition:
+    background var(--duration-quick),
+    border-color var(--duration-quick),
+    color var(--duration-quick);
 }
-.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
 
-.btn-sm { padding: var(--space-1) var(--space-3); font-size: var(--text-s); min-height: var(--size-control); }
-.btn-primary { background: var(--color-primary); color: var(--color-on-primary); border-color: transparent; }
-.btn-primary:hover { background: var(--color-primary-hover); }
-.btn-primary:disabled:hover { background: var(--color-primary); }
+.btn-sm {
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-s);
+  min-height: var(--size-control);
+}
+.btn-primary {
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  border-color: transparent;
+}
+.btn-primary:hover {
+  background: var(--color-primary-hover);
+}
+.btn-primary:disabled:hover {
+  background: var(--color-primary);
+}
 
-.btn-secondary { background: var(--color-surface); color: var(--color-text); border-color: var(--color-control); }
-.btn-secondary:hover { background: var(--color-hover); }
+.btn-secondary {
+  background: var(--color-surface);
+  color: var(--color-text);
+  border-color: var(--color-control);
+}
+.btn-secondary:hover {
+  background: var(--color-hover);
+}
 
-.btn-outline { background: var(--color-surface); color: var(--color-text-muted); border-color: var(--color-control); }
-.btn-outline:hover { background: var(--color-hover); color: var(--color-text); }
+.btn-outline {
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  border-color: var(--color-control);
+}
+.btn-outline:hover {
+  background: var(--color-hover);
+  color: var(--color-text);
+}
 
-.btn-danger { background: var(--color-danger); color: var(--color-on-danger); border-color: transparent; }
-.btn-danger:hover { background: var(--color-danger-hover); }
+.btn-danger {
+  background: var(--color-danger);
+  color: var(--color-on-danger);
+  border-color: transparent;
+}
+.btn-danger:hover {
+  background: var(--color-danger-hover);
+}
 
-.btn-danger-outline { background: var(--color-surface); color: var(--color-danger); border-color: var(--color-danger); }
-.btn-danger-outline:hover { background: var(--color-danger); color: var(--color-on-danger); }
+.btn-danger-outline {
+  background: var(--color-surface);
+  color: var(--color-danger);
+  border-color: var(--color-danger);
+}
+.btn-danger-outline:hover {
+  background: var(--color-danger);
+  color: var(--color-on-danger);
+}
 
-.btn-xs { padding: var(--space-0-5) var(--space-2); font-size: var(--text-s); border-radius: var(--radius-m); border: var(--line-thin) solid transparent; font-weight: var(--weight-strong); }
+.btn-xs {
+  padding: var(--space-0-5) var(--space-2);
+  font-size: var(--text-s);
+  border-radius: var(--radius-m);
+  border: var(--line-thin) solid transparent;
+  font-weight: var(--weight-strong);
+}
 
 /* Square buttons that hold a glyph (move, edit, duplicate, delete); their accessible name is an aria-label. Three
    sizes, from the rule list down to the rows of the response builders; the smallest still meets the 24 px target
    of WCAG 2.2. */
 .btn-icon {
-  flex-shrink: 0; width: var(--size-control); height: var(--size-control);
-  display: inline-flex; align-items: center; justify-content: center;
-  border: var(--line-thin) solid var(--color-control); border-radius: var(--radius-m);
-  background: var(--color-surface); color: var(--color-text-muted); font-size: var(--text-m); cursor: pointer;
-  transition: background-color var(--duration-quick), color var(--duration-quick);
+  flex-shrink: 0;
+  width: var(--size-control);
+  height: var(--size-control);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: var(--line-thin) solid var(--color-control);
+  border-radius: var(--radius-m);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  font-size: var(--text-m);
+  cursor: pointer;
+  transition:
+    background-color var(--duration-quick),
+    color var(--duration-quick);
 }
-.btn-icon-s { width: var(--size-control-s); height: var(--size-control-s); font-size: var(--text-s); }
-.btn-icon-xs { width: var(--size-control-xs); height: var(--size-control-xs); font-size: var(--text-xs); }
-.btn-icon:hover:not(:disabled) { background: var(--color-hover); color: var(--color-text); }
-.btn-icon:disabled { opacity: 0.35; cursor: not-allowed; }
-.btn-icon.btn-delete:hover:not(:disabled) { color: var(--color-danger); border-color: var(--color-danger); }
-.btn-icon.btn-edit:hover:not(:disabled) { color: var(--color-primary); border-color: var(--color-primary); }
+.btn-icon-s {
+  width: var(--size-control-s);
+  height: var(--size-control-s);
+  font-size: var(--text-s);
+}
+.btn-icon-xs {
+  width: var(--size-control-xs);
+  height: var(--size-control-xs);
+  font-size: var(--text-xs);
+}
+.btn-icon:hover:not(:disabled) {
+  background: var(--color-hover);
+  color: var(--color-text);
+}
+.btn-icon:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.btn-icon.btn-delete:hover:not(:disabled) {
+  color: var(--color-danger);
+  border-color: var(--color-danger);
+}
+.btn-icon.btn-edit:hover:not(:disabled) {
+  color: var(--color-primary);
+  border-color: var(--color-primary);
+}
 
 /* ── Forms ──────────────────────────────────────────────────── */
 
 .form-field {
-  display: flex; flex-direction: column; gap: var(--space-1); margin-bottom: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin-bottom: var(--space-4);
 }
 .form-field label {
-  font-weight: var(--weight-strong); font-size: var(--text-m); color: var(--color-text);
+  font-weight: var(--weight-strong);
+  font-size: var(--text-m);
+  color: var(--color-text);
 }
 .form-field input,
 .form-field select,
 .form-field textarea {
-  padding: var(--space-2) var(--space-3); border: var(--line-thin) solid var(--color-control);
-  border-radius: var(--radius-m); font-size: var(--text-m);
-  background: var(--color-surface); color: var(--color-text);
-  width: 100%; max-width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: var(--line-thin) solid var(--color-control);
+  border-radius: var(--radius-m);
+  font-size: var(--text-m);
+  background: var(--color-surface);
+  color: var(--color-text);
+  width: 100%;
+  max-width: 100%;
 }
 .form-field input:hover,
 .form-field select:hover,
@@ -114,60 +245,134 @@ table, code { font-variant-numeric: tabular-nums; }
 .form-field input:disabled,
 .form-field select:disabled,
 .form-field textarea:disabled {
-  background: var(--color-sunken); cursor: not-allowed; opacity: 0.6;
+  background: var(--color-sunken);
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 
-.form-field-check { flex-direction: row; align-items: center; gap: var(--space-2); }
-.form-field-check label { font-weight: var(--weight-regular); }
+.form-field-check {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-2);
+}
+.form-field-check label {
+  font-weight: var(--weight-regular);
+}
 
-.form-row { display: flex; gap: var(--space-3); flex-wrap: wrap; }
-.form-row > .form-field { flex: 1; min-width: 10rem; }
+.form-row {
+  display: flex;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+.form-row > .form-field {
+  flex: 1;
+  min-width: 10rem;
+}
 
 .field-hint {
-  font-size: var(--text-s); color: var(--color-text-muted); margin-top: var(--space-0-5);
+  font-size: var(--text-s);
+  color: var(--color-text-muted);
+  margin-top: var(--space-0-5);
 }
 
 .form-error {
   background: var(--color-danger-bg);
   color: var(--color-danger-text);
-  padding: var(--space-2) var(--space-3); border-radius: var(--radius-m);
-  font-size: var(--text-m); border: var(--line-thin) solid var(--color-danger);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-m);
+  font-size: var(--text-m);
+  border: var(--line-thin) solid var(--color-danger);
 }
 
 .form-actions {
-  display: flex; gap: var(--space-3); justify-content: flex-end; margin-top: var(--space-4);
+  display: flex;
+  gap: var(--space-3);
+  justify-content: flex-end;
+  margin-top: var(--space-4);
 }
 
 /* A table wider than the screen scrolls inside this box, not the whole page. The box is also the containing block
    of what its cells position absolutely (visually hidden labels), which would otherwise widen the page. */
-.table-scroll { overflow-x: auto; position: relative; }
+.table-scroll {
+  overflow-x: auto;
+  position: relative;
+}
 
 /* ── Sections ───────────────────────────────────────────────── */
 
 /* A fieldset that holds one part of a form (the action of a rule, its conditions, its response), and the parts
    of a section, under a hairline. */
 /* min-width: a fieldset is otherwise as wide as its widest content, and would widen a narrow screen. */
-.section { border: var(--line-thin) solid var(--color-border); border-radius: var(--radius-m); padding: var(--space-3); margin-bottom: var(--space-4); min-width: 0; }
-.section legend { font-weight: var(--weight-strong); font-size: var(--text-m); padding: 0 var(--space-1-5); }
-.section-help { font-size: var(--text-s); color: var(--color-text-muted); margin: 0 0 var(--space-2); }
-.sub-section { margin-top: var(--space-3); padding-top: var(--space-3); border-top: var(--line-thin) solid var(--color-border); }
-.sub-section strong { display: block; margin-bottom: var(--space-1-5); font-size: var(--text-m); }
+.section {
+  border: var(--line-thin) solid var(--color-border);
+  border-radius: var(--radius-m);
+  padding: var(--space-3);
+  margin-bottom: var(--space-4);
+  min-width: 0;
+}
+.section legend {
+  font-weight: var(--weight-strong);
+  font-size: var(--text-m);
+  padding: 0 var(--space-1-5);
+}
+.section-help {
+  font-size: var(--text-s);
+  color: var(--color-text-muted);
+  margin: 0 0 var(--space-2);
+}
+.sub-section {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: var(--line-thin) solid var(--color-border);
+}
+.sub-section strong {
+  display: block;
+  margin-bottom: var(--space-1-5);
+  font-size: var(--text-m);
+}
 
 /* ── Callouts ───────────────────────────────────────────────── */
 
 /* A box in the flow of a form that says what to weigh before going on: a possible conflict, a mode that drops
    something. The whole box takes the state's colors; its title says the state in words. */
 .callout {
-  padding: var(--space-3); border: var(--line-thin) solid; border-radius: var(--radius-m); margin-bottom: var(--space-3);
+  padding: var(--space-3);
+  border: var(--line-thin) solid;
+  border-radius: var(--radius-m);
+  margin-bottom: var(--space-3);
   font-size: var(--text-m);
 }
-.callout p { margin: 0 0 var(--space-2); }
-.callout-title { font-weight: var(--weight-strong); }
-.callout-list { margin: 0 0 var(--space-2); padding-left: var(--space-5); display: flex; flex-direction: column; gap: var(--space-1-5); }
-.callout-list li { word-break: break-word; }
-.callout-actions { display: flex; gap: var(--space-2); flex-wrap: wrap; }
-.callout-warning { background: var(--color-warning-bg); border-color: var(--color-warning); color: var(--color-warning-text); }
-.callout-danger { background: var(--color-danger-bg); border-color: var(--color-danger); color: var(--color-danger-text); }
+.callout p {
+  margin: 0 0 var(--space-2);
+}
+.callout-title {
+  font-weight: var(--weight-strong);
+}
+.callout-list {
+  margin: 0 0 var(--space-2);
+  padding-left: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1-5);
+}
+.callout-list li {
+  word-break: break-word;
+}
+.callout-actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.callout-warning {
+  background: var(--color-warning-bg);
+  border-color: var(--color-warning);
+  color: var(--color-warning-text);
+}
+.callout-danger {
+  background: var(--color-danger-bg);
+  border-color: var(--color-danger);
+  color: var(--color-danger-text);
+}
 
 /* ── Badges ─────────────────────────────────────────────────── */
 
@@ -175,76 +380,212 @@ table, code { font-variant-numeric: tabular-nums; }
    state (the mode of a service, UrlHealthBadge, the listening status of TcpServiceManager). A color class follows
    the shape and sets the border's style and color, never its width. */
 .badge {
-  display: inline-block; padding: var(--space-0-5) var(--space-1-5); border-radius: var(--radius-s);
-  font-size: var(--text-xs); font-weight: var(--weight-heavy);
+  display: inline-block;
+  padding: var(--space-0-5) var(--space-1-5);
+  border-radius: var(--radius-s);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-heavy);
   border: var(--line-thin) solid transparent;
 }
 .badge-pill {
-  display: inline-flex; align-items: center; padding: var(--space-1) var(--space-3);
+  display: inline-flex;
+  align-items: center;
+  padding: var(--space-1) var(--space-3);
   border: var(--line-thin) solid transparent;
-  border-radius: var(--radius-s); font-size: var(--text-xs); font-weight: var(--weight-heavy);
-  letter-spacing: 0.05em; text-transform: uppercase;
+  border-radius: var(--radius-s);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-heavy);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
 }
 
 /* A mock is drawn dashed, as an imitation is: the real thing it stands in for (a proxied target) is drawn solid. The
    line says it as well as the color, so the mode reads without color. */
-.badge-mock { background: var(--color-mock-bg); color: var(--color-mock-text); border-style: dashed; border-color: var(--color-mock); }
-.badge-proxy { background: var(--color-proxy-bg); color: var(--color-proxy-text); border-color: var(--color-proxy); }
-.badge-error { background: var(--color-danger-bg); color: var(--color-danger-text); border-color: var(--color-danger); }
-.badge-success { background: var(--color-success-bg); color: var(--color-success-text); border-color: var(--color-success); }
-.badge-info { background: var(--color-info-bg); color: var(--color-info-text); border-color: var(--color-info); }
-.badge-unknown { background: transparent; color: var(--color-text-muted); border-color: var(--color-control); }
-.badge-testing { background: var(--color-warning-bg); color: var(--color-warning-text); border-color: var(--color-warning); }
-.badge-reachable { background: var(--color-success); color: var(--color-on-success); }
-.badge-unreachable { background: var(--color-danger); color: var(--color-on-danger); }
-.badge-expired { background: transparent; color: var(--color-text-muted); border-style: dashed; border-color: var(--color-text-muted); }
+.badge-mock {
+  background: var(--color-mock-bg);
+  color: var(--color-mock-text);
+  border-style: dashed;
+  border-color: var(--color-mock);
+}
+.badge-proxy {
+  background: var(--color-proxy-bg);
+  color: var(--color-proxy-text);
+  border-color: var(--color-proxy);
+}
+.badge-error {
+  background: var(--color-danger-bg);
+  color: var(--color-danger-text);
+  border-color: var(--color-danger);
+}
+.badge-success {
+  background: var(--color-success-bg);
+  color: var(--color-success-text);
+  border-color: var(--color-success);
+}
+.badge-info {
+  background: var(--color-info-bg);
+  color: var(--color-info-text);
+  border-color: var(--color-info);
+}
+.badge-unknown {
+  background: transparent;
+  color: var(--color-text-muted);
+  border-color: var(--color-control);
+}
+.badge-testing {
+  background: var(--color-warning-bg);
+  color: var(--color-warning-text);
+  border-color: var(--color-warning);
+}
+.badge-reachable {
+  background: var(--color-success);
+  color: var(--color-on-success);
+}
+.badge-unreachable {
+  background: var(--color-danger);
+  color: var(--color-on-danger);
+}
+.badge-expired {
+  background: transparent;
+  color: var(--color-text-muted);
+  border-style: dashed;
+  border-color: var(--color-text-muted);
+}
 
 /* HTTP methods, in the code face: reading in the information color, creating in the success color, changing in the
    warning color, deleting in the danger color; the others are neutral. The name is always written: the color only
    helps a log be scanned. */
 .method-badge {
-  display: inline-block; padding: var(--space-0-5) var(--space-1-5); border-radius: var(--radius-s);
-  font-family: var(--font-code); font-size: var(--text-xs); font-weight: var(--weight-heavy); letter-spacing: 0.03em;
-  background: var(--color-sunken); color: var(--color-text-muted);
+  display: inline-block;
+  padding: var(--space-0-5) var(--space-1-5);
+  border-radius: var(--radius-s);
+  font-family: var(--font-code);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-heavy);
+  letter-spacing: 0.03em;
+  background: var(--color-sunken);
+  color: var(--color-text-muted);
 }
-.method-badge[data-method="GET"] { background: var(--color-info-bg); color: var(--color-info-text); }
-.method-badge[data-method="POST"] { background: var(--color-success-bg); color: var(--color-success-text); }
-.method-badge[data-method="PUT"],
-.method-badge[data-method="PATCH"] { background: var(--color-warning-bg); color: var(--color-warning-text); }
-.method-badge[data-method="DELETE"] { background: var(--color-danger-bg); color: var(--color-danger-text); }
+.method-badge[data-method='GET'] {
+  background: var(--color-info-bg);
+  color: var(--color-info-text);
+}
+.method-badge[data-method='POST'] {
+  background: var(--color-success-bg);
+  color: var(--color-success-text);
+}
+.method-badge[data-method='PUT'],
+.method-badge[data-method='PATCH'] {
+  background: var(--color-warning-bg);
+  color: var(--color-warning-text);
+}
+.method-badge[data-method='DELETE'] {
+  background: var(--color-danger-bg);
+  color: var(--color-danger-text);
+}
 
 /* ── Response builders ──────────────────────────────────────── */
 
 /* Shared by the JSON and XML builders, by example and in detail: the trail of the node being edited, the mark of
    a folded node, and the preview of the generated template. */
-.data-breadcrumb { margin: var(--space-1) 0; }
-.data-breadcrumb ol { list-style: none; display: flex; align-items: center; gap: var(--space-1-5); flex-wrap: wrap; margin: 0; padding: 0; font-size: var(--text-s); }
-.data-breadcrumb li { display: flex; align-items: center; gap: var(--space-1-5); color: var(--color-text-muted); }
-.data-breadcrumb li:not(:last-child)::after { content: ">"; color: var(--color-text-muted); }
-.data-breadcrumb li[aria-current="page"] { color: var(--color-text); font-weight: var(--weight-strong); }
-.collapsed-indicator { font-size: var(--text-s); color: var(--color-text-muted); font-style: italic; white-space: nowrap; }
-.preview-code { display: block; margin-top: var(--space-1); padding: var(--space-2); background: var(--color-bg); border-radius: var(--radius-m); font-size: var(--text-s); word-break: break-all; white-space: pre-wrap; }
+.data-breadcrumb {
+  margin: var(--space-1) 0;
+}
+.data-breadcrumb ol {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  flex-wrap: wrap;
+  margin: 0;
+  padding: 0;
+  font-size: var(--text-s);
+}
+.data-breadcrumb li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  color: var(--color-text-muted);
+}
+.data-breadcrumb li:not(:last-child)::after {
+  content: '>';
+  color: var(--color-text-muted);
+}
+.data-breadcrumb li[aria-current='page'] {
+  color: var(--color-text);
+  font-weight: var(--weight-strong);
+}
+.collapsed-indicator {
+  font-size: var(--text-s);
+  color: var(--color-text-muted);
+  font-style: italic;
+  white-space: nowrap;
+}
+.preview-code {
+  display: block;
+  margin-top: var(--space-1);
+  padding: var(--space-2);
+  background: var(--color-bg);
+  border-radius: var(--radius-m);
+  font-size: var(--text-s);
+  word-break: break-all;
+  white-space: pre-wrap;
+}
 
 /* ── Dialogs ────────────────────────────────────────────────── */
 
 .modal-overlay {
-  position: fixed; inset: 0; background: var(--color-overlay);
-  display: flex; align-items: center; justify-content: center;
-  z-index: var(--z-modal); padding: var(--space-4);
+  position: fixed;
+  inset: 0;
+  background: var(--color-overlay);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: var(--z-modal);
+  padding: var(--space-4);
 }
 .modal-content {
-  background: var(--color-surface); border: var(--line-thin) solid var(--color-border);
-  border-radius: var(--radius-m); padding: var(--space-5);
-  max-width: 36rem; width: 100%; max-height: 80vh; overflow-y: auto;
+  background: var(--color-surface);
+  border: var(--line-thin) solid var(--color-border);
+  border-radius: var(--radius-m);
+  padding: var(--space-5);
+  max-width: 36rem;
+  width: 100%;
+  max-height: 80vh;
+  overflow-y: auto;
   box-shadow: var(--shadow-overlay);
 }
-.modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-4); }
-.modal-header h3 { margin: 0; font-size: var(--text-xl); }
-.modal-footer { margin-top: var(--space-4); display: flex; justify-content: flex-end; }
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-4);
+}
+.modal-header h3 {
+  margin: 0;
+  font-size: var(--text-xl);
+}
+.modal-footer {
+  margin-top: var(--space-4);
+  display: flex;
+  justify-content: flex-end;
+}
 
 .btn-close {
-  background: none; border: var(--line-thin) solid var(--color-control); border-radius: var(--radius-m);
-  width: var(--size-control); height: var(--size-control); display: inline-flex; align-items: center;
-  justify-content: center; font-size: var(--text-m); cursor: pointer; color: var(--color-text-muted);
+  background: none;
+  border: var(--line-thin) solid var(--color-control);
+  border-radius: var(--radius-m);
+  width: var(--size-control);
+  height: var(--size-control);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--text-m);
+  cursor: pointer;
+  color: var(--color-text-muted);
 }
-.btn-close:hover { background: var(--color-hover); color: var(--color-danger); border-color: var(--color-danger); }
+.btn-close:hover {
+  background: var(--color-hover);
+  color: var(--color-danger);
+  border-color: var(--color-danger);
+}

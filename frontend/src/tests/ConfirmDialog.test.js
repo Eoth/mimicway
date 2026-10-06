@@ -44,7 +44,7 @@ describe('ConfirmDialog', () => {
     expect(onCancel).toHaveBeenCalled();
   });
 
-  it('desactive le bouton de confirmation tant que le mot-cle n\'est pas saisi exactement', async () => {
+  it("desactive le bouton de confirmation tant que le mot-cle n'est pas saisi exactement", async () => {
     const onConfirm = vi.fn();
     const { getByText, getByLabelText } = render(ConfirmDialog, {
       props: { open: true, title: 'Reset', confirmLabel: 'Confirm', confirmKeyword: 'RESET', onConfirm },

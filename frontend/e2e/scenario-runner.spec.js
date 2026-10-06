@@ -37,7 +37,12 @@ function validRule(name, overrides = {}) {
     script: null,
     post_script: null,
     conditions: { all_of: [], any_of: [] },
-    response: { status: 200, headers: [{ name: 'Content-Type', value: 'application/json' }], body: [{ type: 'Literal', value: '{"ok":true}' }], chaos: null },
+    response: {
+      status: 200,
+      headers: [{ name: 'Content-Type', value: 'application/json' }],
+      body: [{ type: 'Literal', value: '{"ok":true}' }],
+      chaos: null,
+    },
     ...overrides,
   };
 }
@@ -61,14 +66,19 @@ test.describe('Scenarios: services and rules', () => {
   });
 
   test('show the rules of a service', async ({ page, request }) => {
-    await request.post(`${API}/services`, { data: validService('e2e-svc', {
-      rules: [
-        validRule('rule-alpha'),
-        validRule('rule-beta', {
-          conditions: { all_of: [{ source: { type: 'QueryParam', key: 'id' }, operator: { type: 'Eq', value: '42' } }], any_of: [] },
-        }),
-      ],
-    }) });
+    await request.post(`${API}/services`, {
+      data: validService('e2e-svc', {
+        rules: [
+          validRule('rule-alpha'),
+          validRule('rule-beta', {
+            conditions: {
+              all_of: [{ source: { type: 'QueryParam', key: 'id' }, operator: { type: 'Eq', value: '42' } }],
+              any_of: [],
+            },
+          }),
+        ],
+      }),
+    });
     await runScenario(page, loadScenario('rules.scenarios.json', 'Show the rules of a service'));
   });
 });
@@ -88,7 +98,10 @@ test.describe('Scenarios: home screen, service list and groups', () => {
 
   test('the list shows a service created through the API', async ({ page, request }) => {
     await request.post(`${API}/services`, { data: validService('ui-test-svc') });
-    await runScenario(page, loadScenario('services.scenarios.json', 'The list shows a service created through the API, in its group'));
+    await runScenario(
+      page,
+      loadScenario('services.scenarios.json', 'The list shows a service created through the API, in its group'),
+    );
   });
 
   test('the groups page opens from the navigation bar', async ({ page }) => {
@@ -100,7 +113,10 @@ test.describe('Scenarios: home screen, service list and groups', () => {
   test('an expanded group stays expanded after opening one of its services', async ({ page, request }) => {
     await request.post(`${API}/groups`, { data: { name: 'persist-grp', code: '', admins: [], members: [] } });
     await request.post(`${API}/services`, { data: validService('persist-svc', { group_name: 'persist-grp' }) });
-    await runScenario(page, loadScenario('groups.scenarios.json', 'An expanded group stays expanded after opening one of its services'));
+    await runScenario(
+      page,
+      loadScenario('groups.scenarios.json', 'An expanded group stays expanded after opening one of its services'),
+    );
   });
 
   test('reloading the page collapses an expanded group', async ({ page, request }) => {
@@ -116,7 +132,10 @@ function ruleTestService(name) {
     rules: [
       validRule('rule-alpha'),
       validRule('rule-beta', {
-        conditions: { all_of: [{ source: { type: 'QueryParam', key: 'id' }, operator: { type: 'Eq', value: '42' } }], any_of: [] },
+        conditions: {
+          all_of: [{ source: { type: 'QueryParam', key: 'id' }, operator: { type: 'Eq', value: '42' } }],
+          any_of: [],
+        },
       }),
     ],
   });
@@ -129,7 +148,10 @@ test.describe('Scenarios: rule list, service card and search', () => {
 
   test('the add button opens the rule form when the service has rules', async ({ page, request }) => {
     await request.post(`${API}/services`, { data: ruleTestService('e2e-svc') });
-    await runScenario(page, loadScenario('rules.scenarios.json', 'The add button opens the rule form when the service has rules'));
+    await runScenario(
+      page,
+      loadScenario('rules.scenarios.json', 'The add button opens the rule form when the service has rules'),
+    );
   });
 
   test('the edit button opens the rule form', async ({ page, request }) => {
@@ -147,9 +169,7 @@ test.describe('Scenarios: rule list, service card and search', () => {
     await runScenario(page, loadScenario('services.scenarios.json', 'Turn the mock of e2e-svc off from its card'));
 
     // The switch saves the service at once: it now forwards to its target.
-    await expect
-      .poll(async () => (await (await request.get(`${API}/services/e2e-svc`)).json()).is_mocked)
-      .toBe(false);
+    await expect.poll(async () => (await (await request.get(`${API}/services/e2e-svc`)).json()).is_mocked).toBe(false);
   });
 
   test('a search that matches no service says so', async ({ page, request }) => {
@@ -179,11 +199,17 @@ test.describe('Scenarios: groups, service identity and persistence', () => {
   });
 
   test('a group name may hold accents and spaces', async ({ page }) => {
-    await runScenario(page, loadScenario('groups.scenarios.json', 'Create a group whose name holds accents and spaces'));
+    await runScenario(
+      page,
+      loadScenario('groups.scenarios.json', 'Create a group whose name holds accents and spaces'),
+    );
   });
 
   test('groups created in a row never collide on their code', async ({ page }) => {
-    await runScenario(page, loadScenario('groups.scenarios.json', 'Create three groups in a row without a code collision'));
+    await runScenario(
+      page,
+      loadScenario('groups.scenarios.json', 'Create three groups in a row without a code collision'),
+    );
   });
 
   test('deleting a service keeps the service of the same name in another group', async ({ page, request }) => {
@@ -192,7 +218,13 @@ test.describe('Scenarios: groups, service identity and persistence', () => {
     await request.post(`${API}/services`, { data: validService('ambig-svc', { group_name: 'ambig-grp-a' }) });
     await request.post(`${API}/services`, { data: validService('ambig-svc', { group_name: 'ambig-grp-b' }) });
 
-    await runScenario(page, loadScenario('services.scenarios.json', 'Delete a service of a group, and keep the service of the same name in another group'));
+    await runScenario(
+      page,
+      loadScenario(
+        'services.scenarios.json',
+        'Delete a service of a group, and keep the service of the same name in another group',
+      ),
+    );
 
     await expect(async () => {
       const stillB = await request.get(`${API}/groups/ambig-grp-b/services/ambig-svc`);
@@ -204,17 +236,26 @@ test.describe('Scenarios: groups, service identity and persistence', () => {
 
   test('deleting a service reports its success, not an error', async ({ page, request }) => {
     await request.post(`${API}/services`, { data: validService('no-crash-svc') });
-    await runScenario(page, loadScenario('services.scenarios.json', 'Deleting a service reports its success, not an error'));
+    await runScenario(
+      page,
+      loadScenario('services.scenarios.json', 'Deleting a service reports its success, not an error'),
+    );
   });
 
   test('a service with a path parameter shows in the list', async ({ page, request }) => {
     await request.post(`${API}/services`, { data: validService('tpl-test', { listen_path: '/items/{id}' }) });
-    await runScenario(page, loadScenario('services.scenarios.json', 'A service with a path parameter in its listen path shows in the list'));
+    await runScenario(
+      page,
+      loadScenario('services.scenarios.json', 'A service with a path parameter in its listen path shows in the list'),
+    );
   });
 
   test('turning the mock off from the card reaches the configuration file', async ({ page, request }) => {
     await request.post(`${API}/services`, { data: validService('write-behind-svc') });
-    await runScenario(page, loadScenario('services.scenarios.json', 'Turn the mock of write-behind-svc off from its card'));
+    await runScenario(
+      page,
+      loadScenario('services.scenarios.json', 'Turn the mock of write-behind-svc off from its card'),
+    );
 
     // The configuration file is written in the background (write-behind): wait until it holds the change.
     await expect(async () => {
@@ -237,7 +278,10 @@ test.describe('Scenarios: conflict warning between rules', () => {
   });
 
   test('a rule that overlaps another raises a warning', async ({ page }) => {
-    await runScenario(page, loadScenario('rules.scenarios.json', 'A rule that overlaps an existing one raises a conflict warning'));
+    await runScenario(
+      page,
+      loadScenario('rules.scenarios.json', 'A rule that overlaps an existing one raises a conflict warning'),
+    );
   });
 
   test('a rule that overlaps no other raises none', async ({ page }) => {
@@ -263,31 +307,55 @@ test.describe('Scenarios: purely mocked services', () => {
     await request.post(`${API}/services`, {
       data: validService('purely-mocked-existing', { real_target_url: '', rules: [validRule('existing-rule')] }),
     });
-    await runScenario(page, loadScenario('services.scenarios.json', 'Turning purely mocked off shows the target field again and keeps the rules'));
+    await runScenario(
+      page,
+      loadScenario(
+        'services.scenarios.json',
+        'Turning purely mocked off shows the target field again and keeps the rules',
+      ),
+    );
   });
 
   test('a rule of a purely mocked service has no proxy action', async ({ page, request }) => {
     await request.post(`${API}/services`, {
       data: validService('purely-mocked-for-rule', { real_target_url: '' }),
     });
-    await runScenario(page, loadScenario('rules.scenarios.json', 'A rule of a purely mocked service has no proxy action'));
+    await runScenario(
+      page,
+      loadScenario('rules.scenarios.json', 'A rule of a purely mocked service has no proxy action'),
+    );
   });
 
   test('making a service with a proxy rule purely mocked warns without blocking', async ({ page, request }) => {
     await request.post(`${API}/services`, {
       data: validService('svc-with-proxy-rule', { rules: [validRule('legacy-proxy-rule', { action: 'proxy' })] }),
     });
-    await runScenario(page, loadScenario('services.scenarios.json', 'Making a service with a proxy rule purely mocked warns, and saves once confirmed'));
+    await runScenario(
+      page,
+      loadScenario(
+        'services.scenarios.json',
+        'Making a service with a proxy rule purely mocked warns, and saves once confirmed',
+      ),
+    );
   });
 
-  test('saving a leftover proxy rule of a purely mocked service warns, then makes it a mock', async ({ page, request }) => {
+  test('saving a leftover proxy rule of a purely mocked service warns, then makes it a mock', async ({
+    page,
+    request,
+  }) => {
     await request.post(`${API}/services`, {
       data: validService('purely-mocked-stale-proxy', {
         real_target_url: '',
         rules: [validRule('stale-proxy-rule', { action: 'proxy' })],
       }),
     });
-    await runScenario(page, loadScenario('rules.scenarios.json', 'Editing a leftover proxy rule of a purely mocked service warns before saving'));
+    await runScenario(
+      page,
+      loadScenario(
+        'rules.scenarios.json',
+        'Editing a leftover proxy rule of a purely mocked service warns before saving',
+      ),
+    );
 
     // Saving anyway changed the saved rule, from proxy to mock, not only the warning on screen.
     const resp = await request.get(`${API}/services/purely-mocked-stale-proxy`);
@@ -315,11 +383,17 @@ test.describe('Scenarios: folded JSON objects and advanced options', () => {
   });
 
   test('the advanced options open by themselves when a post-script exists', async ({ page }) => {
-    await runScenario(page, loadScenario('rules.scenarios.json', 'The advanced options open by themselves for a rule that has a post-script'));
+    await runScenario(
+      page,
+      loadScenario('rules.scenarios.json', 'The advanced options open by themselves for a rule that has a post-script'),
+    );
   });
 
   test('a pre-script survives folding the advanced options', async ({ page, request }) => {
-    await runScenario(page, loadScenario('rules.scenarios.json', 'Folding the advanced options keeps the pre-script typed in them'));
+    await runScenario(
+      page,
+      loadScenario('rules.scenarios.json', 'Folding the advanced options keeps the pre-script typed in them'),
+    );
 
     // The pre-script typed before folding was saved, not only shown again.
     const resp = await request.get(`${API}/services/fold-adv-svc`);
@@ -329,7 +403,10 @@ test.describe('Scenarios: folded JSON objects and advanced options', () => {
   });
 
   test('folding a nested JSON object keeps its fields', async ({ page, request }) => {
-    await runScenario(page, loadScenario('rules.scenarios.json', 'Folding a nested JSON object hides its fields and keeps their content'));
+    await runScenario(
+      page,
+      loadScenario('rules.scenarios.json', 'Folding a nested JSON object hides its fields and keeps their content'),
+    );
 
     // The field typed inside the object, then folded away and shown again, is in the saved template.
     const resp = await request.get(`${API}/services/fold-adv-svc`);
@@ -349,7 +426,13 @@ test.describe('Scenarios: rules on the SOAPAction header', () => {
   });
 
   test('one rule per SOAPAction value is set up with a header condition', async ({ page }) => {
-    await runScenario(page, loadScenario('rules.scenarios.json', 'Set up one rule per SOAPAction header value on a service (doc illustration)'));
+    await runScenario(
+      page,
+      loadScenario(
+        'rules.scenarios.json',
+        'Set up one rule per SOAPAction header value on a service (doc illustration)',
+      ),
+    );
   });
 });
 
@@ -365,11 +448,22 @@ test.describe('Scenarios: one response element per request element', () => {
   });
 
   test('a script answers one element per element of the request', async ({ page, request }) => {
-    await runScenario(page, loadScenario('rules.scenarios.json', 'A script answers one element per element of the request (doc illustration)'));
+    await runScenario(
+      page,
+      loadScenario(
+        'rules.scenarios.json',
+        'A script answers one element per element of the request (doc illustration)',
+      ),
+    );
 
     // A call with two lines gets two elements, each built from its line.
     const resp = await request.post('http://localhost:7342/repeat-pattern-svc/calcul', {
-      data: { lines: [{ sku: 'REF-001', qty: 3 }, { sku: 'REF-002', qty: 1 }] },
+      data: {
+        lines: [
+          { sku: 'REF-001', qty: 3 },
+          { sku: 'REF-002', qty: 1 },
+        ],
+      },
     });
     expect(resp.status()).toBe(200);
     const body = await resp.json();
@@ -439,8 +533,17 @@ test.describe('Scenarios: XPath condition on a SOAP body', () => {
     });
   });
 
-  test('an XPath condition and a script copy the SIRET of a SOAP request into the response', async ({ page, request }) => {
-    await runScenario(page, loadScenario('rules.scenarios.json', 'Match a SOAP body by XPath and copy one of its values into the response (doc illustration)'));
+  test('an XPath condition and a script copy the SIRET of a SOAP request into the response', async ({
+    page,
+    request,
+  }) => {
+    await runScenario(
+      page,
+      loadScenario(
+        'rules.scenarios.json',
+        'Match a SOAP body by XPath and copy one of its values into the response (doc illustration)',
+      ),
+    );
 
     // An empty <Header></Header> precedes the Body, as in real SOAP requests: the XPath lookup (walk_xml) must step
     // over it.
@@ -503,7 +606,10 @@ test.describe('Scenarios: a response reopens in the view it was built in', () =>
   });
 
   test('a JSON response built by example reopens in that view, its pipe applied', async ({ page, request }) => {
-    await runScenario(page, loadScenario('rules.scenarios.json', 'A JSON response built by example reopens in that view, with its pipe'));
+    await runScenario(
+      page,
+      loadScenario('rules.scenarios.json', 'A JSON response built by example reopens in that view, with its pipe'),
+    );
 
     // In the reopened view, the scenario turns the pipe from upper to lower before saving again: an answer in lower
     // case shows that this second save is the one kept.
@@ -515,11 +621,20 @@ test.describe('Scenarios: a response reopens in the view it was built in', () =>
   });
 
   test('a JSON response built in detail reopens in the detailed view', async ({ page, request }) => {
-    await runScenario(page, loadScenario('rules.scenarios.json', 'A JSON response built in detail reopens in the detailed view, not as an advanced template'));
+    await runScenario(
+      page,
+      loadScenario(
+        'rules.scenarios.json',
+        'A JSON response built in detail reopens in the detailed view, not as an advanced template',
+      ),
+    );
   });
 
   test('an XML response built by example reopens in that view, its pipe applied', async ({ page, request }) => {
-    await runScenario(page, loadScenario('rules.scenarios.json', 'An XML response built by example reopens in that view, with its pipe'));
+    await runScenario(
+      page,
+      loadScenario('rules.scenarios.json', 'An XML response built by example reopens in that view, with its pipe'),
+    );
 
     const resp = await request.get('http://localhost:7342/view-restore-xml/echo/abc123');
     expect(resp.status()).toBe(200);
@@ -541,7 +656,13 @@ test.describe('Scenarios: XPath source of the XML builder', () => {
   });
 
   test('the XPath source copies a value of the SOAP body, cut by a pipe', async ({ page, request }) => {
-    await runScenario(page, loadScenario('rules.scenarios.json', 'Copy a value of the SOAP body into a detailed XML response with the XPath source'));
+    await runScenario(
+      page,
+      loadScenario(
+        'rules.scenarios.json',
+        'Copy a value of the SOAP body into a detailed XML response with the XPath source',
+      ),
+    );
 
     const resp = await request.post('http://localhost:7342/xpath-echo-demo/service', {
       headers: { 'Content-Type': 'text/xml' },
@@ -573,7 +694,10 @@ test.describe('Scenarios: response builders keep their data across views', () =>
   });
 
   test('folding an object of a JSON response by example loses no data', async ({ page, request }) => {
-    await runScenario(page, loadScenario('rules.scenarios.json', 'Folding an object of a JSON response built by example loses no data'));
+    await runScenario(
+      page,
+      loadScenario('rules.scenarios.json', 'Folding an object of a JSON response built by example loses no data'),
+    );
 
     // The untouched field and the one filled after folding and unfolding both reach the answer.
     const resp = await request.post('http://localhost:7342/json-fold-demo/service');
@@ -583,7 +707,10 @@ test.describe('Scenarios: response builders keep their data across views', () =>
   });
 
   test('a valid XML advanced template turns into an XML response by example', async ({ page, request }) => {
-    await runScenario(page, loadScenario('rules.scenarios.json', 'Turn a valid XML advanced template into an XML response by example'));
+    await runScenario(
+      page,
+      loadScenario('rules.scenarios.json', 'Turn a valid XML advanced template into an XML response by example'),
+    );
 
     // The scenario's last two assertVisible only pass once the template has become fields of the by-example view (a
     // failed conversion shows a warning instead); the answer shows that the content and the root attribute came along.
@@ -594,7 +721,10 @@ test.describe('Scenarios: response builders keep their data across views', () =>
   });
 
   test('going back from the detailed JSON view to the example keeps every field', async ({ page, request }) => {
-    await runScenario(page, loadScenario('rules.scenarios.json', 'Going back from the detailed JSON view to the example keeps every field'));
+    await runScenario(
+      page,
+      loadScenario('rules.scenarios.json', 'Going back from the detailed JSON view to the example keeps every field'),
+    );
 
     // The field added in the detailed view and the pasted one both reach the answer.
     const resp = await request.post('http://localhost:7342/back-to-paste-demo/service');
@@ -604,7 +734,10 @@ test.describe('Scenarios: response builders keep their data across views', () =>
   });
 
   test('the script result source of the detailed JSON view takes the key to read', async ({ page, request }) => {
-    await runScenario(page, loadScenario('rules.scenarios.json', 'The script result source of the detailed JSON view asks which key to read'));
+    await runScenario(
+      page,
+      loadScenario('rules.scenarios.json', 'The script result source of the detailed JSON view asks which key to read'),
+    );
 
     // The key of the script result is typed in a field of its own: without it, the response could not read
     // {{script.nom}}.
@@ -626,7 +759,13 @@ test.describe('Scenarios: parse_date', () => {
   });
 
   test('parse_date turns a date of the request into milliseconds', async ({ page, request }) => {
-    await runScenario(page, loadScenario('rules.scenarios.json', 'Turn a date in a custom format into milliseconds with parse_date (doc illustration)'));
+    await runScenario(
+      page,
+      loadScenario(
+        'rules.scenarios.json',
+        'Turn a date in a custom format into milliseconds with parse_date (doc illustration)',
+      ),
+    );
 
     const resp = await request.get('http://localhost:7342/parse-date-demo/convert?date=15/03/2026');
     expect(resp.status()).toBe(200);
@@ -640,12 +779,17 @@ test.describe('Scenarios: rule form states shown in the guide', () => {
   test.beforeEach(async ({ request }) => {
     await request.delete(`${API}/config/reset`);
     for (const name of ['catalog-svc', 'nested-demo', 'chaos-demo', 'fake-demo']) {
-      await request.post(`${API}/services`, { data: validService(name, { listen_path: '/v1/*', real_target_url: '' }) });
+      await request.post(`${API}/services`, {
+        data: validService(name, { listen_path: '/v1/*', real_target_url: '' }),
+      });
     }
   });
 
   test('AND and OR conditions combine as the guide says', async ({ page, request }) => {
-    await runScenario(page, loadScenario('rules.scenarios.json', 'Combine AND and OR conditions on a rule (doc illustration)'));
+    await runScenario(
+      page,
+      loadScenario('rules.scenarios.json', 'Combine AND and OR conditions on a rule (doc illustration)'),
+    );
 
     const call = (channel, version) =>
       request.get(`http://localhost:7342/catalog-svc/v1/items?channel=${channel}`, {
@@ -658,22 +802,39 @@ test.describe('Scenarios: rule form states shown in the guide', () => {
   });
 
   test('the breadcrumb enters a nested object without changing what the rule answers', async ({ page, request }) => {
-    await runScenario(page, loadScenario('rules.scenarios.json', 'Enter a nested object of the detailed JSON builder through its breadcrumb (doc illustration)'));
+    await runScenario(
+      page,
+      loadScenario(
+        'rules.scenarios.json',
+        'Enter a nested object of the detailed JSON builder through its breadcrumb (doc illustration)',
+      ),
+    );
 
     const resp = await request.get('http://localhost:7342/nested-demo/v1/customer');
     expect(await resp.json()).toEqual({ customer: { address: { city: 'Lyon', postcode: '69000' } } });
   });
 
   test('the chaos settings are saved with the rule', async ({ page, request }) => {
-    await runScenario(page, loadScenario('rules.scenarios.json', 'Set the latency and the error rate of the chaos mode (doc illustration)'));
+    await runScenario(
+      page,
+      loadScenario('rules.scenarios.json', 'Set the latency and the error rate of the chaos mode (doc illustration)'),
+    );
 
     const services = await (await request.get(`${API}/services`)).json();
     const rule = services.find((s) => s.name === 'chaos-demo').rules.find((r) => r.name === 'slow-and-flaky');
-    expect(rule.response.chaos).toMatchObject({ delay_min_ms: 200, delay_max_ms: 800, error_rate: 0.2, error_status: 503 });
+    expect(rule.response.chaos).toMatchObject({
+      delay_min_ms: 200,
+      delay_max_ms: 800,
+      error_rate: 0.2,
+      error_status: 503,
+    });
   });
 
   test('fake data replaces the pasted values on every call', async ({ page, request }) => {
-    await runScenario(page, loadScenario('rules.scenarios.json', 'Replace pasted values with fake data (doc illustration)'));
+    await runScenario(
+      page,
+      loadScenario('rules.scenarios.json', 'Replace pasted values with fake data (doc illustration)'),
+    );
 
     // The generated values are random, and may even repeat the pasted ones: the saved template says what was chosen.
     const services = await (await request.get(`${API}/services`)).json();

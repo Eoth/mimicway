@@ -41,10 +41,7 @@ test.describe('Observed proxy traffic and suggested rules', () => {
     await request.delete(`${API}/config/reset`);
   });
 
-  test('observe a service, send it varied traffic, then get a suggestion and save it', async ({
-    page,
-    request,
-  }) => {
+  test('observe a service, send it varied traffic, then get a suggestion and save it', async ({ page, request }) => {
     test.setTimeout(30000);
     const target = await startFakeTarget();
     const targetPort = target.address().port;

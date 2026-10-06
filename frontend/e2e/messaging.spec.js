@@ -35,9 +35,7 @@ function messagingService(name, overrides = {}) {
         script: null,
         post_script: null,
         conditions: {
-          all_of: [
-            { source: { type: 'JsonPointer', key: '/type' }, operator: { type: 'Eq', value: 'order.created' } },
-          ],
+          all_of: [{ source: { type: 'JsonPointer', key: '/type' }, operator: { type: 'Eq', value: 'order.created' } }],
           any_of: [],
         },
         response: {

@@ -16,9 +16,15 @@ describe('MessagingLog', () => {
   it('affiche un message matche avec son service/regle', async () => {
     getMessagingLogs.mockResolvedValue([
       {
-        timestamp: Date.now(), direction: 'in', topic: 'orders.in',
-        service_name: 'svc-a', rule_matched: 'rule-1', matched: true,
-        body_preview: '{"type":"order.created"}', body_truncated: false, body_size_bytes: 25,
+        timestamp: Date.now(),
+        direction: 'in',
+        topic: 'orders.in',
+        service_name: 'svc-a',
+        rule_matched: 'rule-1',
+        matched: true,
+        body_preview: '{"type":"order.created"}',
+        body_truncated: false,
+        body_size_bytes: 25,
       },
     ]);
     const { getByText } = render(MessagingLog);
@@ -30,9 +36,15 @@ describe('MessagingLog', () => {
   it('affiche un badge "Tronque" quand le corps a ete tronque', async () => {
     getMessagingLogs.mockResolvedValue([
       {
-        timestamp: Date.now(), direction: 'in', topic: 'orders.in',
-        service_name: null, rule_matched: null, matched: false,
-        body_preview: 'x'.repeat(16384), body_truncated: true, body_size_bytes: 50000,
+        timestamp: Date.now(),
+        direction: 'in',
+        topic: 'orders.in',
+        service_name: null,
+        rule_matched: null,
+        matched: false,
+        body_preview: 'x'.repeat(16384),
+        body_truncated: true,
+        body_size_bytes: 50000,
       },
     ]);
     const { getByText } = render(MessagingLog);
@@ -43,9 +55,15 @@ describe('MessagingLog', () => {
   it('n\'affiche pas de badge "Tronque" quand le corps n\'est pas tronque', async () => {
     getMessagingLogs.mockResolvedValue([
       {
-        timestamp: Date.now(), direction: 'out', topic: 'orders.reply',
-        service_name: 'svc-a', rule_matched: 'rule-1', matched: true,
-        body_preview: 'short', body_truncated: false, body_size_bytes: 5,
+        timestamp: Date.now(),
+        direction: 'out',
+        topic: 'orders.reply',
+        service_name: 'svc-a',
+        rule_matched: 'rule-1',
+        matched: true,
+        body_preview: 'short',
+        body_truncated: false,
+        body_size_bytes: 5,
       },
     ]);
     const { getByText, queryByText } = render(MessagingLog);
@@ -53,7 +71,7 @@ describe('MessagingLog', () => {
     expect(queryByText('Truncated')).not.toBeInTheDocument();
   });
 
-  it('affiche l\'etat vide quand aucun message n\'est journalise', async () => {
+  it("affiche l'etat vide quand aucun message n'est journalise", async () => {
     getMessagingLogs.mockResolvedValue([]);
     const { getByText } = render(MessagingLog);
     await waitFor(() => expect(getByText('No Kafka message processed yet.')).toBeInTheDocument());

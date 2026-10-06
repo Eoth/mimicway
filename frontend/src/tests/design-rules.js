@@ -23,7 +23,10 @@ export function styleSources() {
   for (const file of components.filter((f) => f.endsWith('.svelte'))) {
     const text = read(file);
     const style = /<style[^>]*>([\s\S]*?)<\/style>/g;
-    const css = text.split(style).map((part, i) => (i % 2 ? part : blank(part))).join('');
+    const css = text
+      .split(style)
+      .map((part, i) => (i % 2 ? part : blank(part)))
+      .join('');
     const markup = text.replace(style, blank).replace(/<!--[\s\S]*?-->/g, blank);
     sources.push({ file, css: stripComments(css), markup });
   }
@@ -48,7 +51,8 @@ export function inlineStyles(markup) {
 }
 
 // The named colors of CSS Color 4; `transparent` and `currentcolor` are not a color of the palette and stay allowed.
-const NAMED = 'aliceblue antiquewhite aqua aquamarine azure beige bisque black blanchedalmond blue blueviolet brown ' +
+const NAMED =
+  'aliceblue antiquewhite aqua aquamarine azure beige bisque black blanchedalmond blue blueviolet brown ' +
   'burlywood cadetblue chartreuse chocolate coral cornflowerblue cornsilk crimson cyan darkblue darkcyan ' +
   'darkgoldenrod darkgray darkgreen darkgrey darkkhaki darkmagenta darkolivegreen darkorange darkorchid darkred ' +
   'darksalmon darkseagreen darkslateblue darkslategray darkslategrey darkturquoise darkviolet deeppink deepskyblue ' +
@@ -105,14 +109,20 @@ const SCALED = {
   'box-shadow': /^(none|inset|0|[\s,])*$/,
   'font-size': /^(inherit)?$/,
   'line-height': /^$/,
-  ...Object.fromEntries(['padding', 'margin'].flatMap((p) => [p, `${p}-top`, `${p}-right`, `${p}-bottom`, `${p}-left`])
-    .concat(['gap', 'row-gap', 'column-gap']).map((property) => [property, SPACING])),
+  ...Object.fromEntries(
+    ['padding', 'margin']
+      .flatMap((p) => [p, `${p}-top`, `${p}-right`, `${p}-bottom`, `${p}-left`])
+      .concat(['gap', 'row-gap', 'column-gap'])
+      .map((property) => [property, SPACING]),
+  ),
 };
 
 /** Values of scaled properties that do not come from a token, as "line: property: value". */
 export function unscaledValues(css) {
   return declarations(css)
-    .filter(({ property, value }) => property in SCALED && !SCALED[property].test(value.replace(/var\([^)]*\)/g, ' ').trim()))
+    .filter(
+      ({ property, value }) => property in SCALED && !SCALED[property].test(value.replace(/var\([^)]*\)/g, ' ').trim()),
+    )
     .map(({ line, property, value }) => `${line}: ${property}: ${value}`);
 }
 
@@ -127,7 +137,11 @@ export function block(tokens, selector) {
     .replace(/["']/g, `["']`);
   const match = new RegExp(`(?:^|})\\s*${escaped}\\s*\\{([^}]*)\\}`).exec(tokens);
   if (!match) throw new Error(`no block ${selector} in ${TOKENS_FILE}`);
-  return new Map(declarations(match[1]).filter((d) => d.property.startsWith('--')).map((d) => [d.property, d.value]));
+  return new Map(
+    declarations(match[1])
+      .filter((d) => d.property.startsWith('--'))
+      .map((d) => [d.property, d.value]),
+  );
 }
 
 /** The color a token resolves to in a theme, following var() through the theme block and then the primitives. */
@@ -138,7 +152,8 @@ export function resolve(name, theme, base) {
     if (!ref) break;
     value = theme.get(ref[1]) ?? base.get(ref[1]);
   }
-  if (!value || !/^#[0-9a-f]{6}$/i.test(value)) throw new Error(`${name} does not resolve to an opaque color (${value})`);
+  if (!value || !/^#[0-9a-f]{6}$/i.test(value))
+    throw new Error(`${name} does not resolve to an opaque color (${value})`);
   return value;
 }
 

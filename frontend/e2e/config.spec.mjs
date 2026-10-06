@@ -51,7 +51,7 @@ test('export downloads a valid JSON file', async ({ page, request }) => {
   const text = Buffer.concat(content).toString('utf-8');
   const config = JSON.parse(text);
   expect(config.services).toBeInstanceOf(Array);
-  expect(config.services.some(s => s.name === 'export-test')).toBe(true);
+  expect(config.services.some((s) => s.name === 'export-test')).toBe(true);
 });
 
 test('a configuration is imported through the API', async ({ request }) => {
@@ -92,7 +92,10 @@ test('import asks whether to replace everything or merge, and merging keeps what
   await expect(modal).toBeHidden();
   await expect(page.getByTestId('notification')).toContainText('1 service(s) and 1 group(s) added');
   const services = await (await request.get(`${API}/services`)).json();
-  expect(services.map((s) => [s.name, s.group_name]).sort()).toEqual([['card-api', 'payments'], ['existing-svc', null]]);
+  expect(services.map((s) => [s.name, s.group_name]).sort()).toEqual([
+    ['card-api', 'payments'],
+    ['existing-svc', null],
+  ]);
   const groups = await (await request.get(`${API}/groups`)).json();
   expect(groups.map((g) => g.name)).toEqual(['payments']);
 });
@@ -101,7 +104,9 @@ test('reset unlocks only once its keyword is typed, then removes every service',
   await request.post(`${API}/services`, { data: validService('doomed-svc') });
   // The shared instance runs with the reset button hidden, its default (SHOW_RESET_BUTTON): the status is answered as
   // an instance that shows it. The reset that follows is the real one.
-  await page.route('**/api/auth/status', (route) => route.fulfill({ json: { enabled: false, show_reset_button: true } }));
+  await page.route('**/api/auth/status', (route) =>
+    route.fulfill({ json: { enabled: false, show_reset_button: true } }),
+  );
 
   await page.goto('/');
   await page.waitForLoadState('networkidle');

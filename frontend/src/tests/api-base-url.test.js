@@ -13,11 +13,14 @@ describe('api.js — resolution de l URL de base', () => {
   });
 
   it('appelle un chemin relatif par defaut (comportement historique inchange)', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => [],
-    }));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => [],
+      }),
+    );
 
     await getServices();
 
@@ -25,13 +28,17 @@ describe('api.js — resolution de l URL de base', () => {
   });
 
   it('prefixe les appels par l URL configuree via /runtime-config.json', async () => {
-    vi.stubGlobal('fetch', vi.fn()
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => ({ api_base_url: 'https://api.example.com' }),
-      })
-      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] }));
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({ api_base_url: 'https://api.example.com' }),
+        })
+        .mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] }),
+    );
 
     await loadRuntimeConfig();
     await getServices();

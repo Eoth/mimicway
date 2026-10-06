@@ -39,13 +39,15 @@
   let existingRuleNames = $derived(existingRules.map((r) => r.name));
   let effectiveDraftPosition = $derived(draftPosition ?? existingRules.length);
 
-  const init = untrack(() => rule ? JSON.parse(JSON.stringify(rule)) : null);
+  const init = untrack(() => (rule ? JSON.parse(JSON.stringify(rule)) : null));
   let name = $state(init?.name ?? '');
   let ruleMethod = $state(init?.method ?? 'GET');
   let subPath = $state(init?.sub_path ?? '');
   // A proxy rule opened on a purely mocked service can only be a mock: RuleActionSelector removes the proxy option, and
   // the form must not hold a value that no visible radio button shows.
-  let ruleAction = $state(untrack(() => isPurelyMocked && init?.action === 'proxy' ? 'mock' : (init?.action ?? 'mock')));
+  let ruleAction = $state(
+    untrack(() => (isPurelyMocked && init?.action === 'proxy' ? 'mock' : (init?.action ?? 'mock'))),
+  );
   // True only for such a rule (stored as proxy, shown as mock). Fixed for the life of the form: it never depends on
   // `ruleAction`, which cannot go back to proxy while that option is removed. It only triggers the save warning below
   // and never changes `ruleAction`.
@@ -65,15 +67,19 @@
     try {
       const logs = await getLogs(200);
       // A name alone does not identify a service: another group may hold one of the same name.
-      serviceLogs = logs.filter((l) => l.service_name === serviceName && (l.group_name ?? null) === (groupName ?? null));
+      serviceLogs = logs.filter(
+        (l) => l.service_name === serviceName && (l.group_name ?? null) === (groupName ?? null),
+      );
     } catch {
       serviceLogs = [];
     }
   }
-  $effect(() => { loadServiceLogs(); });
+  $effect(() => {
+    loadServiceLogs();
+  });
 
   let queryParamSuggestions = $derived(
-    [...new Set(serviceLogs.flatMap((l) => Object.keys(l.captured?.query_params ?? {})))].sort()
+    [...new Set(serviceLogs.flatMap((l) => Object.keys(l.captured?.query_params ?? {})))].sort(),
   );
 
   let formError = $state('');
@@ -121,15 +127,21 @@
     pendingStaleProxyPayload = null;
 
     const trimmedName = name.trim();
-    if (!trimmedName) { formError = t("The rule name is required."); return; }
-    if (existingRuleNames.some(n => n.toLowerCase() === trimmedName.toLowerCase())) {
-      formError = t("A rule named \"{0}\" already exists in this service.", trimmedName);
+    if (!trimmedName) {
+      formError = t('The rule name is required.');
+      return;
+    }
+    if (existingRuleNames.some((n) => n.toLowerCase() === trimmedName.toLowerCase())) {
+      formError = t('A rule named "{0}" already exists in this service.', trimmedName);
       return;
     }
 
     if (ruleAction === 'mock') {
       const validationErr = responseSectionRef.validate();
-      if (validationErr) { formError = validationErr; return; }
+      if (validationErr) {
+        formError = validationErr;
+        return;
+      }
     }
 
     const builtRule = buildRulePayload();
@@ -201,37 +213,56 @@
   }
 </script>
 
-<form class="rule-form" onsubmit={handleSubmit} aria-label={init ? t("Edit the rule {0}", init.name) : t("New rule")}>
-
+<form class="rule-form" onsubmit={handleSubmit} aria-label={init ? t('Edit the rule {0}', init.name) : t('New rule')}>
   {#if formError}
     <div class="form-error" role="alert" aria-live="assertive">{formError}</div>
   {/if}
 
   <div class="form-field">
-    <label for="rule-name">{t("Rule name")}</label>
-    <input id="rule-name" type="text" bind:value={name} required placeholder={t("e.g. get-customer")} aria-describedby="rn-hint" data-testid="rule-form-name-input" />
-    <span class="field-hint" id="rn-hint">{t("Unique identifier of this rule in the service")}</span>
+    <label for="rule-name">{t('Rule name')}</label>
+    <input
+      id="rule-name"
+      type="text"
+      bind:value={name}
+      required
+      placeholder={t('e.g. get-customer')}
+      aria-describedby="rn-hint"
+      data-testid="rule-form-name-input"
+    />
+    <span class="field-hint" id="rn-hint">{t('Unique identifier of this rule in the service')}</span>
   </div>
 
   <div class="form-row">
     <div class="form-field">
-      <label for="rule-method">{t("HTTP method")}</label>
-      <select id="rule-method" bind:value={ruleMethod} aria-describedby="rule-method-hint" data-testid="rule-form-method-select">
+      <label for="rule-method">{t('HTTP method')}</label>
+      <select
+        id="rule-method"
+        bind:value={ruleMethod}
+        aria-describedby="rule-method-hint"
+        data-testid="rule-form-method-select"
+      >
         {#each httpMethods as m}
           <option value={m}>{m}</option>
         {/each}
       </select>
-      <span class="field-hint" id="rule-method-hint">{t("HTTP method this rule intercepts")}</span>
+      <span class="field-hint" id="rule-method-hint">{t('HTTP method this rule intercepts')}</span>
     </div>
 
     <div class="form-field">
-      <label for="rule-subpath">{t("Sub-path (optional)")}</label>
-      <input id="rule-subpath" type="text" bind:value={subPath} placeholder={t("e.g. /users/{id}")} aria-describedby="rule-subpath-hint" data-testid="rule-form-subpath-input" />
-      <span class="field-hint" id="rule-subpath-hint">{t("Narrows the matching within the service")}</span>
+      <label for="rule-subpath">{t('Sub-path (optional)')}</label>
+      <input
+        id="rule-subpath"
+        type="text"
+        bind:value={subPath}
+        placeholder={t('e.g. /users/{id}')}
+        aria-describedby="rule-subpath-hint"
+        data-testid="rule-form-subpath-input"
+      />
+      <span class="field-hint" id="rule-subpath-hint">{t('Narrows the matching within the service')}</span>
     </div>
   </div>
 
-  <RuleActionSelector action={ruleAction} {isPurelyMocked} onChange={(v) => ruleAction = v} />
+  <RuleActionSelector action={ruleAction} {isPurelyMocked} onChange={(v) => (ruleAction = v)} />
 
   {#if serviceName}
     <RuleTester
@@ -262,8 +293,8 @@
     {anyOf}
     {availablePathParams}
     {queryParamSuggestions}
-    onAllOfChange={(v) => allOf = v}
-    onAnyOfChange={(v) => anyOf = v}
+    onAllOfChange={(v) => (allOf = v)}
+    onAnyOfChange={(v) => (anyOf = v)}
   />
 
   <RuleResponseSection bind:this={responseSectionRef} visible={ruleAction === 'mock'} initRule={init} />
@@ -279,12 +310,19 @@
 
   <div class="form-actions">
     <button type="submit" class="btn btn-primary" disabled={checkingConflicts} data-testid="rule-form-submit-button">
-      {#if checkingConflicts}{t("Checking…")}{:else}{init ? t("Save the rule") : t("Add the rule")}{/if}
+      {#if checkingConflicts}{t('Checking…')}{:else}{init ? t('Save the rule') : t('Add the rule')}{/if}
     </button>
-    <button type="button" class="btn btn-secondary" onclick={onCancel} data-testid="rule-form-cancel-button">{t("Cancel")}</button>
+    <button type="button" class="btn btn-secondary" onclick={onCancel} data-testid="rule-form-cancel-button"
+      >{t('Cancel')}</button
+    >
   </div>
 </form>
 
 <style>
-  .rule-form { background: var(--color-surface); border: var(--line-thin) solid var(--color-border); border-radius: var(--radius-m); padding: var(--space-5); }
+  .rule-form {
+    background: var(--color-surface);
+    border: var(--line-thin) solid var(--color-border);
+    border-radius: var(--radius-m);
+    padding: var(--space-5);
+  }
 </style>

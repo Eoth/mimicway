@@ -65,7 +65,9 @@ function subjectBox(selector) {
     (element) => element.scrollHeight > element.clientHeight + 1 && getComputedStyle(element).overflowY !== 'visible',
   );
   if (clipped) {
-    return { problem: `hides part of its content (${clipped.scrollHeight} px of content in ${clipped.clientHeight} px)` };
+    return {
+      problem: `hides part of its content (${clipped.scrollHeight} px of content in ${clipped.clientHeight} px)`,
+    };
   }
   return {
     top: Math.min(...rects.map((rect) => rect.top)),
@@ -110,7 +112,10 @@ async function frameSubject(page, filename, subject, language) {
       const after = elements.map((element) => element.getBoundingClientRect());
       const top = Math.min(...after.map((rect) => rect.top));
       const below = Math.max(...after.map((rect) => rect.bottom)) - (window.innerHeight - margin);
-      window.scrollBy({ top: below > 0 ? Math.min(below, top - margin) : Math.min(0, top - margin), behavior: 'instant' });
+      window.scrollBy({
+        top: below > 0 ? Math.min(below, top - margin) : Math.min(0, top - margin),
+        behavior: 'instant',
+      });
     }, subject);
     await nextFrames(page);
   }
@@ -180,7 +185,9 @@ export async function docsScreenshot(page, filename, subject, options = {}) {
     throw new Error(`docsScreenshot(${filename}): the interface is in "${shown}", expected "${source.code}"`);
   }
   if (await inViewport(page, NOTIFICATION)) {
-    throw new Error(`docsScreenshot(${filename}): a notification is in view and would keep its language; wait for it to close`);
+    throw new Error(
+      `docsScreenshot(${filename}): a notification is in view and would keep its language; wait for it to close`,
+    );
   }
   await capture(page, source.code, filename);
 

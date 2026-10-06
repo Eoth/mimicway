@@ -16,11 +16,20 @@
   const methods = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'];
 
   const service = (name, mocked) => ({
-    name, listen_path: `/${name}/{id}`, real_target_url: 'https://api.example.test', is_mocked: mocked,
-    rewrite_directory_urls: false, group_name: null, wsdl_mode: 'auto', rules: [],
+    name,
+    listen_path: `/${name}/{id}`,
+    real_target_url: 'https://api.example.test',
+    is_mocked: mocked,
+    rewrite_directory_urls: false,
+    group_name: null,
+    wsdl_mode: 'auto',
+    rules: [],
   });
   const rule = (name, method, action, conditions = 0) => ({
-    name, method, action, conditions: { all_of: Array(conditions).fill({}), any_of: [] },
+    name,
+    method,
+    action,
+    conditions: { all_of: Array(conditions).fill({}), any_of: [] },
   });
 
   // Resolved values, read from each theme's panel once it is in the page.
@@ -33,11 +42,19 @@
 
 <main class="preview">
   <h1>Phasme</h1>
-  <p class="lede">The design system of the Mimicway interface: roles and scales from <code>src/tokens.css</code>, shared classes from <code>src/app.css</code>, rules in <code>design-system.md</code>.</p>
+  <p class="lede">
+    The design system of the Mimicway interface: roles and scales from <code>src/tokens.css</code>, shared classes from
+    <code>src/app.css</code>, rules in <code>design-system.md</code>.
+  </p>
 
   <div class="themes">
     {#each themes as theme (theme)}
-      <section class="theme" data-theme={theme} aria-label="{theme} theme" {@attach (panel) => readValues(panel, theme)}>
+      <section
+        class="theme"
+        data-theme={theme}
+        aria-label="{theme} theme"
+        {@attach (panel) => readValues(panel, theme)}
+      >
         <h2>{theme}</h2>
 
         <h3>Color roles</h3>
@@ -130,7 +147,13 @@
         </div>
         <ServiceCard service={service('users-api', true)} />
         <ServiceCard service={service('orders-api', false)} />
-        <RuleList rules={[rule('get-user', 'GET', 'mock', 1), rule('create-user', 'POST', 'mock'), rule('real-backend', 'GET', 'proxy')]} />
+        <RuleList
+          rules={[
+            rule('get-user', 'GET', 'mock', 1),
+            rule('create-user', 'POST', 'mock'),
+            rule('real-backend', 'GET', 'proxy'),
+          ]}
+        />
 
         <h3>Sections, callouts, notifications</h3>
         <fieldset class="section">
@@ -159,27 +182,102 @@
 </main>
 
 <style>
-  .preview { padding: var(--space-6); max-width: 100rem; margin: 0 auto; }
-  .lede { color: var(--color-text-muted); }
-  .themes { display: grid; grid-template-columns: repeat(auto-fit, minmax(32rem, 1fr)); gap: var(--space-6); }
-  .theme {
-    background: var(--color-bg); color: var(--color-text); padding: var(--space-5);
-    border: var(--line-thin) solid var(--color-border); border-radius: var(--radius-m);
-    display: flex; flex-direction: column; gap: var(--space-3);
+  .preview {
+    padding: var(--space-6);
+    max-width: 100rem;
+    margin: 0 auto;
   }
-  .theme h2 { text-transform: capitalize; font-size: var(--text-2xl); }
-  .theme h3 { margin: var(--space-4) 0 0; font-size: var(--text-l); }
-  .swatches { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: var(--space-1) var(--space-3); }
-  .swatches li { display: flex; align-items: center; gap: var(--space-2); font-size: var(--text-s); }
-  .swatch { width: var(--size-control); height: var(--size-control-xs); flex-shrink: 0; border: var(--line-thin) solid var(--color-border); border-radius: var(--radius-s); }
-  .value { margin-left: auto; color: var(--color-text-muted); font-family: var(--font-code); }
-  .type-sample { margin: 0; }
-  .type-sample code { font-size: var(--text-s); color: var(--color-text-muted); margin-right: var(--space-2); }
-  .space-row { display: flex; align-items: center; gap: var(--space-3); font-size: var(--text-s); }
-  .space-row code { width: 7rem; }
-  .space-bar { height: var(--space-2); background: var(--color-primary); }
-  .row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
-  .line-sample { padding: var(--space-1) var(--space-2); border-left: solid var(--color-proxy); font-size: var(--text-s); }
-  .radius-sample { padding: var(--space-2); border: var(--line-thin) solid var(--color-control); font-size: var(--text-s); }
-  .focus-sample { outline: var(--line-thick) solid var(--color-focus); outline-offset: var(--line-thick); }
+  .lede {
+    color: var(--color-text-muted);
+  }
+  .themes {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(32rem, 1fr));
+    gap: var(--space-6);
+  }
+  .theme {
+    background: var(--color-bg);
+    color: var(--color-text);
+    padding: var(--space-5);
+    border: var(--line-thin) solid var(--color-border);
+    border-radius: var(--radius-m);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+  .theme h2 {
+    text-transform: capitalize;
+    font-size: var(--text-2xl);
+  }
+  .theme h3 {
+    margin: var(--space-4) 0 0;
+    font-size: var(--text-l);
+  }
+  .swatches {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+    gap: var(--space-1) var(--space-3);
+  }
+  .swatches li {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-size: var(--text-s);
+  }
+  .swatch {
+    width: var(--size-control);
+    height: var(--size-control-xs);
+    flex-shrink: 0;
+    border: var(--line-thin) solid var(--color-border);
+    border-radius: var(--radius-s);
+  }
+  .value {
+    margin-left: auto;
+    color: var(--color-text-muted);
+    font-family: var(--font-code);
+  }
+  .type-sample {
+    margin: 0;
+  }
+  .type-sample code {
+    font-size: var(--text-s);
+    color: var(--color-text-muted);
+    margin-right: var(--space-2);
+  }
+  .space-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    font-size: var(--text-s);
+  }
+  .space-row code {
+    width: 7rem;
+  }
+  .space-bar {
+    height: var(--space-2);
+    background: var(--color-primary);
+  }
+  .row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+  }
+  .line-sample {
+    padding: var(--space-1) var(--space-2);
+    border-left: solid var(--color-proxy);
+    font-size: var(--text-s);
+  }
+  .radius-sample {
+    padding: var(--space-2);
+    border: var(--line-thin) solid var(--color-control);
+    font-size: var(--text-s);
+  }
+  .focus-sample {
+    outline: var(--line-thick) solid var(--color-focus);
+    outline-offset: var(--line-thick);
+  }
 </style>

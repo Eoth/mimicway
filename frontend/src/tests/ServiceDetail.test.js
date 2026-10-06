@@ -25,7 +25,11 @@ function svc(overrides = {}) {
 describe('ServiceDetail - suppression (regression crash null)', () => {
   it('ne remonte pas de fausse erreur "Cannot read properties of null" si le service devient null pendant la suppression en vol', async () => {
     let resolveDelete;
-    deleteService.mockReturnValue(new Promise((resolve) => { resolveDelete = resolve; }));
+    deleteService.mockReturnValue(
+      new Promise((resolve) => {
+        resolveDelete = resolve;
+      }),
+    );
     const onNotify = vi.fn();
     const onDelete = vi.fn();
 
