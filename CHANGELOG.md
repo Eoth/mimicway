@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-06
+
 ### Added
 - Releases: pushing a `vX.Y.Z` tag builds static Linux binaries (x86_64, arm64), macOS and Windows binaries with the UI inside, a multi-architecture image on `ghcr.io/eoth/mimicway`, CycloneDX SBOMs and checksums; each archive and SBOM is published with its keyless signature (`.sigstore.json`) and the build provenance of all of them (`.intoto.jsonl`, also in GitHub's attestation store), and the image is signed and attested the same way. SECURITY.md shows how to verify them; both Dockerfiles pin their base images by digest.
 - Release builds are reproducible: the Dockerfile builds the Linux binaries (Rust and Node.js pinned by digest, the same paths on every machine), `scripts/release-archive.sh` packs every archive with fixed times, order, owners and permissions, and the release workflow publishes nothing unless a second machine rebuilds the same Linux binaries and archives. The CI compares two builds whenever the way they are made changes, and every week; [SECURITY.md](SECURITY.md#rebuilding-a-release) says how to rebuild a release and compare it. The macOS and Windows binaries are built with the Rust version of the Dockerfile.
@@ -102,5 +104,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - Optional Kafka support (Cargo feature `messaging-kafka`, not compiled by default).
 - Accessible Svelte 5 interface (WCAG 2.1 AA), dark mode.
 
-[Unreleased]: https://github.com/Eoth/mimicway/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/Eoth/mimicway/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/Eoth/mimicway/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Eoth/mimicway/releases/tag/v0.1.0

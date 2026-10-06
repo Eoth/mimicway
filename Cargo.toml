@@ -1,6 +1,6 @@
 [package]
 name = "mimicway"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 description = "Mock or proxy any HTTP API, rule by rule, from a web UI: one self-contained binary, no telemetry"
 license = "MIT"
