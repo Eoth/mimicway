@@ -1,6 +1,7 @@
 # Publishes a release when a version tag (vX.Y.Z) is pushed: binaries for Linux, macOS and Windows with the UI
 # embedded, a multi-architecture image on GHCR, CycloneDX SBOMs and checksums. Every artifact gets a build provenance
 # attestation, and the image a keyless cosign signature: SECURITY.md says how to verify them.
+# The Dockerfile builds the Linux binaries, with Rust and Node.js pinned by digest and the same paths on every machine.
 name: Release
 
 on:
@@ -20,6 +21,7 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.version.outputs.version }}
+      rust: ${{ steps.version.outputs.rust }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - id: version
@@ -35,7 +37,35 @@ jobs:
             echo "CHANGELOG.md has no section for $version."
             exit 1
           fi
+          # The macOS and Windows binaries are built with the Rust of the Linux ones: the Dockerfile's base image, which
+          # Dependabot keeps up to date.
+          rust=$(sed -n 's/^FROM rust:\([0-9.]*\)-.*/\1/p' Dockerfile)
+          if [ -z "$rust" ]; then
+            echo "The Dockerfile has no FROM rust:<version>-... line."
+            exit 1
+          fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "rust=$rust" >> "$GITHUB_OUTPUT"
+
+  linux:
+    name: Binary (${{ matrix.target }})
+    needs: check
+    strategy:
+      matrix:
+        include:
+          - { target: x86_64-unknown-linux-musl, os: ubuntu-24.04 }
+          - { target: aarch64-unknown-linux-musl, os: ubuntu-24.04-arm }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Static (musl) binaries: they run on any distribution and in an image without libc.
+      - run: docker build --target binary --output type=local,dest=out .
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: binary-${{ matrix.target }}
+          path: out/mimicway
 
   ui:
     name: UI
@@ -61,8 +91,6 @@ jobs:
     strategy:
       matrix:
         include:
-          - { target: x86_64-unknown-linux-musl, os: ubuntu-24.04 }
-          - { target: aarch64-unknown-linux-musl, os: ubuntu-24.04-arm }
           - { target: x86_64-apple-darwin, os: macos-15 }
           - { target: aarch64-apple-darwin, os: macos-15 }
           - { target: x86_64-pc-windows-msvc, os: windows-2022 }
@@ -76,11 +104,8 @@ jobs:
           path: frontend/dist
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable branch
         with:
-          toolchain: stable
+          toolchain: ${{ needs.check.outputs.rust }}
           targets: ${{ matrix.target }}
-      # Static Linux binaries: they run on any distribution and in an image without libc.
-      - if: contains(matrix.target, 'musl')
-        run: sudo apt-get update && sudo apt-get install -y musl-tools
       - run: cargo build --release --locked --target ${{ matrix.target }}
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -89,7 +114,7 @@ jobs:
 
   archives:
     name: Archives
-    needs: [check, binaries]
+    needs: [check, linux, binaries]
     runs-on: ubuntu-24.04
     env:
       VERSION: ${{ needs.check.outputs.version }}
@@ -178,7 +203,7 @@ jobs:
 
   image:
     name: Container image
-    needs: [check, binaries]
+    needs: [check, linux]
     runs-on: ubuntu-24.04
     permissions:
       contents: read

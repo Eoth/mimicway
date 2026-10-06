@@ -21,6 +21,12 @@ COPY src/ src/
 COPY --from=frontend /build/frontend/dist frontend/dist
 RUN cargo build --release --locked && mkdir /build/data
 
+# The binary alone, for `docker build --target binary --output type=local,dest=<directory> .`: the release workflow
+# builds its Linux binaries this way. Rust and Node.js come from the images above, pinned by digest, and every path is
+# the same on every machine, so a rebuild of the same commit gives the same bytes (SECURITY.md says how to compare).
+FROM scratch AS binary
+COPY --from=backend /build/target/release/mimicway /mimicway
+
 # Nothing but the binary and its data directory: the binary is linked statically (musl) and carries its own TLS roots
 # (rustls with webpki-roots), so the image needs no operating system, no shell and no system package, which leaves a
 # vulnerability scan nothing to flag that Mimicway does not use.
