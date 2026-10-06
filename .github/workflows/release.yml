@@ -5,11 +5,17 @@
 # The Linux binaries are reproducible: the Dockerfile builds them with Rust and Node.js pinned by digest, a second
 # machine builds them again, and nothing is published unless both give the same bytes. SECURITY.md says how anyone can
 # rebuild them.
+# A push of this file to develop, or a manual run, is a rehearsal: everything is built, packed, rebuilt and compared as
+# for a release, with archives named by the commit, and nothing is published (the release and image jobs wait for a
+# tag). Path filters are not evaluated for pushes of tags, so a tag always runs.
 name: Release
 
 on:
   push:
     tags: ["v*.*.*"]
+    branches: [develop]
+    paths: [".github/workflows/release.yml"]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -28,17 +34,29 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - id: version
+        env:
+          RELEASE: ${{ github.event_name == 'push' && github.ref_type == 'tag' }}
         run: |
-          version="${GITHUB_REF_NAME#v}"
           crate=$(grep -m1 '^version = ' Cargo.toml | cut -d'"' -f2)
           ui=$(node -p "require('./frontend/package.json').version")
-          if [ "$version" != "$crate" ] || [ "$version" != "$ui" ]; then
-            echo "Tag $GITHUB_REF_NAME does not match Cargo.toml ($crate) and frontend/package.json ($ui)."
+          if [ "$crate" != "$ui" ]; then
+            echo "Cargo.toml ($crate) and frontend/package.json ($ui) disagree on the version."
             exit 1
           fi
-          if ! grep -q "^## \[$version\]" CHANGELOG.md; then
-            echo "CHANGELOG.md has no section for $version."
-            exit 1
+          if [ "$RELEASE" = true ]; then
+            version="${GITHUB_REF_NAME#v}"
+            if [ "$version" != "$crate" ]; then
+              echo "Tag $GITHUB_REF_NAME does not match the version $crate of Cargo.toml and frontend/package.json."
+              exit 1
+            fi
+            if ! grep -q "^## \[$version\]" CHANGELOG.md; then
+              echo "CHANGELOG.md has no section for $version."
+              exit 1
+            fi
+          else
+            # A rehearsal: the archives carry the commit, since nothing of them is a release.
+            version="${GITHUB_SHA::7}"
+            echo "Rehearsal on $GITHUB_REF_NAME at $version: everything is built and compared, nothing is published."
           fi
           # The macOS and Windows binaries are built with the Rust of the Linux ones: the Dockerfile's base image, which
           # Dependabot keeps up to date.
@@ -221,6 +239,7 @@ jobs:
   release:
     name: GitHub release
     needs: [check, archives, reproduce, sbom]
+    if: github.event_name == 'push' && github.ref_type == 'tag'
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -270,6 +289,7 @@ jobs:
   image:
     name: Container image
     needs: [check, linux, reproduce]
+    if: github.event_name == 'push' && github.ref_type == 'tag'
     runs-on: ubuntu-24.04
     permissions:
       contents: read
