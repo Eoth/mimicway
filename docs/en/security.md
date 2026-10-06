@@ -72,6 +72,7 @@ The login form uses Keycloak's password grant. Replacing it with the authorizati
 - The code contains no `unsafe` Rust, tests included (`#![forbid(unsafe_code)]`).
 - The image holds the static binary and its data directory, nothing else (`FROM scratch`): no operating system, shell or system package, so nothing in it but Mimicway's own code for a vulnerability to sit in. It runs as a non-root user (uid 1000); the Kubernetes manifests add a read-only root filesystem, no privilege escalation and no Linux capability.
 - Releases are built from the tagged commit by `.github/workflows/release.yml`: every archive has a build provenance attestation and a CycloneDX SBOM (one for the Rust crates, one for the UI's shipped packages), and the image is signed keylessly with cosign. [SECURITY.md](../../SECURITY.md#verifying-a-release) gives the verification commands.
+- The Linux binaries and their archives are reproducible: the release workflow builds each one twice, on two machines, and publishes nothing unless both give the same bytes, and anyone can rebuild them from the tag to compare ([SECURITY.md](../../SECURITY.md#rebuilding-a-release)).
 - The base images of both Dockerfiles are pinned by digest.
 
 ## Hardening checklist

@@ -72,6 +72,7 @@ Le formulaire de connexion utilise l'octroi par mot de passe de Keycloak. Le rem
 - Le code ne contient aucun Rust `unsafe`, tests compris (`#![forbid(unsafe_code)]`).
 - L'image contient le binaire statique et son répertoire de données, rien d'autre (`FROM scratch`) : ni système d'exploitation, ni shell, ni paquet système, donc aucune place pour une vulnérabilité hors du code de Mimicway lui-même. Elle s'exécute sous un utilisateur non root (uid 1000) ; les manifestes Kubernetes ajoutent un système de fichiers racine en lecture seule, aucune élévation de privilèges et aucune capacité Linux.
 - Les versions publiées sont construites à partir du commit étiqueté par `.github/workflows/release.yml` : chaque archive a une attestation de provenance de compilation et un SBOM CycloneDX (un pour les crates Rust, un pour les paquets livrés de l'interface), et l'image est signée sans clé avec cosign. [SECURITY.md](../../SECURITY.md#verifying-a-release) donne les commandes de vérification.
+- Les binaires Linux et leurs archives sont reproductibles : le workflow de publication construit chacun deux fois, sur deux machines, et ne publie rien si les octets diffèrent, et chacun peut les reconstruire à partir de l'étiquette pour comparer ([SECURITY.md](../../SECURITY.md#rebuilding-a-release)).
 - Les images de base des deux Dockerfiles sont épinglées par empreinte.
 
 ## Liste de durcissement

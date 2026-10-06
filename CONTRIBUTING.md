@@ -79,7 +79,9 @@ A native speaker's review is welcome on every translation pull request.
 2. In `CHANGELOG.md`, rename the `Unreleased` section to `[x.y.z] - YYYY-MM-DD` and add a new empty `Unreleased` above it.
 3. Commit, then push a tag `vx.y.z` on that commit.
 
-The release workflow checks that the tag, both versions and the changelog agree, builds the binaries for every platform with the UI inside, publishes the image to GHCR, attaches SBOMs and checksums, attests everything, signs the image, and creates the GitHub release with the changelog section as notes. The first time, make the `mimicway` package public in the GitHub package settings.
+The release workflow checks that the tag, both versions and the changelog agree, builds the binaries for every platform with the UI inside, builds the Linux ones a second time on other machines and stops if a byte differs, publishes the image to GHCR, attaches SBOMs and checksums, attests everything, signs the image, and creates the GitHub release with the changelog section as notes. The first time, make the `mimicway` package public in the GitHub package settings.
+
+Every binary is built with the Rust version of the Dockerfile's base image (`FROM rust:…`), the Linux ones by the Dockerfile itself, so that anyone can rebuild them ([SECURITY.md](SECURITY.md#rebuilding-a-release)). Dependabot proposes a newer image every month: to release with a newer Rust, merge that pull request first.
 
 ## Licensing
 

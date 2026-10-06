@@ -58,6 +58,21 @@ cosign verify ghcr.io/eoth/mimicway:0.2.0 \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 
+### Rebuilding a release
+
+The Linux binaries and their archives are reproducible: built again from the same tag, they give the same bytes, which shows that a release holds the published source and nothing else. The [Dockerfile](Dockerfile) builds them, with Rust and Node.js pinned by digest and the same paths on every machine, and [scripts/release-archive.sh](scripts/release-archive.sh) packs them with fixed times, order, owners and permissions. The release workflow builds each one a second time, on another machine, and publishes nothing unless both agree; the CI compares two builds whenever the way they are made changes, and every week.
+
+To check a release yourself, on Linux with Docker:
+
+```bash
+git clone https://github.com/Eoth/mimicway && cd mimicway && git checkout v0.2.0
+docker build --platform linux/amd64 --target binary --output type=local,dest=out .
+bash scripts/release-archive.sh out/mimicway x86_64-unknown-linux-musl 0.2.0 dist
+sha256sum dist/*   # the same line as mimicway-0.2.0-x86_64-unknown-linux-musl.tar.gz in SHA256SUMS
+```
+
+For `aarch64-unknown-linux-musl`, run the same commands on an arm64 machine with `--platform linux/arm64`. The macOS and Windows binaries are built with the same Rust version, but no second build checks them.
+
 ## Scope
 
 In scope:
