@@ -89,4 +89,74 @@ The login form uses Keycloak's password grant. Replacing it with the authorizati
 - Without authentication, every user is a super-admin. This is intended for local use only.
 - Authentication supports Keycloak only for now.
 
+## Why these guarantees hold
+
+The sections above state the facts. This one ties them into an argument, the project's assurance case: what Mimicway promises, against whom, where trust changes hands, and why its design and its code keep each promise.
+
+### Security requirements
+
+1. Mimicway opens no connection that its operator or an editor did not configure.
+2. Without authentication, only the local machine reaches the management API.
+3. With authentication, a user reaches only the services and groups their roles allow, on every endpoint.
+4. A web page open in a browser cannot drive a Mimicway that this browser can reach.
+5. The traffic of the applications under test and the answers of proxied backends cannot crash the server, exhaust its memory, run code or reach its files.
+6. Credentials seen in traffic are not kept in logs, observations or suggestions.
+7. An accepted change of configuration is never lost, and the previous configuration can be restored.
+
+### Threat model
+
+| Who | What they could try | What stops them |
+|---|---|---|
+| A website that a developer visits while Mimicway runs on their machine | Cross-site requests to the management API, DNS rebinding | The browser guard: CORS allow-list, refusal of cross-site writes, host check when listening on loopback |
+| Anyone on a network the port is exposed to | Reading or changing the mocks | Loopback by default; authentication with Keycloak; TLS at the ingress |
+| An authenticated user | Reaching another group's services, or administration | Authorization on every endpoint, tested through the real router with signed tokens |
+| An editor, trusted to configure | Escaping from a rule script | The Rhai sandbox: no file, network, `import` or `eval`, bounded operations, sizes and depth |
+| The applications under test, a proxied backend | Oversized or malformed input, path traversal, resource exhaustion | Body limit, typed parsing, XML without DTD, size-limited regular expressions, dot segments refused, timeouts, fuzzed parsers |
+| A compromised dependency or CI action | Malicious code or a known vulnerability in the build | Lock files, actions and images pinned by digest, cargo deny, OSV, npm audit, Trivy, Dependabot, CodeQL |
+
+The operator (environment, container, network) is trusted. Editors are trusted to choose proxy targets: forwarding to the host an editor configured is what a proxy does, so restricting egress belongs to the deployment (point 3 of the hardening checklist).
+
+### Trust boundaries
+
+- **The HTTP port.** Everything that crosses it is untrusted: management requests are authenticated and authorized when authentication is on, and service traffic is data for the rules, never an instruction to Mimicway.
+- **The browser's origin.** The management API answers another origin only when `CORS_ALLOWED_ORIGINS` lists it.
+- **Roles.** Anonymous caller, authenticated user, group member, group admin, super-admin; the [authorization matrix](../../REVIEWING.md#authorization-matrix) says which one each endpoint needs.
+- **The script sandbox.** Rhai code written by editors runs inside the process, without access to anything outside its sandbox.
+- **Outbound answers.** Proxied backends and Keycloak are untrusted: their answers are streamed back or parsed as data, within timeouts.
+- **The file system.** Mimicway writes under `DATA_PATH` only, to file names it generates or checks against their pattern.
+
+### Secure design principles
+
+| Principle | How it applies |
+|---|---|
+| Economy of mechanism | One process, no database, one module for every outbound HTTP call, one store for the configuration. |
+| Fail-safe defaults | Loopback only, no CORS origin, redirects not followed. With `AUTH_ENABLED=true` but its Keycloak settings missing, Mimicway refuses to start; when Keycloak cannot be reached, protected routes refuse the request. |
+| Complete mediation | Every management endpoint but the four public ones checks the caller's right on each request, moves between groups and the full configuration export included. |
+| Open design | The code and this model are public; protection rests on Keycloak's keys and on the network policy, not on secrecy. |
+| Separation of privilege | Resetting, restoring backups and managing ungrouped services need the super-admin role; a group admin manages their own group only. |
+| Least privilege | The image runs as a non-root user, on a read-only root filesystem, without Linux capabilities; CI jobs get read-only tokens, and write access only where a job needs it. |
+| Least common mechanism | State kept per service (sequence counters, observations), and shared views (configuration, request log) filtered per user. |
+| Psychological acceptability | The safe setup needs no configuration on a workstation; refusals say why, in the user's language. |
+| Limited attack surface | One port, no telemetry, optional features not compiled unless asked for, interface files served by exact name. |
+| Input validation with allowlists | Names match `[A-Za-z0-9_-]+` and avoid reserved routes, HTTP methods come from a fixed list, backup file names must match the pattern the server generates, and request and configuration bodies are parsed into typed structures. |
+
+### Common weaknesses countered
+
+| Weakness (OWASP Top 10 2021, CWE) | Countered by |
+|---|---|
+| Broken access control (A01, CWE-862, CWE-863) | The authorization matrix, enforced in each handler and tested with real tokens (`src/server/api/authz_tests.rs`). |
+| Cryptographic failures (A02) | No cryptography of its own; asymmetric token signatures only, never HMAC or `none`; outbound TLS by rustls, certificates verified. |
+| Injection and cross-site scripting (A03, CWE-79, CWE-94) | No SQL and no shell; templates insert request values without evaluating them; scripts run in the sandbox without `eval`; the interface escapes every value (no raw HTML) under a content security policy that forbids inline scripts. |
+| Insecure design (A04) | This model, the [reviewer guide](../../REVIEWING.md) and the fuzzed parsers. |
+| Security misconfiguration (A05) | Safe defaults, the hardening checklist and manifests that apply it. |
+| Vulnerable and outdated components (A06, CWE-1104) | Lock files, advisories checked on every change of a manifest and weekly, Dependabot updates. |
+| Identification and authentication failures (A07, CWE-287) | Delegated to Keycloak; tokens checked locally for signature, issuer, expiry and client. |
+| Software and data integrity failures (A08, CWE-502) | Typed deserialization only; actions and base images pinned; releases signed, with their provenance; configuration written atomically, with backups. |
+| Security logging and monitoring failures (A09) | Request log and server logs without credentials; an audit log of configuration changes is planned. |
+| Server-side request forgery (A10, CWE-918) | Requests go only to the target an editor configured, never to a host taken from the request; redirects are not followed and dot segments are refused. |
+| Path traversal (CWE-22) | Backup names checked before any disk access; embedded interface files served from a fixed table, a `STATIC_DIR` through tower-http's `ServeDir`, which refuses parent segments. |
+| Uncontrolled resource consumption (CWE-400) | Limits on bodies, logs, observations and queues; size-limited regular expressions; bounded script operations; timeouts on proxying and Keycloak. |
+| Cross-site request forgery (CWE-352) | Cross-site writes refused by the browser guard. |
+| Memory safety (CWE-787, CWE-125) | Mimicway's own code is Rust without `unsafe`, and its parsers of untrusted input are fuzzed with AddressSanitizer. |
+
 To report a vulnerability, see [SECURITY.md](../../SECURITY.md).

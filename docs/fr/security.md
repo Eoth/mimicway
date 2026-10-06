@@ -89,4 +89,74 @@ Le formulaire de connexion utilise l'octroi par mot de passe de Keycloak. Le rem
 - Sans authentification, chaque utilisateur est super-admin. C'est prévu pour un usage local seulement.
 - L'authentification ne prend en charge que Keycloak pour l'instant.
 
+## Pourquoi ces garanties tiennent
+
+Les sections précédentes donnent les faits. Celle-ci les relie en un raisonnement, l'argumentaire de sécurité du projet : ce que Mimicway promet, face à qui, où la confiance change de mains, et pourquoi sa conception et son code tiennent chaque promesse.
+
+### Exigences de sécurité
+
+1. Mimicway n'ouvre aucune connexion que son opérateur ou un éditeur n'a pas configurée.
+2. Sans authentification, seule la machine locale atteint l'API de gestion.
+3. Avec authentification, un utilisateur n'atteint que les services et groupes que ses rôles autorisent, sur chaque point d'accès.
+4. Une page web ouverte dans un navigateur ne peut pas piloter un Mimicway que ce navigateur peut joindre.
+5. Le trafic des applications testées et les réponses des backends relayés ne peuvent ni planter le serveur, ni épuiser sa mémoire, ni exécuter du code, ni atteindre ses fichiers.
+6. Les identifiants vus dans le trafic ne sont gardés ni dans les journaux, ni dans les observations, ni dans les suggestions.
+7. Un changement de configuration accepté n'est jamais perdu, et la configuration précédente peut être restaurée.
+
+### Modèle de menaces
+
+| Qui | Ce qu'il pourrait tenter | Ce qui l'arrête |
+|---|---|---|
+| Un site web visité par un développeur pendant que Mimicway tourne sur sa machine | Des requêtes inter-sites vers l'API de gestion, du DNS rebinding | Le garde navigateur : liste CORS, refus des écritures inter-sites, contrôle de l'hôte en écoute locale |
+| Quiconque sur un réseau où le port est exposé | Lire ou modifier les mocks | L'écoute locale par défaut ; l'authentification par Keycloak ; TLS à l'ingress |
+| Un utilisateur authentifié | Atteindre les services d'un autre groupe, ou l'administration | L'autorisation sur chaque point d'accès, testée à travers le vrai routeur avec des jetons signés |
+| Un éditeur, à qui l'on confie la configuration | Sortir d'un script de règle | Le bac à sable Rhai : ni fichier, ni réseau, ni `import`, ni `eval`, des opérations, tailles et profondeurs bornées |
+| Les applications testées, un backend relayé | Des entrées énormes ou malformées, une traversée de chemin, l'épuisement des ressources | La limite de corps, la lecture typée, le XML sans DTD, les expressions régulières de taille bornée, les segments `.` et `..` refusés, les délais, les analyseurs soumis au fuzzing |
+| Une dépendance ou une action de CI compromise | Du code malveillant ou une vulnérabilité connue dans la construction | Les fichiers de verrouillage, les actions et images épinglées par empreinte, cargo deny, OSV, npm audit, Trivy, Dependabot, CodeQL |
+
+L'opérateur (environnement, conteneur, réseau) est de confiance. On confie aux éditeurs le choix des cibles du proxy : relayer vers l'hôte qu'un éditeur a configuré, c'est le rôle d'un proxy ; restreindre les sorties revient donc au déploiement (point 3 de la liste de durcissement).
+
+### Frontières de confiance
+
+- **Le port HTTP.** Tout ce qui le traverse est non fiable : les requêtes de gestion sont authentifiées et autorisées quand l'authentification est active, et le trafic des services est une donnée pour les règles, jamais une instruction pour Mimicway.
+- **L'origine du navigateur.** L'API de gestion ne répond à une autre origine que si `CORS_ALLOWED_ORIGINS` la cite.
+- **Les rôles.** Appelant anonyme, utilisateur authentifié, membre de groupe, administrateur de groupe, super-admin ; la [matrice d'autorisation](../../REVIEWING.md#authorization-matrix) (en anglais) dit lequel chaque point d'accès exige.
+- **Le bac à sable des scripts.** Le code Rhai écrit par les éditeurs s'exécute dans le processus, sans accès à quoi que ce soit hors de son bac à sable.
+- **Les réponses sortantes.** Les backends relayés et Keycloak sont non fiables : leurs réponses sont renvoyées en flux ou lues comme des données, dans des délais bornés.
+- **Le système de fichiers.** Mimicway n'écrit que sous `DATA_PATH`, dans des fichiers dont il produit le nom ou dont il vérifie le nom contre leur motif.
+
+### Principes de conception sûre
+
+| Principe | Application |
+|---|---|
+| Économie de mécanisme | Un seul processus, aucune base de données, un seul module pour tout appel HTTP sortant, un seul stockage pour la configuration. |
+| Valeurs par défaut sûres | Écoute locale seulement, aucune origine CORS, redirections non suivies. Avec `AUTH_ENABLED=true` mais sans ses réglages Keycloak, Mimicway refuse de démarrer ; quand Keycloak est injoignable, les routes protégées refusent la requête. |
+| Médiation complète | Chaque point d'accès de gestion, sauf les quatre publics, vérifie le droit de l'appelant à chaque requête, déplacements entre groupes et export complet de la configuration compris. |
+| Conception ouverte | Le code et ce modèle sont publics ; la protection repose sur les clés de Keycloak et sur la politique réseau, pas sur le secret. |
+| Séparation des privilèges | Réinitialiser, restaurer une sauvegarde et gérer les services hors groupe exigent le rôle super-admin ; un administrateur de groupe ne gère que son groupe. |
+| Moindre privilège | L'image tourne sous un utilisateur non root, sur un système de fichiers racine en lecture seule, sans capacité Linux ; les jobs de CI reçoivent des jetons en lecture seule, et l'écriture seulement là où un job en a besoin. |
+| Mécanismes communs minimaux | L'état est gardé par service (compteurs de séquence, observations), et les vues partagées (configuration, journal des requêtes) sont filtrées par utilisateur. |
+| Acceptabilité psychologique | La configuration sûre ne demande aucun réglage sur un poste de travail ; les refus disent pourquoi, dans la langue de l'utilisateur. |
+| Surface d'attaque limitée | Un seul port, aucune télémétrie, les fonctionnalités optionnelles absentes du binaire sauf demande, les fichiers de l'interface servis par leur nom exact. |
+| Validation des entrées par liste blanche | Les noms suivent `[A-Za-z0-9_-]+` et évitent les routes réservées, les méthodes HTTP viennent d'une liste fixe, les noms de sauvegarde doivent suivre le motif que produit le serveur, et les corps de requête et de configuration sont lus dans des structures typées. |
+
+### Faiblesses courantes contrées
+
+| Faiblesse (OWASP Top 10 2021, CWE) | Contrée par |
+|---|---|
+| Contrôle d'accès défaillant (A01, CWE-862, CWE-863) | La matrice d'autorisation, appliquée dans chaque gestionnaire et testée avec de vrais jetons (`src/server/api/authz_tests.rs`). |
+| Défaillances cryptographiques (A02) | Aucune cryptographie maison ; des signatures de jeton asymétriques seulement, jamais HMAC ni `none` ; TLS sortant par rustls, certificats vérifiés. |
+| Injection et cross-site scripting (A03, CWE-79, CWE-94) | Ni SQL ni shell ; les templates insèrent les valeurs de la requête sans les évaluer ; les scripts tournent dans le bac à sable, sans `eval` ; l'interface échappe chaque valeur (aucun HTML brut) sous une politique de sécurité du contenu qui interdit les scripts en ligne. |
+| Conception non sécurisée (A04) | Ce modèle, le [guide de revue](../../REVIEWING.md) (en anglais) et les analyseurs soumis au fuzzing. |
+| Mauvaise configuration de sécurité (A05) | Des valeurs par défaut sûres, la liste de durcissement et des manifestes qui l'appliquent. |
+| Composants vulnérables et obsolètes (A06, CWE-1104) | Les fichiers de verrouillage, les alertes vérifiées à chaque changement d'un manifeste et chaque semaine, les mises à jour de Dependabot. |
+| Défaillances d'identification et d'authentification (A07, CWE-287) | Déléguées à Keycloak ; jetons vérifiés localement : signature, émetteur, expiration et client. |
+| Défaillances d'intégrité des logiciels et des données (A08, CWE-502) | Désérialisation typée seulement ; actions et images de base épinglées ; versions signées, avec leur provenance ; configuration écrite de façon atomique, avec sauvegardes. |
+| Défaillances de journalisation et de surveillance (A09) | Journal des requêtes et journaux du serveur sans identifiants ; un journal d'audit des changements de configuration est prévu. |
+| Falsification de requête côté serveur (A10, CWE-918) | Les requêtes ne partent que vers la cible qu'un éditeur a configurée, jamais vers un hôte tiré de la requête ; les redirections ne sont pas suivies et les segments `.` et `..` sont refusés. |
+| Traversée de chemin (CWE-22) | Les noms de sauvegarde vérifiés avant tout accès au disque ; les fichiers de l'interface intégrée servis depuis une table fixe, un `STATIC_DIR` par le `ServeDir` de tower-http, qui refuse les segments parents. |
+| Consommation de ressources non maîtrisée (CWE-400) | Des limites sur les corps, les journaux, les observations et les files ; des expressions régulières de taille bornée ; des opérations de script bornées ; des délais sur le proxy et Keycloak. |
+| Falsification de requête inter-sites (CWE-352) | Les écritures inter-sites refusées par le garde navigateur. |
+| Sûreté mémoire (CWE-787, CWE-125) | Le code de Mimicway est du Rust sans `unsafe`, et ses analyseurs d'entrées non fiables sont soumis au fuzzing avec AddressSanitizer. |
+
 Pour signaler une vulnérabilité, voir [SECURITY.md](../../SECURITY.md).
