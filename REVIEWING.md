@@ -1,6 +1,6 @@
 # Reviewing Mimicway
 
-This guide is for the engineer asked to approve Mimicway before it runs in their company. It gives a reading order that follows the trust boundaries, the authorization matrix of the API, and commands that check each claim instead of taking it on trust. The security model itself (what is exposed, outbound flows, defaults) is described in [docs/security.md](docs/en/security.md).
+This guide is for the engineer asked to approve Mimicway before it runs in their company. It gives a reading order that follows the trust boundaries, the authorization matrix of the API, and commands that check each claim instead of taking it on trust. The security model itself (what is exposed, outbound flows, defaults) is described in [docs/en/security.md](docs/en/security.md), and how the parts fit together in [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Facts that bound the review
 

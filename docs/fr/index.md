@@ -6,7 +6,7 @@ Mimicway simule (« mock ») ou relaie (« proxy ») des appels HTTP vers un vra
 
 Cette page est une **vue d'ensemble rapide** : une ligne ou deux par fonctionnalité, avec un lien vers la page qui explique comment s'en servir. Si vous découvrez Mimicway, parcourez cette liste une fois pour savoir ce qui existe, puis revenez aux pages détaillées au besoin.
 
-> Ces pages s'adressent aux personnes qui utilisent Mimicway et testent avec lui (QA, développeurs, analystes métier). L'installation, la configuration et l'architecture sont décrites dans le [README](../../README.fr.md) ; le modèle de sécurité dans [security.md](security.md).
+> Ces pages s'adressent aux personnes qui utilisent Mimicway et testent avec lui (QA, développeurs, analystes métier). L'installation et la configuration sont décrites dans le [README](../../README.fr.md), l'architecture dans [ARCHITECTURE.md](../../ARCHITECTURE.md) (en anglais) ; le modèle de sécurité dans [security.md](security.md).
 
 ![L'écran d'accueil de Mimicway avec la liste des services](screenshots/home-service-list.png)
 

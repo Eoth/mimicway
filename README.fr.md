@@ -307,7 +307,7 @@ Pour travailler sur l'interface avec rechargement à chaud, lancez le binaire, p
 
 La CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) vérifie le formatage, clippy et les tests avec chaque fonctionnalité, les tests et la construction de l'interface, la suite de bout en bout contre le vrai binaire, `cargo-deny`, `npm audit`, une construction d'image analysée par Trivy, et une recherche de secrets ; chaque job tourne quand un fichier qu'il vérifie change, et une modification de la documentation ne lance que les contrôles de documentation et la recherche de secrets.
 
-Plan du code :
+Plan du code ([ARCHITECTURE.md](ARCHITECTURE.md), en anglais, explique comment les parties travaillent ensemble) :
 
 ```
 src/
@@ -318,6 +318,7 @@ src/
   auth/         client Keycloak (validation JWKS), middleware, rôles
   store/        persistance YAML, écriture différée, sauvegardes
   models/       schéma de configuration
+  settings.rs   réglages lus dans les variables d'environnement
   i18n.rs       catalogues des messages du serveur
   messaging/    Kafka (fonctionnalité messaging-kafka)
   tcp/          mocks TCP bruts (fonctionnalité tcp-mock)
@@ -348,6 +349,7 @@ L'anglais est la langue source : chaque message est écrit une fois, en anglais,
 ## Projet
 
 - [ROADMAP.md](ROADMAP.md) : ce qui est prévu, et dans quel ordre.
+- [ARCHITECTURE.md](ARCHITECTURE.md) : comment Mimicway est construit (en anglais).
 - [MIGRATING.md](MIGRATING.md) : mettre à jour une installation de lightMock.
 - [CHANGELOG.md](CHANGELOG.md) : les changements par version.
 - [SECURITY.md](SECURITY.md) : versions prises en charge et signalement privé des vulnérabilités.

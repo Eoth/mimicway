@@ -307,7 +307,7 @@ For UI work with hot reload, run the binary, then `cd frontend && npm run dev` a
 
 CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs formatting, clippy and tests with each feature, the UI tests and build, the end-to-end suite against the real binary, `cargo-deny`, `npm audit`, an image build scanned by Trivy, and a secret scan; each job runs when a file it checks changes, and a change to the documentation runs the documentation checks and the secret scan only.
 
-Code map:
+Code map ([ARCHITECTURE.md](ARCHITECTURE.md) says how the parts work together):
 
 ```
 src/
@@ -318,6 +318,7 @@ src/
   auth/         Keycloak client (JWKS validation), middleware, roles
   store/        YAML persistence, write-behind, backups
   models/       configuration schema
+  settings.rs   settings read from environment variables
   i18n.rs       server message catalogues
   messaging/    Kafka (feature messaging-kafka)
   tcp/          raw TCP mocks (feature tcp-mock)
@@ -348,6 +349,7 @@ English is the source language: every message is written once, in English, in th
 ## Project
 
 - [ROADMAP.md](ROADMAP.md): what is planned, and in which order.
+- [ARCHITECTURE.md](ARCHITECTURE.md): how Mimicway is built.
 - [MIGRATING.md](MIGRATING.md): upgrading an installation from lightMock.
 - [CHANGELOG.md](CHANGELOG.md): changes by release.
 - [SECURITY.md](SECURITY.md): supported versions and private vulnerability reporting.

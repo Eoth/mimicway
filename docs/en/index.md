@@ -6,7 +6,7 @@ Mimicway mocks or relays ("proxies") HTTP calls to a real service: test an appli
 
 This page is a **quick overview**: a line or two per feature, with a link to the page that explains how to use it. If you are new to Mimicway, read this list once to know what exists, then come back to the detailed pages when needed.
 
-> These pages are for the people who use and test with Mimicway (QA, developers, business analysts). Installation, configuration and architecture are in the [README](../../README.md); the security model is in [security.md](security.md).
+> These pages are for the people who use and test with Mimicway (QA, developers, business analysts). Installation and configuration are in the [README](../../README.md), the architecture in [ARCHITECTURE.md](../../ARCHITECTURE.md); the security model is in [security.md](security.md).
 
 ![The Mimicway home screen with the list of services](screenshots/home-service-list.png)
 
