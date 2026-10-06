@@ -354,6 +354,7 @@ L'anglais est la langue source : chaque message est écrit une fois, en anglais,
 - [CHANGELOG.md](CHANGELOG.md) : les changements par version.
 - [SECURITY.md](SECURITY.md) : versions prises en charge et signalement privé des vulnérabilités.
 - [CONTRIBUTING.md](CONTRIBUTING.md) : proposer un changement, lancer les vérifications et ajouter une langue ; [code de conduite](CODE_OF_CONDUCT.md).
+- [GOVERNANCE.md](GOVERNANCE.md) : qui décide quoi, et comment (en anglais).
 - Licence : [MIT](LICENSE).
 
 Ces documents de projet sont en anglais.

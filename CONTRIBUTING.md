@@ -71,6 +71,6 @@ The release workflow checks that the tag, both versions and the changelog agree,
 
 Mimicway is under the [MIT license](LICENSE). By contributing, you agree that your contribution is licensed under the same terms.
 
-## Conduct
+## Conduct and governance
 
-Everyone taking part follows the [code of conduct](CODE_OF_CONDUCT.md).
+Everyone taking part follows the [code of conduct](CODE_OF_CONDUCT.md). Who decides what, and how a decision is contested: [GOVERNANCE.md](GOVERNANCE.md).
