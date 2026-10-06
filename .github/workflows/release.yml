@@ -177,6 +177,16 @@ jobs:
           sha256sum published/mimicway out/mimicway "published/$archive" "dist/$archive"
           cmp published/mimicway out/mimicway
           cmp "published/$archive" "dist/$archive"
+      # The rebuild, kept a week when it differs, to compare with the published artifacts: diffoscope shows where.
+      - if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: rebuild-${{ matrix.target }}
+          path: |
+            out/
+            dist/
+          retention-days: 7
+          if-no-files-found: ignore
 
   sbom:
     name: SBOMs

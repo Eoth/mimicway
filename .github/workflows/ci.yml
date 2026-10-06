@@ -331,6 +331,16 @@ jobs:
           sha256sum out-*/mimicway dist-*/"$archive"
           cmp out-first/mimicway out-second/mimicway
           cmp "dist-first/$archive" "dist-second/$archive"
+      # Both builds, kept a week when they differ: diffoscope shows where.
+      - if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: reproducible-builds
+          path: |
+            out-*/
+            dist-*/
+          retention-days: 7
+          if-no-files-found: ignore
 
   kubernetes:
     name: Kubernetes manifests (render, schema check)
