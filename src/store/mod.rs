@@ -156,16 +156,40 @@ impl WriterHandle {
 pub struct MockStore {
     config: Arc<RwLock<Arc<MockConfig>>>,
     path: PathBuf,
+    /// The data directory as resolved on disk when the store opened it: what every backup operation checks its paths
+    /// against (`BackupDirs`).
+    root: PathBuf,
     writer: WriterHandle,
 }
 
 impl MockStore {
-    pub fn new(path: PathBuf) -> Self {
-        Self {
+    /// A store whose configuration file is `path`, starting empty without reading the disk (tests; the server uses
+    /// `load_or_init`). The directory of `path` has to exist: it is the root the backups are confined to.
+    pub fn new(path: PathBuf) -> Result<Self, StoreError> {
+        let root = Self::resolve_root(&path)?;
+        Ok(Self {
             config: Arc::new(RwLock::new(Arc::new(MockConfig::empty()))),
             path,
+            root,
             writer: WriterHandle::spawn(),
-        }
+        })
+    }
+
+    /// The directory of a configuration file, resolved on disk (symbolic links followed).
+    fn resolve_root(config_file: &Path) -> Result<PathBuf, StoreError> {
+        let dir = Self::parent_of(config_file)?;
+        dir.canonicalize().map_err(|e| {
+            StoreError::Io(format!(
+                "cannot resolve the data directory {}: {e}",
+                dir.display()
+            ))
+        })
+    }
+
+    fn parent_of(config_file: &Path) -> Result<&Path, StoreError> {
+        config_file
+            .parent()
+            .ok_or_else(|| StoreError::Io("config path has no parent directory".into()))
     }
 
     pub fn data_path() -> PathBuf {
@@ -210,9 +234,11 @@ impl MockStore {
 
         tracing::info!(path = %file.display(), services = config.services.len(), "config loaded");
 
+        let root = Self::resolve_root(&file)?;
         Ok(Self {
             config: Arc::new(RwLock::new(Arc::new(config))),
             path: file,
+            root,
             writer: WriterHandle::spawn(),
         })
     }
@@ -226,7 +252,7 @@ impl MockStore {
     /// the order they were applied, and the disk sees them in that order.
     pub async fn replace(&self, config: MockConfig) -> Result<(), StoreError> {
         let mut guard = self.config.write().await;
-        let yaml = Self::prepare_and_backup(&self.path, &config)?;
+        let yaml = self.prepare_and_backup(&config)?;
         *guard = Arc::new(config);
         self.writer.send_write(self.path.clone(), yaml).await;
         Ok(())
@@ -239,7 +265,7 @@ impl MockStore {
         let mut guard = self.config.write().await;
         let mut cfg = (**guard).clone();
         f(&mut cfg);
-        let yaml = Self::prepare_and_backup(&self.path, &cfg)?;
+        let yaml = self.prepare_and_backup(&cfg)?;
         *guard = Arc::new(cfg);
         self.writer.send_write(self.path.clone(), yaml).await;
         Ok(guard.clone())
@@ -257,7 +283,7 @@ impl MockStore {
         if let Err(refusal) = f(&mut cfg) {
             return Ok(Err(refusal));
         }
-        let yaml = Self::prepare_and_backup(&self.path, &cfg)?;
+        let yaml = self.prepare_and_backup(&cfg)?;
         *guard = Arc::new(cfg);
         self.writer.send_write(self.path.clone(), yaml).await;
         Ok(Ok(guard.clone()))
@@ -277,15 +303,10 @@ impl MockStore {
     /// The available backups (backups/ and backups/protected/), newest first. Only file metadata is read (name, size,
     /// modification time), never the YAML content.
     pub async fn list_backups(&self) -> Result<Vec<BackupInfo>, StoreError> {
-        let parent = self
-            .path
-            .parent()
-            .ok_or_else(|| StoreError::Io("config path has no parent directory".into()))?;
-
-        let backups_dir = parent.join("backups");
+        let dirs = BackupDirs::open(&self.root, &self.path)?;
         let mut result = Vec::new();
-        Self::collect_backups_dir(&backups_dir, false, &mut result)?;
-        Self::collect_backups_dir(&backups_dir.join("protected"), true, &mut result)?;
+        Self::collect_backups_dir(&dirs.backups, false, &mut result)?;
+        Self::collect_backups_dir(&dirs.protected, true, &mut result)?;
 
         // Several backups can share a millisecond. Within one, the sequence number of the name orders the normal ones,
         // and a protected backup is the oldest: a reset takes it before the write that makes the normal one.
@@ -314,10 +335,6 @@ impl MockStore {
         protected: bool,
         out: &mut Vec<BackupInfo>,
     ) -> Result<(), StoreError> {
-        if !dir.exists() {
-            return Ok(());
-        }
-
         for entry in std::fs::read_dir(dir).map_err(|e| StoreError::Io(e.to_string()))? {
             let Ok(entry) = entry else { continue };
             let path = entry.path();
@@ -366,14 +383,9 @@ impl MockStore {
     /// `filename` (`validate_backup_filename`, no path traversal); this only looks the name up in the two directories.
     /// The restore goes through `replace()`, so the state it overwrites is backed up first, like any other change.
     pub async fn restore_from_backup(&self, filename: &str) -> Result<(), StoreError> {
-        let parent = self
-            .path
-            .parent()
-            .ok_or_else(|| StoreError::Io("config path has no parent directory".into()))?;
-
-        let backups_dir = parent.join("backups");
-        let candidate = backups_dir.join(filename);
-        let protected_candidate = backups_dir.join("protected").join(filename);
+        let dirs = BackupDirs::open(&self.root, &self.path)?;
+        let candidate = dirs.backups.join(filename);
+        let protected_candidate = dirs.protected.join(filename);
 
         let source = if candidate.is_file() {
             candidate
@@ -397,19 +409,15 @@ impl MockStore {
     /// The protected backup taken before a full reset. Called explicitly before `replace(MockConfig::empty())` by the
     /// reset handler; ordinary writes never create a protected backup.
     pub async fn backup_before_reset(&self) -> Result<(), StoreError> {
-        if !self.path.exists() {
+        let dirs = BackupDirs::open(&self.root, &self.path)?;
+        let Some(file) = dirs.config_file else {
             return Ok(());
-        }
-        let parent = self
-            .path
-            .parent()
-            .ok_or_else(|| StoreError::Io("config path has no parent directory".into()))?;
+        };
 
-        let protected_dir = parent.join("backups").join("protected");
-        std::fs::create_dir_all(&protected_dir).map_err(|e| StoreError::Io(e.to_string()))?;
-
-        let dest = protected_dir.join(format!("pre-reset-{}.yaml", Self::now_ms()));
-        std::fs::copy(&self.path, &dest).map_err(|e| StoreError::Io(e.to_string()))?;
+        let dest = dirs
+            .protected
+            .join(format!("pre-reset-{}.yaml", Self::now_ms()));
+        std::fs::copy(&file, &dest).map_err(|e| StoreError::Io(e.to_string()))?;
         tracing::info!(path = %dest.display(), "pre-reset backup created (protected, 30j)");
         Ok(())
     }
@@ -417,15 +425,14 @@ impl MockStore {
     /// The synchronous part of a write: serializes to YAML, purges expired protected backups, then backs up the current
     /// file before anything replaces it. Runs under the write lock, before the asynchronous write is queued (see the
     /// top of this file: the backup always comes first).
-    fn prepare_and_backup(path: &Path, config: &MockConfig) -> Result<String, StoreError> {
+    fn prepare_and_backup(&self, config: &MockConfig) -> Result<String, StoreError> {
         let yaml = serde_yaml::to_string(config).map_err(|e| StoreError::Yaml(e.to_string()))?;
 
-        let parent = path
-            .parent()
-            .ok_or_else(|| StoreError::Io("config path has no parent directory".into()))?;
-
-        Self::purge_expired_protected_backups(parent)?;
-        Self::backup_before_overwrite(path, parent)?;
+        let dirs = BackupDirs::open(&self.root, &self.path)?;
+        Self::purge_expired_protected_backups(&dirs.protected)?;
+        if let Some(file) = &dirs.config_file {
+            Self::backup_before_overwrite(file, &dirs.backups)?;
+        }
 
         Ok(yaml)
     }
@@ -451,14 +458,9 @@ impl MockStore {
     /// It runs under the write lock on every change, and this directory has no count-based rotation: it can hold
     /// thousands of files (test suites reset before every test). `entry.file_type()` reuses what the directory listing
     /// already returned, whereas `entry.path().is_file()` would make one more system call per file on every change.
-    fn purge_expired_protected_backups(parent: &Path) -> Result<(), StoreError> {
-        let protected_dir = parent.join("backups").join("protected");
-        if !protected_dir.exists() {
-            return Ok(());
-        }
-
+    fn purge_expired_protected_backups(protected_dir: &Path) -> Result<(), StoreError> {
         let now = Self::now_ms();
-        for entry in std::fs::read_dir(&protected_dir).map_err(|e| StoreError::Io(e.to_string()))? {
+        for entry in std::fs::read_dir(protected_dir).map_err(|e| StoreError::Io(e.to_string()))? {
             let Ok(entry) = entry else { continue };
             let is_file = entry.file_type().map(|t| t.is_file()).unwrap_or(false);
             if !is_file {
@@ -483,22 +485,15 @@ impl MockStore {
             .ok()
     }
 
-    /// Copies the current configuration file into a backup directory before it is overwritten, then deletes the oldest
-    /// copies beyond `backup_max_count()`. Does nothing when the file does not exist yet.
-    fn backup_before_overwrite(path: &Path, parent: &Path) -> Result<(), StoreError> {
-        if !path.exists() {
-            return Ok(());
-        }
-
-        let backups_dir = parent.join("backups");
-        std::fs::create_dir_all(&backups_dir).map_err(|e| StoreError::Io(e.to_string()))?;
-
+    /// Copies the current configuration file (`file`, resolved by `BackupDirs`) into `backups_dir` before it is
+    /// overwritten, then deletes the oldest copies beyond `backup_max_count()`.
+    fn backup_before_overwrite(file: &Path, backups_dir: &Path) -> Result<(), StoreError> {
         let seq = BACKUP_SEQ.fetch_add(1, Ordering::Relaxed);
         let backup_name = format!("mock-config-{}-{:06}.yaml", Self::now_ms(), seq);
-        std::fs::copy(path, backups_dir.join(&backup_name))
+        std::fs::copy(file, backups_dir.join(&backup_name))
             .map_err(|e| StoreError::Io(e.to_string()))?;
 
-        Self::rotate_backups(&backups_dir)?;
+        Self::rotate_backups(backups_dir)?;
         Ok(())
     }
 
@@ -527,6 +522,66 @@ impl MockStore {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_millis()
+    }
+}
+
+/// Where a backup operation reads, copies and deletes: the data directory, its `backups/` and `backups/protected/`
+/// (created when missing) and the configuration file, all resolved on disk (`canonicalize`, which follows symbolic
+/// links) and checked to be the directory the store opened or under it. On a shared volume, another process can write
+/// to the data directory: a symbolic link planted at the place of `backups/` would otherwise send the copies, and the
+/// deletions of the rotation and of the purge, wherever it points. Each operation resolves them again, so that a link
+/// planted after the start is refused too; a write happens at the pace of configuration changes, and the few system
+/// calls this costs are nothing next to the copy it precedes.
+struct BackupDirs {
+    backups: PathBuf,
+    protected: PathBuf,
+    /// None when the configuration file does not exist yet: nothing to back up.
+    config_file: Option<PathBuf>,
+}
+
+impl BackupDirs {
+    fn open(root: &Path, config_path: &Path) -> Result<Self, StoreError> {
+        let data = Self::resolved_under(root, MockStore::parent_of(config_path)?)?;
+        let backups = Self::created_under(&data, data.join("backups"))?;
+        let protected = Self::created_under(&data, backups.join("protected"))?;
+        // A file that cannot be resolved does not exist yet (or cannot be read, which the write that follows reports).
+        let config_file = match config_path.canonicalize() {
+            Ok(resolved) => Some(Self::under(&data, config_path, resolved)?),
+            Err(_) => None,
+        };
+        Ok(Self {
+            backups,
+            protected,
+            config_file,
+        })
+    }
+
+    /// `dir`, created when missing, resolved and checked to be under `root`.
+    fn created_under(root: &Path, dir: PathBuf) -> Result<PathBuf, StoreError> {
+        std::fs::create_dir_all(&dir).map_err(|e| StoreError::Io(e.to_string()))?;
+        Self::resolved_under(root, &dir)
+    }
+
+    /// `path` resolved on disk and checked to be `root` or under it.
+    fn resolved_under(root: &Path, path: &Path) -> Result<PathBuf, StoreError> {
+        let resolved = path
+            .canonicalize()
+            .map_err(|e| StoreError::Io(format!("cannot resolve {}: {e}", path.display())))?;
+        Self::under(root, path, resolved)
+    }
+
+    /// `resolved`, what `path` resolves to, when it is `root` or under it.
+    fn under(root: &Path, path: &Path, resolved: PathBuf) -> Result<PathBuf, StoreError> {
+        if resolved.starts_with(root) {
+            Ok(resolved)
+        } else {
+            Err(StoreError::Io(format!(
+                "{} resolves to {}, outside the data directory {}: a symbolic link there is refused",
+                path.display(),
+                resolved.display(),
+                root.display()
+            )))
+        }
     }
 }
 
@@ -729,7 +784,10 @@ mod tests {
         }
 
         let backups_dir = dir.join("backups");
-        let count = std::fs::read_dir(&backups_dir).unwrap().count();
+        let count = std::fs::read_dir(&backups_dir)
+            .unwrap()
+            .filter(|entry| entry.as_ref().unwrap().path().is_file())
+            .count();
         assert_eq!(
             count, DEFAULT_BACKUP_MAX_COUNT,
             "backups should be capped at BACKUP_MAX_COUNT"
@@ -1224,13 +1282,15 @@ mod tests {
         std::fs::remove_dir_all(&dir).ok();
     }
 
-    /// A failed disk write (invalid path) is logged and reported by writer_status(), and the background task keeps
-    /// running: a later change to a valid path still gets written.
+    /// A failed disk write is logged and reported by writer_status(), and the background task keeps running: a later
+    /// change still gets written. The failure here: a directory sits where the temporary file is written.
     #[tokio::test]
     async fn write_error_is_reported_and_task_keeps_running() {
         let dir = temp_dir();
-        let bogus_path = dir.join("missing-subdir").join("mock-config.yaml");
-        let store = MockStore::new(bogus_path.clone());
+        let path = MockStore::config_file(&dir);
+        let store = MockStore::new(path.clone()).unwrap();
+        let blocker = dir.join(".mock-config.yaml.tmp");
+        std::fs::create_dir(&blocker).unwrap();
 
         store.replace(sample_config()).await.unwrap();
         store.flush().await;
@@ -1238,11 +1298,11 @@ mod tests {
         let status = store.writer_status();
         assert!(
             status.last_error.is_some(),
-            "write to a missing directory must be reported as an error"
+            "a write that cannot create its temporary file must be reported as an error"
         );
         assert!(status.last_write_ok_ms.is_none());
 
-        std::fs::create_dir_all(bogus_path.parent().unwrap()).unwrap();
+        std::fs::remove_dir(&blocker).unwrap();
         store.replace(sample_config()).await.unwrap();
         store.flush().await;
 
@@ -1251,7 +1311,51 @@ mod tests {
             status2.last_write_ok_ms.is_some(),
             "task must keep processing jobs after a prior write error"
         );
-        assert!(bogus_path.exists());
+        assert!(path.exists());
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[tokio::test]
+    async fn new_requires_an_existing_data_directory() {
+        let dir = temp_dir();
+        let err = MockStore::new(dir.join("missing").join("mock-config.yaml"))
+            .err()
+            .expect("a missing data directory must be refused");
+        assert!(matches!(err, StoreError::Io(_)), "{err}");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// On a shared volume, another process can plant a symbolic link at the place of `backups/`: the copies, and the
+    /// deletions of the rotation, would follow it. Creating a symbolic link needs a privilege on Windows: Unix only.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn backup_refuses_a_backups_directory_linked_outside_the_data_directory() {
+        let dir = temp_dir();
+        let elsewhere = temp_dir();
+        let store = MockStore::load_or_init(&dir).await.unwrap();
+        store.replace(sample_config()).await.unwrap();
+        store.flush().await;
+
+        let backups_dir = dir.join("backups");
+        std::fs::remove_dir_all(&backups_dir).unwrap();
+        std::os::unix::fs::symlink(&elsewhere, &backups_dir).unwrap();
+
+        let err = store.replace(MockConfig::empty()).await.unwrap_err();
+        assert!(
+            err.to_string().contains("outside the data directory"),
+            "{err}"
+        );
+        assert_eq!(
+            std::fs::read_dir(&elsewhere).unwrap().count(),
+            0,
+            "nothing may be written through the link"
+        );
+        assert_eq!(
+            store.snapshot().await.services.len(),
+            1,
+            "a refused change leaves the configuration as it was"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+        std::fs::remove_dir_all(&elsewhere).ok();
     }
 }

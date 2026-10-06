@@ -83,7 +83,7 @@ pub(crate) async fn test_state(
     auth_config: AuthConfig,
 ) -> AppState {
     assert_consistent(&config);
-    let store = crate::store::MockStore::new(data_dir.join("mock-config.yaml"));
+    let store = crate::store::MockStore::new(data_dir.join("mock-config.yaml")).unwrap();
     store.replace(config).await.unwrap();
     store.flush().await;
     AppState {

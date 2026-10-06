@@ -29,3 +29,4 @@ Avant une [réinitialisation complète](administration.md) (qui supprime tous le
 - Aucun prérequis : disponible dans toutes les installations, toujours actif.
 - Lister et restaurer les sauvegardes est réservé aux **super-admins** quand l'[authentification](authentication.md) est activée. Sans authentification, tout le monde peut s'en servir (comme du reste de l'interface dans ce mode).
 - Sauvegardes et restaurations portent sur **toute la configuration** (tous les services et groupes) : un service seul ne peut pas être restauré isolément depuis une ancienne sauvegarde.
+- `backups/` et `backups/protected/` sont de vrais répertoires sous le répertoire de données : Mimicway les résout avant chaque copie ou suppression et refuse un lien symbolique qui mène hors du répertoire de données, pour ne rien écrire ni supprimer ailleurs. Pour garder les sauvegardes sur un autre disque, montez-le à cet endroit.

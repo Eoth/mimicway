@@ -836,7 +836,7 @@ mod tests {
 
         // 2. A pure proxy service (is_mocked=false: straight to do_proxy, no rule evaluated).
         let data_dir = temp_dir_for_intercept_test();
-        let store = MockStore::new(data_dir.join("mock-config.yaml"));
+        let store = MockStore::new(data_dir.join("mock-config.yaml")).unwrap();
         store
             .replace(MockConfig {
                 services: vec![Service {
@@ -937,7 +937,7 @@ mod tests {
         let target_port = target_ready_rx.await.unwrap();
 
         let data_dir = temp_dir_for_intercept_test();
-        let store = MockStore::new(data_dir.join("mock-config.yaml"));
+        let store = MockStore::new(data_dir.join("mock-config.yaml")).unwrap();
         store
             .replace(MockConfig {
                 services: vec![Service {
@@ -1057,7 +1057,7 @@ mod tests {
     async fn mock_response_captures_request_detail_in_log() {
         // The mock path keeps the request details for the rule tester too.
         let data_dir = temp_dir_for_intercept_test();
-        let store = MockStore::new(data_dir.join("mock-config.yaml"));
+        let store = MockStore::new(data_dir.join("mock-config.yaml")).unwrap();
         store
             .replace(MockConfig {
                 services: vec![Service {
@@ -1159,7 +1159,7 @@ mod tests {
     ) {
         let data_dir = temp_dir_for_intercept_test();
         crate::server::test_support::assert_consistent(&config);
-        let store = MockStore::new(data_dir.join("mock-config.yaml"));
+        let store = MockStore::new(data_dir.join("mock-config.yaml")).unwrap();
         store.replace(config).await.unwrap();
         store.flush().await;
 

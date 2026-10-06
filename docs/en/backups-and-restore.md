@@ -29,3 +29,4 @@ Before a [full reset](administration.md) (which deletes every service), an extra
 - No requirement: available in every installation, always on.
 - Listing and restoring backups are reserved to **super-admins** when [authentication](authentication.md) is on. Without authentication, everyone can use them (as the rest of the interface in that mode).
 - Backups and restores cover **the whole configuration** (every service and group): a single service cannot be restored on its own from an old backup.
+- `backups/` and `backups/protected/` are real directories under the data directory: Mimicway resolves them before each copy or deletion and refuses a symbolic link that leads outside the data directory, so that nothing is written or deleted elsewhere. To keep the backups on another disk, mount it at that place instead.

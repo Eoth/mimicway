@@ -1875,7 +1875,7 @@ mod tests {
         crate::server::test_support::assert_consistent(&config);
         let data_dir = crate::server::test_support::temp_data_dir("api-test");
         std::fs::create_dir_all(&data_dir).unwrap();
-        let store = crate::store::MockStore::new(data_dir.join("mock-config.yaml"));
+        let store = crate::store::MockStore::new(data_dir.join("mock-config.yaml")).unwrap();
         store.replace(config).await.unwrap();
         store.flush().await;
 
@@ -2061,7 +2061,7 @@ mod tests {
     async fn test_state() -> AppState {
         let data_dir = crate::server::test_support::temp_data_dir("scripttest");
         std::fs::create_dir_all(&data_dir).unwrap();
-        let store = crate::store::MockStore::new(data_dir.join("mock-config.yaml"));
+        let store = crate::store::MockStore::new(data_dir.join("mock-config.yaml")).unwrap();
         store
             .replace(MockConfig {
                 services: vec![],

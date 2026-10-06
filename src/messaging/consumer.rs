@@ -223,7 +223,7 @@ mod tests {
     async fn store_with_rule(conditions: ConditionGroup, response_literal: &str) -> MockStore {
         let dir = crate::server::test_support::temp_data_dir("msgtest");
         std::fs::create_dir_all(&dir).unwrap();
-        let store = MockStore::new(MockStore::config_file(&dir));
+        let store = MockStore::new(MockStore::config_file(&dir)).unwrap();
         let config = MockConfig {
             services: vec![Service {
                 name: "svc-a".into(),
