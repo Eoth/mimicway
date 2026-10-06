@@ -32,7 +32,7 @@ Mimicway is meant for corporate networks where every outbound flow has to be jus
 | Can a web page drive it? | No. The management API refuses cross-site writes, foreign CORS origins and, when local-only, requests addressed to a non-loopback name (DNS rebinding). |
 | Does it keep secrets from the traffic? | No. `Authorization`, cookies and API-key headers are replaced by `[redacted]` in logs, observation and suggestions; URLs lose their credentials. |
 | Can a script escape? | Rhai scripts have no file, network or `eval` access and are bounded in operations, string size and depth. |
-| Unsafe code? | `#![forbid(unsafe_code)]` outside tests. |
+| Unsafe code? | `#![forbid(unsafe_code)]`, tests included. |
 | Supply chain? | `Cargo.lock` and `package-lock.json` committed, CI actions and base images pinned by digest; `cargo-deny` (advisories, licenses, sources), `npm audit`, Trivy and gitleaks run in CI. Releases ship SBOMs, build provenance attestations and a signed image. |
 
 Details, with the code that backs each claim: [security model](docs/en/security.md). A guided path through the code for a reviewer, with commands to check the claims yourself: [REVIEWING.md](REVIEWING.md). Reporting a vulnerability: [SECURITY.md](SECURITY.md).

@@ -24,6 +24,9 @@ static BACKUP_SEQ: AtomicU64 = AtomicU64::new(0);
 
 const PROTECTED_BACKUP_MAX_AGE_MS: u128 = 30 * 24 * 60 * 60 * 1000;
 
+/// Rotated backups kept in `backups/` when `BACKUP_MAX_COUNT` is unset.
+const DEFAULT_BACKUP_MAX_COUNT: usize = 5;
+
 // The write queue is bounded on purpose: write-behind exists so that requests stop waiting on disk I/O, not to let
 // a queue grow without limit during a burst. Each change is one job (no batching), and 64 jobs absorb realistic
 // bursts; beyond that, the change waits for a free slot (backpressure) rather than losing writes or growing memory.
@@ -166,9 +169,13 @@ impl MockStore {
     }
 
     pub fn data_path() -> PathBuf {
-        std::env::var("DATA_PATH")
+        Self::data_path_in(crate::settings::env)
+    }
+
+    fn data_path_in(lookup: impl Fn(&str) -> Option<String>) -> PathBuf {
+        lookup("DATA_PATH")
             .map(PathBuf::from)
-            .unwrap_or_else(|_| PathBuf::from("./data"))
+            .unwrap_or_else(|| PathBuf::from("./data"))
     }
 
     pub fn config_file(data_dir: &Path) -> PathBuf {
@@ -176,10 +183,11 @@ impl MockStore {
     }
 
     pub fn backup_max_count() -> usize {
-        std::env::var("BACKUP_MAX_COUNT")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(5)
+        Self::backup_max_count_in(crate::settings::env)
+    }
+
+    fn backup_max_count_in(lookup: impl Fn(&str) -> Option<String>) -> usize {
+        crate::settings::number(lookup, "BACKUP_MAX_COUNT", DEFAULT_BACKUP_MAX_COUNT)
     }
 
     pub async fn load_or_init(data_dir: &Path) -> Result<Self, StoreError> {
@@ -550,21 +558,11 @@ impl std::fmt::Display for StoreError {
 
 impl std::error::Error for StoreError {}
 
-// ENV_MUTEX guards are held across awaits on purpose: they serialize the tests that mutate process-wide
-// environment variables, and each #[tokio::test] owns its runtime, so holding one cannot deadlock.
 #[cfg(test)]
-#[allow(clippy::await_holding_lock)]
 mod tests {
     use super::*;
     use crate::models::{WsdlMode, *};
-
-    // Process-wide env vars (BACKUP_MAX_COUNT, DATA_PATH) are mutated by
-    // several tests below; cargo test runs test fns in parallel OS threads,
-    // so without serialization one test's set_var/remove_var can leak into
-    // another's assertion window (pre-existing flakiness, unrelated to
-    // write-behind). Any test touching these env vars must hold this lock
-    // for its whole body.
-    static ENV_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    use crate::settings::vars;
 
     fn temp_dir() -> PathBuf {
         let dir = crate::server::test_support::temp_data_dir("test");
@@ -718,14 +716,13 @@ mod tests {
         std::fs::remove_dir_all(&dir).ok();
     }
 
+    // The rotation tests rely on the default count: tests never change the process environment (see crate::settings).
     #[tokio::test]
     async fn backup_rotation_keeps_max_n() {
-        let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
         let dir = temp_dir();
-        unsafe { std::env::set_var("BACKUP_MAX_COUNT", "3") };
 
         let store = MockStore::load_or_init(&dir).await.unwrap();
-        for i in 0..6 {
+        for i in 0..DEFAULT_BACKUP_MAX_COUNT + 3 {
             let mut cfg = sample_config();
             cfg.services[0].name = format!("svc-{i}");
             store.replace(cfg).await.unwrap();
@@ -733,9 +730,11 @@ mod tests {
 
         let backups_dir = dir.join("backups");
         let count = std::fs::read_dir(&backups_dir).unwrap().count();
-        assert_eq!(count, 3, "backups should be capped at BACKUP_MAX_COUNT");
+        assert_eq!(
+            count, DEFAULT_BACKUP_MAX_COUNT,
+            "backups should be capped at BACKUP_MAX_COUNT"
+        );
 
-        unsafe { std::env::remove_var("BACKUP_MAX_COUNT") };
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -755,18 +754,16 @@ mod tests {
 
     #[tokio::test]
     async fn protected_backup_exempt_from_normal_rotation() {
-        let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
         let dir = temp_dir();
-        unsafe { std::env::set_var("BACKUP_MAX_COUNT", "2") };
 
         let store = MockStore::load_or_init(&dir).await.unwrap();
         store.replace(sample_config()).await.unwrap();
         store.backup_before_reset().await.unwrap();
         store.replace(MockConfig::empty()).await.unwrap();
 
-        // Many writes after the reset, well beyond BACKUP_MAX_COUNT=2 —
-        // the protected pre-reset backup must survive all of them.
-        for i in 0..8 {
+        // Many writes after the reset, well beyond BACKUP_MAX_COUNT: the protected pre-reset backup must survive all
+        // of them.
+        for i in 0..DEFAULT_BACKUP_MAX_COUNT + 6 {
             let mut cfg = sample_config();
             cfg.services[0].name = format!("svc-{i}");
             store.replace(cfg).await.unwrap();
@@ -785,11 +782,10 @@ mod tests {
             .filter(|e| e.as_ref().unwrap().path().is_file())
             .count();
         assert_eq!(
-            normal_count, 2,
+            normal_count, DEFAULT_BACKUP_MAX_COUNT,
             "normal backups still capped at BACKUP_MAX_COUNT"
         );
 
-        unsafe { std::env::remove_var("BACKUP_MAX_COUNT") };
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -890,17 +886,13 @@ mod tests {
 
     #[test]
     fn backup_max_count_default() {
-        let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-        unsafe { std::env::remove_var("BACKUP_MAX_COUNT") };
-        assert_eq!(MockStore::backup_max_count(), 5);
+        assert_eq!(MockStore::backup_max_count_in(vars(&[])), 5);
     }
 
     #[test]
     fn backup_max_count_from_env() {
-        let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-        unsafe { std::env::set_var("BACKUP_MAX_COUNT", "12") };
-        assert_eq!(MockStore::backup_max_count(), 12);
-        unsafe { std::env::remove_var("BACKUP_MAX_COUNT") };
+        let lookup = vars(&[("BACKUP_MAX_COUNT", "12")]);
+        assert_eq!(MockStore::backup_max_count_in(lookup), 12);
     }
 
     #[tokio::test]
@@ -1077,10 +1069,6 @@ mod tests {
 
     #[tokio::test]
     async fn restore_from_backup_creates_safety_backup_of_current_state_first() {
-        // This test counts the rotated backups of backups/: it holds ENV_MUTEX, or another test setting BACKUP_MAX_COUNT
-        // at the same time could cap the count and make the before/after comparison fail now and then.
-        let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-        unsafe { std::env::remove_var("BACKUP_MAX_COUNT") };
         let dir = temp_dir();
         let store = MockStore::load_or_init(&dir).await.unwrap();
         store.replace(sample_config()).await.unwrap();
@@ -1112,19 +1100,14 @@ mod tests {
 
     #[test]
     fn data_path_default() {
-        let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-        unsafe { std::env::remove_var("DATA_PATH") };
-        let p = MockStore::data_path();
+        let p = MockStore::data_path_in(vars(&[]));
         assert_eq!(p, PathBuf::from("./data"));
     }
 
     #[test]
     fn data_path_from_env() {
-        let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-        unsafe { std::env::set_var("DATA_PATH", "/mnt/pvc/mimicway") };
-        let p = MockStore::data_path();
+        let p = MockStore::data_path_in(vars(&[("DATA_PATH", "/mnt/pvc/mimicway")]));
         assert_eq!(p, PathBuf::from("/mnt/pvc/mimicway"));
-        unsafe { std::env::remove_var("DATA_PATH") };
     }
 
     #[tokio::test]

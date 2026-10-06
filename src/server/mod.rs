@@ -75,12 +75,16 @@ struct RuntimeConfig {
 // without authentication, since the UI reads it before knowing whether anyone is signed in. The value is read from
 // the environment at each request rather than baked into the UI at build time: one image serves every environment.
 async fn runtime_config_handler() -> axum::Json<RuntimeConfig> {
-    let api_base_url = std::env::var("API_BASE_URL")
+    axum::Json(runtime_config(crate::settings::env))
+}
+
+fn runtime_config(lookup: impl Fn(&str) -> Option<String>) -> RuntimeConfig {
+    let api_base_url = lookup("API_BASE_URL")
         .unwrap_or_default()
         .trim()
         .trim_end_matches('/')
         .to_string();
-    axum::Json(RuntimeConfig { api_base_url })
+    RuntimeConfig { api_base_url }
 }
 
 /// The production router with the default browser guard (no extra CORS origin, all host names accepted), for
@@ -150,40 +154,25 @@ pub fn build_router_with(
 #[cfg(test)]
 pub(crate) mod test_support;
 
-// ENV_MUTEX guards are held across awaits on purpose: they serialize the tests that mutate process-wide
-// environment variables, and each #[tokio::test] owns its runtime, so holding one cannot deadlock.
 #[cfg(test)]
-#[allow(clippy::await_holding_lock)]
 mod tests {
     use super::*;
+    use crate::settings::vars;
 
-    // API_BASE_URL is process-wide and test functions run in parallel: every test that sets it holds this mutex for
-    // its whole body.
-    static ENV_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-    #[tokio::test]
-    async fn runtime_config_defaults_to_empty_when_env_unset() {
-        let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-        unsafe { std::env::remove_var("API_BASE_URL") };
-        let axum::Json(config) = runtime_config_handler().await;
-        assert_eq!(config.api_base_url, "");
+    #[test]
+    fn runtime_config_defaults_to_empty_when_env_unset() {
+        assert_eq!(runtime_config(vars(&[])).api_base_url, "");
     }
 
-    #[tokio::test]
-    async fn runtime_config_returns_configured_value() {
-        let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-        unsafe { std::env::set_var("API_BASE_URL", "https://api.example.com") };
-        let axum::Json(config) = runtime_config_handler().await;
-        unsafe { std::env::remove_var("API_BASE_URL") };
+    #[test]
+    fn runtime_config_returns_configured_value() {
+        let config = runtime_config(vars(&[("API_BASE_URL", "https://api.example.com")]));
         assert_eq!(config.api_base_url, "https://api.example.com");
     }
 
-    #[tokio::test]
-    async fn runtime_config_trims_trailing_slash_and_whitespace() {
-        let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-        unsafe { std::env::set_var("API_BASE_URL", "  https://api.example.com/  ") };
-        let axum::Json(config) = runtime_config_handler().await;
-        unsafe { std::env::remove_var("API_BASE_URL") };
+    #[test]
+    fn runtime_config_trims_trailing_slash_and_whitespace() {
+        let config = runtime_config(vars(&[("API_BASE_URL", "  https://api.example.com/  ")]));
         assert_eq!(config.api_base_url, "https://api.example.com");
     }
 
@@ -237,8 +226,6 @@ mod tests {
     async fn runtime_config_route_accessible_without_token_when_auth_enabled() {
         // Authentication on with no Keycloak client makes every protected route fail closed (500); this one must
         // still answer without a token, since the UI reads it before anyone signs in.
-        let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-        unsafe { std::env::set_var("API_BASE_URL", "https://api.example.com") };
         let auth_config = crate::auth::AuthConfig {
             enabled: true,
             keycloak_url: "http://127.0.0.1:1".into(),
@@ -255,17 +242,14 @@ mod tests {
             .send()
             .await
             .unwrap();
-        unsafe { std::env::remove_var("API_BASE_URL") };
         assert_eq!(resp.status().as_u16(), 200);
         let body: serde_json::Value = resp.json().await.unwrap();
-        assert_eq!(body["api_base_url"], "https://api.example.com");
+        assert!(body["api_base_url"].is_string(), "{body}");
     }
 
     #[tokio::test]
     async fn runtime_config_route_not_intercepted_as_a_mock_service() {
         // Through the real router: the interception layer lets it pass (is_internal_route) even when services exist.
-        let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-        unsafe { std::env::remove_var("API_BASE_URL") };
         let auth_config = crate::auth::AuthConfig {
             enabled: false,
             keycloak_url: String::new(),

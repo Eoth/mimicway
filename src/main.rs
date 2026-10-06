@@ -1,7 +1,6 @@
 // Starts Mimicway: reads the environment, then serves the library's router (lib.rs holds the server itself).
-// No unsafe Rust in the shipped binary. Tests use it only to set environment variables (unsafe since edition
-// 2024), which is why the attribute is limited to non-test builds.
-#![cfg_attr(not(test), forbid(unsafe_code))]
+// No unsafe Rust, tests included (lib.rs says why).
+#![forbid(unsafe_code)]
 
 use mimicway::auth::AuthConfig;
 use mimicway::auth::keycloak::KeycloakClient;

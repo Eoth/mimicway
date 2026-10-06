@@ -15,10 +15,15 @@ const DEFAULT_MAX_MESSAGE_SIZE: usize = 16 * 1024;
 /// Largest first message read from a connection (`TCP_MOCK_MAX_MESSAGE_SIZE`, 16 KiB by default, like
 /// `request_log::max_body_size`), so that a hostile client cannot grow memory before any matching happens.
 pub fn max_message_size() -> usize {
-    std::env::var("TCP_MOCK_MAX_MESSAGE_SIZE")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(DEFAULT_MAX_MESSAGE_SIZE)
+    max_message_size_in(crate::settings::env)
+}
+
+fn max_message_size_in(lookup: impl Fn(&str) -> Option<String>) -> usize {
+    crate::settings::number(
+        lookup,
+        "TCP_MOCK_MAX_MESSAGE_SIZE",
+        DEFAULT_MAX_MESSAGE_SIZE,
+    )
 }
 
 /// Whether a TCP service could listen, as `GET /api/tcp/status` reports it, so that an operator sees a port
@@ -226,9 +231,13 @@ mod tests {
 
     #[test]
     fn max_message_size_defaults_to_16kb() {
-        // Removing a variable no other test sets.
-        unsafe { std::env::remove_var("TCP_MOCK_MAX_MESSAGE_SIZE") };
-        assert_eq!(max_message_size(), 16 * 1024);
+        assert_eq!(max_message_size_in(crate::settings::vars(&[])), 16 * 1024);
+    }
+
+    #[test]
+    fn max_message_size_from_env() {
+        let lookup = crate::settings::vars(&[("TCP_MOCK_MAX_MESSAGE_SIZE", "64")]);
+        assert_eq!(max_message_size_in(lookup), 64);
     }
 
     #[tokio::test]

@@ -24,26 +24,30 @@ impl AuthConfig {
     /// The authentication settings, or a message naming what is missing when authentication is enabled without
     /// the Keycloak settings it needs (Mimicway then refuses to start rather than run half-protected).
     pub fn from_env() -> Result<Self, String> {
-        let enabled = std::env::var("AUTH_ENABLED")
-            .unwrap_or_else(|_| "false".into())
+        Self::from_lookup(crate::settings::env)
+    }
+
+    fn from_lookup(lookup: impl Fn(&str) -> Option<String>) -> Result<Self, String> {
+        let enabled = lookup("AUTH_ENABLED")
+            .unwrap_or_else(|| "false".into())
             .eq_ignore_ascii_case("true");
 
-        let keycloak_url = std::env::var("KEYCLOAK_URL").unwrap_or_default();
-        let realm = std::env::var("KEYCLOAK_REALM").unwrap_or_default();
-        let client_id = std::env::var("KEYCLOAK_CLIENT_ID").unwrap_or_default();
-        let issuer = std::env::var("KEYCLOAK_ISSUER")
+        let keycloak_url = lookup("KEYCLOAK_URL").unwrap_or_default();
+        let realm = lookup("KEYCLOAK_REALM").unwrap_or_default();
+        let client_id = lookup("KEYCLOAK_CLIENT_ID").unwrap_or_default();
+        let issuer = lookup("KEYCLOAK_ISSUER")
             .unwrap_or_default()
             .trim()
             .trim_end_matches('/')
             .to_string();
-        let super_admins: Vec<String> = std::env::var("SUPER_ADMINS")
+        let super_admins: Vec<String> = lookup("SUPER_ADMINS")
             .unwrap_or_default()
             .split(',')
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
             .collect();
-        let show_reset_button = std::env::var("SHOW_RESET_BUTTON")
-            .unwrap_or_else(|_| "false".into())
+        let show_reset_button = lookup("SHOW_RESET_BUTTON")
+            .unwrap_or_else(|| "false".into())
             .eq_ignore_ascii_case("true");
 
         if enabled && (keycloak_url.is_empty() || realm.is_empty() || client_id.is_empty()) {
@@ -112,12 +116,7 @@ pub fn visible_services(
 mod tests {
     use super::*;
     use crate::models::{Group, MockConfig, Service, WsdlMode};
-
-    // SHOW_RESET_BUTTON/AUTH_ENABLED are process-wide env vars mutated by the
-    // two show_reset_button_* tests below; cargo test runs test fns in
-    // parallel OS threads, so without serialization one test's
-    // set_var/remove_var can leak into the other's assertion window.
-    static ENV_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    use crate::settings::vars;
 
     fn test_config() -> AuthConfig {
         AuthConfig {
@@ -275,20 +274,38 @@ mod tests {
 
     #[test]
     fn show_reset_button_defaults_to_false() {
-        let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-        unsafe { std::env::remove_var("SHOW_RESET_BUTTON") };
-        unsafe { std::env::remove_var("AUTH_ENABLED") };
-        let cfg = AuthConfig::from_env().unwrap();
+        let cfg = AuthConfig::from_lookup(vars(&[])).unwrap();
         assert!(!cfg.show_reset_button);
     }
 
     #[test]
     fn show_reset_button_true_from_env() {
-        let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-        unsafe { std::env::remove_var("AUTH_ENABLED") };
-        unsafe { std::env::set_var("SHOW_RESET_BUTTON", "true") };
-        let cfg = AuthConfig::from_env().unwrap();
+        let cfg = AuthConfig::from_lookup(vars(&[("SHOW_RESET_BUTTON", "true")])).unwrap();
         assert!(cfg.show_reset_button);
-        unsafe { std::env::remove_var("SHOW_RESET_BUTTON") };
+    }
+
+    #[test]
+    fn authentication_without_its_keycloak_settings_is_refused() {
+        let error = AuthConfig::from_lookup(vars(&[("AUTH_ENABLED", "true")])).unwrap_err();
+        assert!(error.contains("KEYCLOAK_URL"), "{error}");
+    }
+
+    #[test]
+    fn authentication_settings_are_read_and_trimmed() {
+        let cfg = AuthConfig::from_lookup(vars(&[
+            ("AUTH_ENABLED", "TRUE"),
+            ("KEYCLOAK_URL", "https://kc.example.com"),
+            ("KEYCLOAK_REALM", "realm"),
+            ("KEYCLOAK_CLIENT_ID", "mimicway"),
+            (
+                "KEYCLOAK_ISSUER",
+                " https://login.example.com/realms/realm/ ",
+            ),
+            ("SUPER_ADMINS", " alice, ,bob "),
+        ]))
+        .unwrap();
+        assert!(cfg.enabled);
+        assert_eq!(cfg.issuer, "https://login.example.com/realms/realm");
+        assert_eq!(cfg.super_admins, vec!["alice", "bob"]);
     }
 }

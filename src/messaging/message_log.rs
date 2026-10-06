@@ -17,17 +17,19 @@ const DEFAULT_TTL_MS: u64 = 24 * 60 * 60 * 1000;
 const DEFAULT_MAX_BODY_SIZE: usize = 16 * 1024;
 
 pub fn ttl_ms() -> u64 {
-    std::env::var("MESSAGE_LOG_TTL_MS")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(DEFAULT_TTL_MS)
+    ttl_ms_in(crate::settings::env)
+}
+
+fn ttl_ms_in(lookup: impl Fn(&str) -> Option<String>) -> u64 {
+    crate::settings::number(lookup, "MESSAGE_LOG_TTL_MS", DEFAULT_TTL_MS)
 }
 
 pub fn max_body_size() -> usize {
-    std::env::var("MESSAGE_LOG_MAX_BODY_SIZE")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(DEFAULT_MAX_BODY_SIZE)
+    max_body_size_in(crate::settings::env)
+}
+
+fn max_body_size_in(lookup: impl Fn(&str) -> Option<String>) -> usize {
+    crate::settings::number(lookup, "MESSAGE_LOG_MAX_BODY_SIZE", DEFAULT_MAX_BODY_SIZE)
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -158,43 +160,33 @@ impl Default for MessageLog {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    static ENV_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    use crate::settings::vars;
 
     #[test]
     fn ttl_default_is_24h() {
-        let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-        unsafe { std::env::remove_var("MESSAGE_LOG_TTL_MS") };
-        assert_eq!(ttl_ms(), 24 * 60 * 60 * 1000);
+        assert_eq!(ttl_ms_in(vars(&[])), 24 * 60 * 60 * 1000);
     }
 
     #[test]
     fn ttl_from_env() {
-        let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-        unsafe { std::env::set_var("MESSAGE_LOG_TTL_MS", "1000") };
-        assert_eq!(ttl_ms(), 1000);
-        unsafe { std::env::remove_var("MESSAGE_LOG_TTL_MS") };
+        assert_eq!(ttl_ms_in(vars(&[("MESSAGE_LOG_TTL_MS", "1000")])), 1000);
     }
 
     #[test]
     fn max_body_size_default_is_16kb() {
-        let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-        unsafe { std::env::remove_var("MESSAGE_LOG_MAX_BODY_SIZE") };
-        assert_eq!(max_body_size(), 16 * 1024);
+        assert_eq!(max_body_size_in(vars(&[])), 16 * 1024);
     }
 
     #[test]
     fn max_body_size_from_env() {
-        let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-        unsafe { std::env::set_var("MESSAGE_LOG_MAX_BODY_SIZE", "10") };
-        assert_eq!(max_body_size(), 10);
-        unsafe { std::env::remove_var("MESSAGE_LOG_MAX_BODY_SIZE") };
+        let lookup = vars(&[("MESSAGE_LOG_MAX_BODY_SIZE", "10")]);
+        assert_eq!(max_body_size_in(lookup), 10);
     }
+
+    // The tests below run with the default limits: tests never change the process environment (see crate::settings).
 
     #[test]
     fn record_in_matched_entry() {
-        // record_in() reads max_body_size(), a process-wide variable another test may set: hold the same lock.
-        let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
         let log = MessageLog::new();
         log.record_in("orders.in", Some("svc-a"), Some("rule-1"), true, b"hello");
         let entries = log.recent(10);
@@ -211,7 +203,6 @@ mod tests {
 
     #[test]
     fn record_in_no_match_entry() {
-        let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
         let log = MessageLog::new();
         log.record_in("orders.in", None, None, false, b"unmatched");
         let entries = log.recent(10);
@@ -222,7 +213,6 @@ mod tests {
 
     #[test]
     fn record_out_entry() {
-        let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
         let log = MessageLog::new();
         log.record_out(
             "orders.reply",
@@ -237,34 +227,30 @@ mod tests {
 
     #[test]
     fn body_truncated_beyond_max_size() {
-        let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-        unsafe { std::env::set_var("MESSAGE_LOG_MAX_BODY_SIZE", "5") };
+        let mut body = vec![b'0'; DEFAULT_MAX_BODY_SIZE];
+        body.extend_from_slice(b"beyond");
         let log = MessageLog::new();
-        log.record_in("t", None, None, false, b"0123456789");
+        log.record_in("t", None, None, false, &body);
         let entries = log.recent(10);
         assert!(entries[0].body_truncated);
-        assert_eq!(entries[0].body_preview, "01234");
+        assert_eq!(entries[0].body_preview.len(), DEFAULT_MAX_BODY_SIZE);
         assert_eq!(
-            entries[0].body_size_bytes, 10,
+            entries[0].body_size_bytes,
+            DEFAULT_MAX_BODY_SIZE + 6,
             "real size must be preserved even when body is truncated"
         );
-        unsafe { std::env::remove_var("MESSAGE_LOG_MAX_BODY_SIZE") };
     }
 
     #[test]
     fn body_not_truncated_under_max_size() {
-        let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-        unsafe { std::env::set_var("MESSAGE_LOG_MAX_BODY_SIZE", "100") };
         let log = MessageLog::new();
         log.record_in("t", None, None, false, b"short");
         let entries = log.recent(10);
         assert!(!entries[0].body_truncated);
-        unsafe { std::env::remove_var("MESSAGE_LOG_MAX_BODY_SIZE") };
     }
 
     #[test]
     fn entry_count_bounded_by_max_entries() {
-        let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
         let log = MessageLog::new();
         for i in 0..(MAX_ENTRIES + 50) {
             log.record_in("t", None, None, false, format!("msg-{i}").as_bytes());
@@ -280,11 +266,9 @@ mod tests {
 
     #[test]
     fn expired_entries_purged_on_next_write() {
-        let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-        unsafe { std::env::set_var("MESSAGE_LOG_TTL_MS", "50") };
         let log = MessageLog::new();
         log.push(MessageLogEntry {
-            timestamp: MessageLog::now_ms() - 1000,
+            timestamp: MessageLog::now_ms() - DEFAULT_TTL_MS - 1000,
             direction: "in".into(),
             topic: "t".into(),
             service_name: None,
@@ -304,23 +288,18 @@ mod tests {
             "expired entry must be purged, only the fresh one remains"
         );
         assert_eq!(log.recent(1)[0].body_preview, "new");
-        unsafe { std::env::remove_var("MESSAGE_LOG_TTL_MS") };
     }
 
     #[test]
     fn fresh_entries_survive_purge() {
-        let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-        unsafe { std::env::set_var("MESSAGE_LOG_TTL_MS", "60000") };
         let log = MessageLog::new();
         log.record_in("t", None, None, false, b"a");
         log.record_in("t", None, None, false, b"b");
         assert_eq!(log.len(), 2);
-        unsafe { std::env::remove_var("MESSAGE_LOG_TTL_MS") };
     }
 
     #[test]
     fn recent_returns_most_recent_first() {
-        let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
         let log = MessageLog::new();
         log.record_in("t", None, None, false, b"first");
         log.record_in("t", None, None, false, b"second");

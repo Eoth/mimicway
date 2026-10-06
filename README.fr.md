@@ -32,7 +32,7 @@ Mimicway est pensé pour les réseaux d'entreprise où chaque flux sortant doit 
 | Une page web peut-elle le piloter ? | Non. L'API de gestion refuse les écritures intersites, les origines CORS étrangères et, en mode local, les requêtes adressées à un nom qui n'est pas la boucle locale (DNS rebinding). |
 | Garde-t-il des secrets issus du trafic ? | Non. `Authorization`, les cookies et les en-têtes de clé d'API sont remplacés par `[redacted]` dans les journaux, l'observation et les suggestions ; les URL perdent leurs identifiants. |
 | Un script peut-il s'échapper ? | Les scripts Rhai n'ont accès ni aux fichiers, ni au réseau, ni à `eval`, et sont bornés en opérations, en taille de chaîne et en profondeur. |
-| Du code non sûr ? | `#![forbid(unsafe_code)]` hors tests. |
+| Du code non sûr ? | `#![forbid(unsafe_code)]`, tests compris. |
 | Chaîne d'approvisionnement ? | `Cargo.lock` et `package-lock.json` versionnés, actions de CI et images de base épinglées par empreinte ; `cargo-deny` (vulnérabilités, licences, sources), `npm audit`, Trivy et gitleaks tournent en CI. Les versions publiées livrent des SBOM, des attestations de provenance et une image signée. |
 
 Le détail, avec le code qui appuie chaque affirmation : [modèle de sécurité](docs/fr/security.md). Un parcours guidé du code pour un relecteur, avec des commandes pour vérifier les affirmations vous-même : [REVIEWING.md](REVIEWING.md) (en anglais). Signaler une vulnérabilité : [SECURITY.md](SECURITY.md) (en anglais).

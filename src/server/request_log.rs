@@ -9,10 +9,11 @@ const DEFAULT_MAX_BODY_SIZE: usize = 16 * 1024;
 /// `messaging::message_log::max_body_size`). Bodies up to 10 MiB are buffered for matching; keeping them whole in
 /// 200 entries would use memory for nothing the rule tester needs.
 pub fn max_body_size() -> usize {
-    std::env::var("REQUEST_LOG_MAX_BODY_SIZE")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(DEFAULT_MAX_BODY_SIZE)
+    max_body_size_in(crate::settings::env)
+}
+
+fn max_body_size_in(lookup: impl Fn(&str) -> Option<String>) -> usize {
+    crate::settings::number(lookup, "REQUEST_LOG_MAX_BODY_SIZE", DEFAULT_MAX_BODY_SIZE)
 }
 
 /// A request Mimicway really received, kept so that the rule tester can replay a rule being edited against real
@@ -180,8 +181,7 @@ mod tests {
         crate::server::test_support::mock_service("svc", "")
     }
     use crate::engine::matcher::RequestData;
-
-    static ENV_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    use crate::settings::vars;
 
     fn req_data(body: &[u8]) -> RequestData {
         RequestData {
@@ -197,23 +197,17 @@ mod tests {
 
     #[test]
     fn max_body_size_default_is_16kb() {
-        let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-        unsafe { std::env::remove_var("REQUEST_LOG_MAX_BODY_SIZE") };
-        assert_eq!(max_body_size(), 16 * 1024);
+        assert_eq!(max_body_size_in(vars(&[])), 16 * 1024);
     }
 
     #[test]
     fn max_body_size_from_env() {
-        let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-        unsafe { std::env::set_var("REQUEST_LOG_MAX_BODY_SIZE", "10") };
-        assert_eq!(max_body_size(), 10);
-        unsafe { std::env::remove_var("REQUEST_LOG_MAX_BODY_SIZE") };
+        let lookup = vars(&[("REQUEST_LOG_MAX_BODY_SIZE", "10")]);
+        assert_eq!(max_body_size_in(lookup), 10);
     }
 
     #[test]
     fn captured_request_preserves_full_detail_under_limit() {
-        let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-        unsafe { std::env::remove_var("REQUEST_LOG_MAX_BODY_SIZE") };
         let data = req_data(b"{\"a\":1}");
         let captured = CapturedRequest::from_request_data(&data);
         assert_eq!(captured.body, "{\"a\":1}");
@@ -226,18 +220,16 @@ mod tests {
 
     #[test]
     fn captured_request_truncates_body_beyond_max_size() {
-        let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-        unsafe { std::env::set_var("REQUEST_LOG_MAX_BODY_SIZE", "5") };
-        let data = req_data(b"0123456789");
-        let captured = CapturedRequest::from_request_data(&data);
+        let mut body = vec![b'0'; DEFAULT_MAX_BODY_SIZE];
+        body.extend_from_slice(b"beyond");
+        let captured = CapturedRequest::from_request_data(&req_data(&body));
         assert!(captured.body_truncated);
-        assert_eq!(captured.body, "01234");
-        unsafe { std::env::remove_var("REQUEST_LOG_MAX_BODY_SIZE") };
+        assert_eq!(captured.body.len(), DEFAULT_MAX_BODY_SIZE);
+        assert!(!captured.body.contains("beyond"));
     }
 
     #[test]
     fn log_mock_stores_captured_detail() {
-        let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
         let log = RequestLog::new();
         let captured = CapturedRequest::from_request_data(&req_data(b"body"));
         log.log_mock(
@@ -258,7 +250,6 @@ mod tests {
 
     #[test]
     fn log_proxy_service_level_has_no_captured_detail() {
-        let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
         let log = RequestLog::new();
         log.log_proxy(
             &svc(),
@@ -274,7 +265,6 @@ mod tests {
 
     #[test]
     fn log_no_rule_stores_captured_detail() {
-        let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
         let log = RequestLog::new();
         let captured = CapturedRequest::from_request_data(&req_data(b""));
         log.log_no_rule(&svc(), "GET", "/svc/unknown", Some(captured));
@@ -284,7 +274,6 @@ mod tests {
 
     #[test]
     fn entry_count_bounded_by_max_entries() {
-        let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
         let log = RequestLog::new();
         for i in 0..(MAX_ENTRIES + 20) {
             log.log_no_rule(&svc(), "GET", &format!("/svc/{i}"), None);
@@ -296,7 +285,6 @@ mod tests {
 
     #[test]
     fn recent_returns_most_recent_first() {
-        let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
         let log = RequestLog::new();
         log.log_no_rule(&svc(), "GET", "/svc/first", None);
         log.log_no_rule(&svc(), "GET", "/svc/second", None);

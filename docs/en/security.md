@@ -69,7 +69,7 @@ The login form uses Keycloak's password grant. Replacing it with the authorizati
 - The server's parsers and matchers of untrusted input (request conditions, sub-paths, XML paths, templates, raw TCP hexadecimal, configuration imports) are fuzzed by ClusterFuzzLite, five minutes on each pull request that changes them and an hour every week; the UI's own parsers have property tests.
 - CodeQL analyses the server (Rust), the interface (JavaScript) and the CI workflows whenever they change, the workflows on every pull request, and all three weekly; its alerts are listed in the repository's Security tab.
 - The CI's third-party actions are pinned to commit SHAs, and Dependabot proposes their updates along with those of the crates, npm packages and base images.
-- The production code contains no `unsafe` Rust (`#![forbid(unsafe_code)]` outside tests).
+- The code contains no `unsafe` Rust, tests included (`#![forbid(unsafe_code)]`).
 - The image holds the static binary and its data directory, nothing else (`FROM scratch`): no operating system, shell or system package, so nothing in it but Mimicway's own code for a vulnerability to sit in. It runs as a non-root user (uid 1000); the Kubernetes manifests add a read-only root filesystem, no privilege escalation and no Linux capability.
 - Releases are built from the tagged commit by `.github/workflows/release.yml`: every archive has a build provenance attestation and a CycloneDX SBOM (one for the Rust crates, one for the UI's shipped packages), and the image is signed keylessly with cosign. [SECURITY.md](../../SECURITY.md#verifying-a-release) gives the verification commands.
 - The base images of both Dockerfiles are pinned by digest.

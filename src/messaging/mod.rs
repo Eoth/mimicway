@@ -28,23 +28,24 @@ pub struct KafkaConfig {
 
 impl KafkaConfig {
     pub fn from_env() -> Self {
-        let enabled = std::env::var("KAFKA_ENABLED")
-            .unwrap_or_else(|_| "false".into())
+        Self::from_lookup(crate::settings::env)
+    }
+
+    fn from_lookup(lookup: impl Fn(&str) -> Option<String>) -> Self {
+        let enabled = lookup("KAFKA_ENABLED")
+            .unwrap_or_else(|| "false".into())
             .eq_ignore_ascii_case("true");
 
-        let brokers: Vec<String> = std::env::var("KAFKA_BROKERS")
+        let brokers: Vec<String> = lookup("KAFKA_BROKERS")
             .unwrap_or_default()
             .split(',')
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
             .collect();
 
-        let consumer_group =
-            std::env::var("KAFKA_CONSUMER_GROUP").unwrap_or_else(|_| "mimicway".into());
-        let listen_topic = std::env::var("KAFKA_LISTEN_TOPIC").unwrap_or_default();
-        let reply_topic = std::env::var("KAFKA_REPLY_TOPIC")
-            .ok()
-            .filter(|s| !s.is_empty());
+        let consumer_group = lookup("KAFKA_CONSUMER_GROUP").unwrap_or_else(|| "mimicway".into());
+        let listen_topic = lookup("KAFKA_LISTEN_TOPIC").unwrap_or_default();
+        let reply_topic = lookup("KAFKA_REPLY_TOPIC").filter(|s| !s.is_empty());
 
         Self {
             enabled,
@@ -59,26 +60,11 @@ impl KafkaConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // KAFKA_* are process-wide and test functions run in parallel: every test that sets them holds this lock for its
-    // whole body.
-    static ENV_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-    fn clear_env() {
-        unsafe {
-            std::env::remove_var("KAFKA_ENABLED");
-            std::env::remove_var("KAFKA_BROKERS");
-            std::env::remove_var("KAFKA_CONSUMER_GROUP");
-            std::env::remove_var("KAFKA_LISTEN_TOPIC");
-            std::env::remove_var("KAFKA_REPLY_TOPIC");
-        }
-    }
+    use crate::settings::vars;
 
     #[test]
     fn defaults_disabled_with_empty_brokers() {
-        let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-        clear_env();
-        let cfg = KafkaConfig::from_env();
+        let cfg = KafkaConfig::from_lookup(vars(&[]));
         assert!(!cfg.enabled);
         assert!(cfg.brokers.is_empty());
         assert_eq!(cfg.consumer_group, "mimicway");
@@ -88,51 +74,38 @@ mod tests {
 
     #[test]
     fn parses_broker_list_from_env() {
-        let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-        clear_env();
-        unsafe { std::env::set_var("KAFKA_BROKERS", "broker1:9092, broker2:9092") };
-        let cfg = KafkaConfig::from_env();
+        let cfg =
+            KafkaConfig::from_lookup(vars(&[("KAFKA_BROKERS", "broker1:9092, broker2:9092")]));
         assert_eq!(cfg.brokers, vec!["broker1:9092", "broker2:9092"]);
-        clear_env();
     }
 
     #[test]
     fn enabled_true_from_env() {
-        let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-        clear_env();
-        unsafe { std::env::set_var("KAFKA_ENABLED", "true") };
-        let cfg = KafkaConfig::from_env();
+        let cfg = KafkaConfig::from_lookup(vars(&[("KAFKA_ENABLED", "true")]));
         assert!(cfg.enabled);
-        clear_env();
     }
 
     #[test]
     fn reply_topic_from_env() {
-        let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-        clear_env();
-        unsafe { std::env::set_var("KAFKA_REPLY_TOPIC", "mimicway.replies") };
-        let cfg = KafkaConfig::from_env();
+        let cfg = KafkaConfig::from_lookup(vars(&[("KAFKA_REPLY_TOPIC", "mimicway.replies")]));
         assert_eq!(cfg.reply_topic, Some("mimicway.replies".to_string()));
-        clear_env();
     }
 
     #[test]
     fn empty_reply_topic_env_var_is_none() {
-        let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-        clear_env();
-        unsafe { std::env::set_var("KAFKA_REPLY_TOPIC", "") };
-        let cfg = KafkaConfig::from_env();
+        let cfg = KafkaConfig::from_lookup(vars(&[("KAFKA_REPLY_TOPIC", "")]));
         assert!(cfg.reply_topic.is_none());
-        clear_env();
     }
 
     #[test]
     fn custom_consumer_group() {
-        let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-        clear_env();
-        unsafe { std::env::set_var("KAFKA_CONSUMER_GROUP", "my-group") };
-        let cfg = KafkaConfig::from_env();
+        let cfg = KafkaConfig::from_lookup(vars(&[("KAFKA_CONSUMER_GROUP", "my-group")]));
         assert_eq!(cfg.consumer_group, "my-group");
-        clear_env();
+    }
+
+    #[test]
+    fn listen_topic_from_env() {
+        let cfg = KafkaConfig::from_lookup(vars(&[("KAFKA_LISTEN_TOPIC", "orders.in")]));
+        assert_eq!(cfg.listen_topic, "orders.in");
     }
 }

@@ -18,37 +18,53 @@ const DEFAULT_MAX_KEYS: usize = 200;
 /// Largest body kept in an `ObservedExchange`, in bytes (request and response truncated separately), like
 /// `request_log::max_body_size` and `message_log::max_body_size`.
 pub fn max_body_size() -> usize {
-    std::env::var("TRAFFIC_OBSERVATION_MAX_BODY_SIZE")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(DEFAULT_MAX_BODY_SIZE)
+    max_body_size_in(crate::settings::env)
+}
+
+fn max_body_size_in(lookup: impl Fn(&str) -> Option<String>) -> usize {
+    crate::settings::number(
+        lookup,
+        "TRAFFIC_OBSERVATION_MAX_BODY_SIZE",
+        DEFAULT_MAX_BODY_SIZE,
+    )
 }
 
 /// Largest body, in bytes, that an exchange may have to be captured, judged on its Content-Length: a larger body, or
 /// one of unknown size, is streamed as usual and the exchange is not observed. The same cap as the request body that
 /// matching buffers (`intercept.rs`, 10 MiB).
 pub fn max_buffer_size() -> usize {
-    std::env::var("TRAFFIC_OBSERVATION_MAX_BUFFER_SIZE")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(DEFAULT_MAX_BUFFER_SIZE)
+    max_buffer_size_in(crate::settings::env)
+}
+
+fn max_buffer_size_in(lookup: impl Fn(&str) -> Option<String>) -> usize {
+    crate::settings::number(
+        lookup,
+        "TRAFFIC_OBSERVATION_MAX_BUFFER_SIZE",
+        DEFAULT_MAX_BUFFER_SIZE,
+    )
 }
 
 /// Exchanges kept per endpoint (service, method, path); beyond that, the oldest goes first, as in `RequestLog`.
 pub fn samples_per_key() -> usize {
-    std::env::var("TRAFFIC_OBSERVATION_SAMPLES_PER_KEY")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(DEFAULT_SAMPLES_PER_KEY)
+    samples_per_key_in(crate::settings::env)
+}
+
+fn samples_per_key_in(lookup: impl Fn(&str) -> Option<String>) -> usize {
+    crate::settings::number(
+        lookup,
+        "TRAFFIC_OBSERVATION_SAMPLES_PER_KEY",
+        DEFAULT_SAMPLES_PER_KEY,
+    )
 }
 
 /// Endpoints followed at once, across all observed services; beyond that, the endpoint updated least recently makes
 /// room for the new one.
 pub fn max_keys() -> usize {
-    std::env::var("TRAFFIC_OBSERVATION_MAX_KEYS")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(DEFAULT_MAX_KEYS)
+    max_keys_in(crate::settings::env)
+}
+
+fn max_keys_in(lookup: impl Fn(&str) -> Option<String>) -> usize {
+    crate::settings::number(lookup, "TRAFFIC_OBSERVATION_MAX_KEYS", DEFAULT_MAX_KEYS)
 }
 
 fn now_ms() -> u64 {
@@ -283,8 +299,7 @@ impl Default for ObservationState {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    static ENV_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    use crate::settings::vars;
 
     fn sample_key(path: &str) -> ObservationKey {
         ObservationKey {
@@ -361,9 +376,6 @@ mod tests {
 
     #[test]
     fn store_records_and_returns_observations_in_order() {
-        // sample_exchange() reads max_body_size(), a process-wide environment variable: hold the same lock as the tests that
-        // set it, or this would race with exchange_truncates_bodies_beyond_max_size.
-        let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
         let store = ObservationStore::new();
         let key = sample_key("/orders/1");
         store.record(key.clone(), sample_exchange(b"{\"a\":1}"));
@@ -376,82 +388,97 @@ mod tests {
 
     #[test]
     fn store_unknown_key_returns_empty() {
-        let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
         let store = ObservationStore::new();
         assert!(store.observations(&sample_key("/unknown")).is_empty());
     }
 
+    // The bounds below are the defaults: tests never change the process environment (see crate::settings).
+
     #[test]
     fn store_bounds_samples_per_key() {
-        let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-        unsafe { std::env::set_var("TRAFFIC_OBSERVATION_SAMPLES_PER_KEY", "2") };
         let store = ObservationStore::new();
         let key = sample_key("/orders/1");
-        store.record(key.clone(), sample_exchange(b"1"));
-        store.record(key.clone(), sample_exchange(b"2"));
-        store.record(key.clone(), sample_exchange(b"3"));
+        for i in 0..=DEFAULT_SAMPLES_PER_KEY {
+            store.record(key.clone(), sample_exchange(i.to_string().as_bytes()));
+        }
         let observed = store.observations(&key);
-        assert_eq!(observed.len(), 2, "borne au sample cap, plus ancien evince");
-        assert_eq!(observed[0].response_body, "2");
-        assert_eq!(observed[1].response_body, "3");
-        unsafe { std::env::remove_var("TRAFFIC_OBSERVATION_SAMPLES_PER_KEY") };
+        assert_eq!(
+            observed.len(),
+            DEFAULT_SAMPLES_PER_KEY,
+            "capped at the sample limit, the oldest evicted"
+        );
+        assert_eq!(observed[0].response_body, "1");
+        assert_eq!(
+            observed[DEFAULT_SAMPLES_PER_KEY - 1].response_body,
+            DEFAULT_SAMPLES_PER_KEY.to_string()
+        );
     }
 
     #[test]
     fn store_bounds_distinct_keys() {
-        let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-        unsafe { std::env::set_var("TRAFFIC_OBSERVATION_MAX_KEYS", "2") };
         let store = ObservationStore::new();
-        store.record(sample_key("/a"), sample_exchange(b"a"));
-        store.record(sample_key("/b"), sample_exchange(b"b"));
-        store.record(sample_key("/c"), sample_exchange(b"c"));
-        assert_eq!(store.key_count(), 2, "borne au nombre de cles max");
+        for i in 0..=DEFAULT_MAX_KEYS {
+            store.record(sample_key(&format!("/{i}")), sample_exchange(b"x"));
+        }
+        assert_eq!(
+            store.key_count(),
+            DEFAULT_MAX_KEYS,
+            "capped at the endpoint limit"
+        );
         assert!(
-            store.observations(&sample_key("/a")).is_empty(),
+            store.observations(&sample_key("/0")).is_empty(),
             "the endpoint updated least recently must be evicted"
         );
-        assert!(!store.observations(&sample_key("/c")).is_empty());
-        unsafe { std::env::remove_var("TRAFFIC_OBSERVATION_MAX_KEYS") };
+        assert!(
+            !store
+                .observations(&sample_key(&format!("/{DEFAULT_MAX_KEYS}")))
+                .is_empty()
+        );
     }
 
     #[test]
     fn store_touching_existing_key_protects_it_from_eviction() {
-        let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-        unsafe { std::env::set_var("TRAFFIC_OBSERVATION_MAX_KEYS", "2") };
         let store = ObservationStore::new();
-        store.record(sample_key("/a"), sample_exchange(b"a"));
-        store.record(sample_key("/b"), sample_exchange(b"b"));
-        // Touch /a again: it becomes the most recent, so /b is the oldest and goes instead of /a.
-        store.record(sample_key("/a"), sample_exchange(b"a2"));
-        store.record(sample_key("/c"), sample_exchange(b"c"));
-        assert!(!store.observations(&sample_key("/a")).is_empty());
-        assert!(store.observations(&sample_key("/b")).is_empty());
-        unsafe { std::env::remove_var("TRAFFIC_OBSERVATION_MAX_KEYS") };
-    }
-
-    #[test]
-    fn max_body_size_default_is_16kb() {
-        let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-        unsafe { std::env::remove_var("TRAFFIC_OBSERVATION_MAX_BODY_SIZE") };
-        assert_eq!(max_body_size(), 16 * 1024);
+        for i in 0..DEFAULT_MAX_KEYS {
+            store.record(sample_key(&format!("/{i}")), sample_exchange(b"x"));
+        }
+        // Touch /0 again: it becomes the most recent, so /1 is the oldest and goes instead of /0.
+        store.record(sample_key("/0"), sample_exchange(b"again"));
+        store.record(sample_key("/new"), sample_exchange(b"x"));
+        assert!(!store.observations(&sample_key("/0")).is_empty());
+        assert!(store.observations(&sample_key("/1")).is_empty());
     }
 
     #[test]
     fn exchange_truncates_bodies_beyond_max_size() {
-        let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-        unsafe { std::env::set_var("TRAFFIC_OBSERVATION_MAX_BODY_SIZE", "3") };
-        let exchange = sample_exchange(b"0123456789");
+        let mut body = vec![b'0'; DEFAULT_MAX_BODY_SIZE];
+        body.extend_from_slice(b"beyond");
+        let exchange = sample_exchange(&body);
         assert!(exchange.request_body_truncated);
-        assert_eq!(exchange.request_body, "012");
+        assert_eq!(exchange.request_body.len(), DEFAULT_MAX_BODY_SIZE);
         assert!(exchange.response_body_truncated);
-        assert_eq!(exchange.response_body, "012");
-        unsafe { std::env::remove_var("TRAFFIC_OBSERVATION_MAX_BODY_SIZE") };
+        assert_eq!(exchange.response_body.len(), DEFAULT_MAX_BODY_SIZE);
     }
 
     #[test]
-    fn max_buffer_size_default_is_10mb() {
-        let _guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-        unsafe { std::env::remove_var("TRAFFIC_OBSERVATION_MAX_BUFFER_SIZE") };
-        assert_eq!(max_buffer_size(), 10 * 1024 * 1024);
+    fn limits_default_without_their_variables() {
+        assert_eq!(max_body_size_in(vars(&[])), 16 * 1024);
+        assert_eq!(max_buffer_size_in(vars(&[])), 10 * 1024 * 1024);
+        assert_eq!(samples_per_key_in(vars(&[])), 8);
+        assert_eq!(max_keys_in(vars(&[])), 200);
+    }
+
+    #[test]
+    fn limits_follow_their_variables() {
+        let lookup = vars(&[
+            ("TRAFFIC_OBSERVATION_MAX_BODY_SIZE", "3"),
+            ("TRAFFIC_OBSERVATION_MAX_BUFFER_SIZE", "4"),
+            ("TRAFFIC_OBSERVATION_SAMPLES_PER_KEY", "5"),
+            ("TRAFFIC_OBSERVATION_MAX_KEYS", "6"),
+        ]);
+        assert_eq!(max_body_size_in(&lookup), 3);
+        assert_eq!(max_buffer_size_in(&lookup), 4);
+        assert_eq!(samples_per_key_in(&lookup), 5);
+        assert_eq!(max_keys_in(&lookup), 6);
     }
 }

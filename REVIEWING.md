@@ -4,7 +4,7 @@ This guide is for the engineer asked to approve Mimicway before it runs in their
 
 ## Facts that bound the review
 
-- One Rust binary, no database, no code generation, and no `unsafe` code outside tests (`#![forbid(unsafe_code)]` in `src/main.rs`). Its one build script, `build.rs`, lists the files of the built UI so that `include_bytes!` embeds them; it reads nothing else, downloads nothing and runs nothing.
+- One Rust binary, no database, no code generation, and no `unsafe` code, tests included (`#![forbid(unsafe_code)]` in `src/lib.rs` and `src/main.rs`). Its one build script, `build.rs`, lists the files of the built UI so that `include_bytes!` embeds them; it reads nothing else, downloads nothing and runs nothing.
 - The UI is a static Svelte bundle embedded in the binary and served by `src/server/ui_files.rs`, which answers only the exact files of that bundle; its one runtime dependency is Svelte, whose runtime the compiler puts in the bundle; the rest of `frontend/package.json` is build and test tools.
 - Optional features are off by default and not compiled unless requested: `messaging-kafka` (Kafka, pulls `rdkafka` and C code) and `tcp-mock` (raw TCP mocks, no extra dependency).
 - Every dependency comes from crates.io or npm, is pinned by a committed lockfile and checked in CI for advisories and licenses.
@@ -66,7 +66,7 @@ grep -rn "reqwest::Client\|Client::builder\|TcpStream::connect\|rdkafka" src --i
 # Where does it touch the file system?
 grep -rn "std::fs::\|tokio::fs::" src --include=*.rs
 
-# Any unsafe code outside tests?
+# Any unsafe code, tests included? (the attributes that forbid it, comments and a CSP keyword match)
 grep -rn "unsafe" src --include=*.rs
 
 # Which environment variables does it read?
