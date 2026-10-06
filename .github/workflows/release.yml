@@ -82,36 +82,37 @@ jobs:
       - if: contains(matrix.target, 'musl')
         run: sudo apt-get update && sudo apt-get install -y musl-tools
       - run: cargo build --release --locked --target ${{ matrix.target }}
-      - name: Package
-        shell: bash
-        env:
-          TARGET: ${{ matrix.target }}
-          VERSION: ${{ needs.check.outputs.version }}
-        run: |
-          name="mimicway-$VERSION-$TARGET"
-          bin=mimicway
-          if [[ "$TARGET" == *windows* ]]; then bin=mimicway.exe; fi
-          mkdir -p "$name" dist
-          cp "target/$TARGET/release/$bin" LICENSE README.md CHANGELOG.md MIGRATING.md "$name/"
-          if [[ "$TARGET" == *windows* ]]; then
-            7z a "dist/$name.zip" "$name" > /dev/null
-          else
-            tar czf "dist/$name.tar.gz" "$name"
-          fi
-          # The Linux binaries also make the container image, one per architecture.
-          case "$TARGET" in
-            x86_64-unknown-linux-musl) mkdir -p image/linux-amd64 && cp "target/$TARGET/release/mimicway" image/linux-amd64/ ;;
-            aarch64-unknown-linux-musl) mkdir -p image/linux-arm64 && cp "target/$TARGET/release/mimicway" image/linux-arm64/ ;;
-          esac
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: archive-${{ matrix.target }}
-          path: dist/*
-      - if: contains(matrix.target, 'linux')
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+          name: binary-${{ matrix.target }}
+          path: target/${{ matrix.target }}/release/mimicway${{ contains(matrix.target, 'windows') && '.exe' || '' }}
+
+  archives:
+    name: Archives
+    needs: [check, binaries]
+    runs-on: ubuntu-24.04
+    env:
+      VERSION: ${{ needs.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          name: image-${{ matrix.target }}
-          path: image/
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: binary-*
+          path: binaries
+      # Fixed times, order, owners and permissions (see the script): the archive of a binary is always the same.
+      - name: Pack each binary with its documents
+        run: |
+          for dir in binaries/binary-*; do
+            target="${dir#binaries/binary-}"
+            bash scripts/release-archive.sh "$(find "$dir" -type f)" "$target" "$VERSION" dist
+          done
+          ls -l dist
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: archives
+          path: dist/*
 
   sbom:
     name: SBOMs
@@ -144,7 +145,7 @@ jobs:
 
   release:
     name: GitHub release
-    needs: [check, binaries, sbom]
+    needs: [check, archives, sbom]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -156,9 +157,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          pattern: archive-*
+          name: archives
           path: dist
-          merge-multiple: true
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: sbom
@@ -187,11 +187,15 @@ jobs:
       attestations: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # The image is made of the released Linux binaries, one per architecture.
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          pattern: image-*
-          path: image
-          merge-multiple: true
+          name: binary-x86_64-unknown-linux-musl
+          path: image/linux-amd64
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: binary-aarch64-unknown-linux-musl
+          path: image/linux-arm64
       - name: Build context
         run: mkdir -p image/data && cp Dockerfile.release image/Dockerfile
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
