@@ -47,9 +47,24 @@ docker run --rm -p 7342:7342 -v mimicway-data:/data ghcr.io/eoth/mimicway
 
 L'image est publiée pour amd64 et arm64 à chaque version, signée et accompagnée de sa provenance de compilation ([vérifier une version](SECURITY.md#verifying-a-release)). Pour la construire vous-même : `docker build -t mimicway .`.
 
-### Binaire
+### Télécharger une version
 
-Chaque [version](https://github.com/Eoth/mimicway/releases) fournit un binaire en un seul fichier pour Linux (x86_64 et arm64, statique), macOS (Intel et Apple Silicon) et Windows, avec l'interface incluse. Décompressez-le et lancez `./mimicway`.
+Chaque [version](https://github.com/Eoth/mimicway/releases) fournit un binaire en un seul fichier par plateforme, avec l'interface incluse :
+
+| Plateforme | Archive |
+| --- | --- |
+| Linux x86_64 (statique) | `mimicway-<version>-x86_64-unknown-linux-musl.tar.gz` |
+| Linux arm64 (statique) | `mimicway-<version>-aarch64-unknown-linux-musl.tar.gz` |
+| macOS Intel | `mimicway-<version>-x86_64-apple-darwin.tar.gz` |
+| macOS Apple Silicon | `mimicway-<version>-aarch64-apple-darwin.tar.gz` |
+| Windows x86_64 | `mimicway-<version>-x86_64-pc-windows-msvc.zip` |
+
+```bash
+tar xzf mimicway-0.2.0-x86_64-unknown-linux-musl.tar.gz    # sous Windows, décompressez le .zip
+cd mimicway-0.2.0-x86_64-unknown-linux-musl && ./mimicway   # mimicway.exe sous Windows
+```
+
+Chaque archive contient le binaire, la licence, ce README et le journal des changements. La version publie aussi, pour chaque archive, sa somme de contrôle (`SHA256SUMS`), sa signature (`.sigstore.json`) et sa provenance de compilation (`.intoto.jsonl`), ainsi que les deux SBOM : [vérifier une version](SECURITY.md#verifying-a-release) montre comment les contrôler avant de lancer quoi que ce soit. Les binaires macOS ne sont pas notarisés : une copie téléchargée par un navigateur est mise en quarantaine, et `xattr -d com.apple.quarantine mimicway` la laisse s'exécuter ; une copie téléchargée avec `curl` ne l'est pas.
 
 Ouvrez <http://localhost:7342>. L'interface demande Chrome ou Edge 111, Firefox 114, Safari 16.4 ou plus récent (navigateurs sortis depuis mars 2023).
 

@@ -47,9 +47,24 @@ docker run --rm -p 7342:7342 -v mimicway-data:/data ghcr.io/eoth/mimicway
 
 The image is published for amd64 and arm64 with each release, signed and with its build provenance ([verifying a release](SECURITY.md#verifying-a-release)). To build it yourself instead: `docker build -t mimicway .`.
 
-### Binary
+### Download a release
 
-Each [release](https://github.com/Eoth/mimicway/releases) has a single-file binary for Linux (x86_64 and arm64, static), macOS (Intel and Apple Silicon) and Windows, with the UI inside. Unpack it and run `./mimicway`.
+Each [release](https://github.com/Eoth/mimicway/releases) ships one single-file binary per platform, with the UI inside:
+
+| Platform | Archive |
+| --- | --- |
+| Linux x86_64 (static) | `mimicway-<version>-x86_64-unknown-linux-musl.tar.gz` |
+| Linux arm64 (static) | `mimicway-<version>-aarch64-unknown-linux-musl.tar.gz` |
+| macOS Intel | `mimicway-<version>-x86_64-apple-darwin.tar.gz` |
+| macOS Apple Silicon | `mimicway-<version>-aarch64-apple-darwin.tar.gz` |
+| Windows x86_64 | `mimicway-<version>-x86_64-pc-windows-msvc.zip` |
+
+```bash
+tar xzf mimicway-0.2.0-x86_64-unknown-linux-musl.tar.gz    # unzip the .zip on Windows
+cd mimicway-0.2.0-x86_64-unknown-linux-musl && ./mimicway   # mimicway.exe on Windows
+```
+
+Each archive holds the binary, the license, this README and the changelog. The release also carries, for every archive, its checksum (`SHA256SUMS`), its signature (`.sigstore.json`) and its build provenance (`.intoto.jsonl`), and the two SBOMs: [verifying a release](SECURITY.md#verifying-a-release) shows how to check them before running anything. The macOS binaries are not notarized: a copy downloaded by a browser is quarantined, and `xattr -d com.apple.quarantine mimicway` lets it run; one downloaded with `curl` is not.
 
 Open <http://localhost:7342>. The interface needs Chrome or Edge 111, Firefox 114, Safari 16.4 or later (browsers from March 2023 on).
 
