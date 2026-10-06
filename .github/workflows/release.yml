@@ -1,6 +1,7 @@
 # Publishes a release when a version tag (vX.Y.Z) is pushed: binaries for Linux, macOS and Windows with the UI
-# embedded, a multi-architecture image on GHCR, CycloneDX SBOMs and checksums. Every artifact gets a build provenance
-# attestation, and the image a keyless cosign signature: SECURITY.md says how to verify them.
+# embedded, a multi-architecture image on GHCR, CycloneDX SBOMs and checksums. Every archive and SBOM is published with
+# its keyless cosign signature and the build provenance of all of them, as assets of the release and in GitHub's
+# attestation store; the image gets the same signature and provenance. SECURITY.md says how to verify them.
 # The Linux binaries are reproducible: the Dockerfile builds them with Rust and Node.js pinned by digest, a second
 # machine builds them again, and nothing is published unless both give the same bytes. SECURITY.md says how anyone can
 # rebuild them.
@@ -240,9 +241,25 @@ jobs:
       - name: Checksums
         working-directory: dist
         run: sha256sum -- * > SHA256SUMS
-      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+      # One provenance statement for every archive, SBOM and the checksums, kept in GitHub's attestation store and
+      # published with the release as one Sigstore bundle, which `gh attestation verify --bundle` reads offline.
+      - id: provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: dist/*
+      - name: The provenance bundle, as a release asset
+        env:
+          BUNDLE: ${{ steps.provenance.outputs.bundle-path }}
+        run: cp "$BUNDLE" "dist/mimicway-$VERSION.intoto.jsonl"
+      - uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5 # v3.10.1
+      # A keyless signature next to each archive, SBOM and the checksums (<file>.sigstore.json, a Sigstore bundle with
+      # the certificate and the transparency log entry), with the workflow's identity: nothing to keep secret.
+      - name: Sign each archive, SBOM and the checksums
+        working-directory: dist
+        run: |
+          for file in *.tar.gz *.zip *.cdx.json SHA256SUMS; do
+            cosign sign-blob --yes --new-bundle-format --bundle "$file.sigstore.json" "$file"
+          done
       - name: Release notes from CHANGELOG.md
         run: awk -v v="[$VERSION]" '/^## \[/ { p = index($0, v) > 0; next } p' CHANGELOG.md > notes.md
       - name: Publish

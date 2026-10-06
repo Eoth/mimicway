@@ -44,11 +44,16 @@ The reporter hears from us at each step. A report that turns out not to be a vul
 
 ## Verifying a release
 
-Every release is built by [the release workflow](.github/workflows/release.yml) from the tagged commit, on GitHub's runners. Each archive and SBOM comes with a build provenance attestation, `SHA256SUMS` lists their checksums, and the image is signed with the workflow's identity (Sigstore, no long-lived key) and carries its own provenance and SBOM.
+Every release is built by [the release workflow](.github/workflows/release.yml) from the tagged commit, on GitHub's runners. Next to its archives and SBOMs, the release publishes a signature per file (`<file>.sigstore.json`), the build provenance of all of them (`mimicway-<version>.intoto.jsonl`, also kept in GitHub's attestation store) and their checksums (`SHA256SUMS`). Both are signed with the workflow's identity (Sigstore, no long-lived key); the image carries its own signature, provenance and SBOM.
 
 ```bash
-# An archive: provenance (GitHub CLI) and checksum
+# An archive: signature (cosign), provenance (GitHub CLI, from GitHub or offline from the release's bundle), checksum
+cosign verify-blob mimicway-0.2.0-x86_64-unknown-linux-musl.tar.gz \
+  --bundle mimicway-0.2.0-x86_64-unknown-linux-musl.tar.gz.sigstore.json \
+  --certificate-identity-regexp '^https://github.com/Eoth/mimicway/.github/workflows/release.yml@refs/tags/v' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
 gh attestation verify mimicway-0.2.0-x86_64-unknown-linux-musl.tar.gz --repo Eoth/mimicway
+gh attestation verify mimicway-0.2.0-x86_64-unknown-linux-musl.tar.gz --repo Eoth/mimicway --bundle mimicway-0.2.0.intoto.jsonl
 sha256sum --ignore-missing -c SHA256SUMS
 
 # The image: provenance and signature
