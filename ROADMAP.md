@@ -18,7 +18,7 @@ Each item has an identifier that never changes, a size (S: a day or less, M: a f
 
 ## Order of work
 
-1. [Ready for an international launch](#1-ready-for-an-international-launch): R2, R10 (with R15, R16, R17, R18), R11, R12, R13, R14, R9.
+1. [Ready for an international launch](#1-ready-for-an-international-launch): R2, R10 (with R15, R16, R17, R18, R19), R11, R12, R13, R14, R9.
 2. [Trust and operations](#2-trust-and-operations): T1 to T11.
 3. [Make it indispensable](#3-make-it-indispensable): U1 to U16, in the listed order.
 4. [Engineering backlog](#4-engineering-backlog): taken alongside, when they unblock an item above.
@@ -145,7 +145,19 @@ Size S
 
 **What.** Fill the questionnaire at bestpractices.dev with the evidence the repository already holds (security policy, CI, tests, signed releases, vulnerability handling), fix what passing still lacks, aim at silver, and show the badge in both READMEs.
 
+**Progress.** The repository was reviewed against the 67 passing and the 55 silver criteria, as the badge's own source lists them (2026-10-06). Added for them: ARCHITECTURE.md; GOVERNANCE.md (roles, decisions); how a vulnerability report is handled, and its reporter credited, in SECURITY.md; an assurance case at the end of the security model (requirements, threat model, trust boundaries, design principles, common weaknesses); a written rule that a new feature comes with its tests, and the Developer Certificate of Origin by reference, in CONTRIBUTING; a coding style per language, enforced by the CI (Prettier for the interface and the scripts, in a `format` job, and the Svelte compiler's warnings now fatal), with each silenced warning explained where it is; the documentation defects found on the way. Measured: the unit tests cover 82.6 % of the server's production lines (cargo llvm-cov) and 85.0 % of the interface's statements (Vitest, v8), and 47 of the 61 bug fixes of the last six months add a test case. Every passing criterion is met or justified, once `develop` is pushed (the evidence is linked there) and GitHub's private vulnerability reporting, which SECURITY.md points to, is enabled: it was off on 2026-10-06. Left for passing: the maintainer registers the project and fills the questionnaire. Left for silver: the maintainer names a successor in the account settings of GitHub, after which GOVERNANCE.md gets its continuity section; the first signed release (R2); reproducible builds (R19); the badge in both READMEs.
+
 **Done when.** The badge is at passing or above and Scorecard reads it.
+
+### R19. Reproducible release builds
+
+Size M
+
+**Why.** From its silver level, the OpenSSF Best Practices badge (R18) asks that building the same source twice gives the same bits, which lets anyone check a release against its source. Nothing guarantees it today: the release workflow builds with whatever stable Rust is current that day (`toolchain: stable`), the archives keep the time and owner of each file, and no build has been compared with another.
+
+**What.** Pin the Rust version of the release builds, in a place that Dependabot or the release procedure keeps up to date; build the archives with fixed times, order and owners (`SOURCE_DATE_EPOCH`, `tar --sort=name --mtime --owner=0 --group=0`, `gzip -n`); add a check that builds the Linux binary twice, from clean checkouts in different directories, and compares the hashes (with `--remap-path-prefix` if a path leaks in). SECURITY.md says how to rebuild a release and compare it.
+
+**Done when.** Two builds of the same tag give the same SHA-256 for the Linux binaries and archives, the CI checks it, and SECURITY.md explains how to reproduce it.
 
 ## 2. Trust and operations
 
@@ -544,3 +556,23 @@ Size M
 **Progress.** Measured before (GitHub API, the five runs of 2026-10-03; the push runs had been deleted): 9.8 to 16.6 job-minutes per run, 16.6 (22 billed minutes) for the one with every job green. Done: `scripts/ci-plan.mjs` plans the jobs from the changed files, `CI passed` fails on a planned job that did not pass, and node tests check both (a change of code runs the Rust, UI, image and end-to-end jobs, documentation runs none of them, ci.yml conditions and awaits every job); Dependabot monthly, grouped, without rebases, a week of cooldown; the Rust caches written by develop only, Playwright's browser and the image layers cached, the image's dependencies in a layer of their own; every action on Node.js 24, the runners pinned to ubuntu-24.04. Measured after, on the push of 6cd8a57 (2026-10-03), which changed every kind of file and so ran every job but the fuzzing ones: 23.1 job-minutes, 32 billed (a job is billed by the started minute), all green. The nine jobs that ran before took 15.9, the image 6.9 of it, building the new Dockerfile on an empty layer cache; CodeQL added 6.2 (Rust 4.6, the UI 0.9, the workflows 0.6), the supply-chain job 0.8, the plan and `CI passed` 0.2 together. A pull request that changes the Dockerfile alone (Dependabot's #19) ran the plan, the repository checks, the secret scan, the image and CodeQL on the workflows: 5.1 job-minutes. The weekly run of 2026-10-05 took 75.1 job-minutes, 65.7 of them the fuzzing campaign and 8.6 CodeQL. After the push, the 17 open Dependabot pull requests were closed without a rebase: the one pull request run of the evening is the first run of a new one, #19. Dependabot's update jobs took 10.6 minutes, now once a month. No CI or Scorecard run carries an annotation; Dependabot's own update jobs carry GitHub's notice that `ubuntu-latest` moves to Ubuntu 26, on a runner GitHub picks for them. Left: a push of documentation alone, and the image job on a warm cache (the next push of server or UI files).
 
 **Done when.** A documentation-only push runs the documentation checks only (and Scorecard, kept on every push by the maintainers' choice), a push no longer reruns the Dependabot pull requests, the job-minutes of a typical push are measured before and after, and no run warns about deprecated actions.
+
+### E15. The interface with a screen reader
+
+Size M
+
+**Why.** The tests hold the contrast, the keyboard access, the visible focus and the compiler's accessibility warnings, but nobody has used the interface with a screen reader. Labels that read well on screen can still be announced badly or not at all: icons, notifications, the folds of the rule form, the dialogs. WCAG asks that it work, and the OpenSSF Best Practices badge (R18) lists a screen reader pass among the accessibility practices.
+
+**What.** Do the main tasks with NVDA on Windows and VoiceOver on macOS: create a service, write a rule with conditions and a templated response, test it against a captured request, read the request log. Fix what is announced wrong or not at all, and turn each fix into a test where the page can hold it (accessible names, roles, live regions).
+
+**Done when.** The main tasks can be done with a screen reader alone, and each fix has its test.
+
+### E16. Shell scripts checked like the workflows
+
+Size S
+
+**Why.** actionlint runs shellcheck on the shell steps of the workflows, but nothing checks `scripts/bootstrap-linux.sh`, which people run on their own machines. shellcheck 0.10.0 reports two findings in it, both at the info level: SC2086 on the package list given to apt-get, which has to be split into words, and SC1091 on the sourced cargo environment, which it cannot follow.
+
+**What.** Run shellcheck on the shell scripts of the repository in the workflows job, planned by `scripts/ci-plan.mjs` for a change of one of them (with its test), and fix each finding or silence it at its line with the reason.
+
+**Done when.** The CI fails on a shellcheck finding in a shell script of the repository, and the two findings of today are fixed or justified where they are.
