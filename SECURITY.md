@@ -32,6 +32,16 @@ Mimicway is maintained on a best-effort basis: these are targets, not a contract
 
 We ask for coordinated disclosure: please give us time to publish a fix before disclosing technical details.
 
+### How a report is handled
+
+1. **Acknowledgement**, through the channel the report came by. The maintainer ([GOVERNANCE.md](GOVERNANCE.md)) handles it.
+2. **Assessment**: the issue is reproduced on the latest release and `develop`, and its severity rated with CVSS. Work continues in a private GitHub security advisory, where the reporter is invited.
+3. **Fix**: written and reviewed in the advisory's private fork, with a test that fails without it, then released as a new version.
+4. **Publication**: the advisory is published when the fixed release is out, with a CVE identifier requested through GitHub when the issue has an impact on users, and `CHANGELOG.md` lists the fix under **Security** for that version.
+5. **Credit**: the advisory and the changelog name the reporter, unless they ask to stay anonymous.
+
+The reporter hears from us at each step. A report that turns out not to be a vulnerability is answered with the reason, and moved to a public issue if it is a bug.
+
 ## Verifying a release
 
 Every release is built by [the release workflow](.github/workflows/release.yml) from the tagged commit, on GitHub's runners. Each archive and SBOM comes with a build provenance attestation, `SHA256SUMS` lists their checksums, and the image is signed with the workflow's identity (Sigstore, no long-lived key) and carries its own provenance and SBOM.
