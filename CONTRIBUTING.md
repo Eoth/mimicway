@@ -70,7 +70,7 @@ The release workflow checks that the tag, both versions and the changelog agree,
 
 ## Licensing
 
-Mimicway is under the [MIT license](LICENSE). By contributing, you agree that your contribution is licensed under the same terms.
+Mimicway is under the [MIT license](LICENSE). By contributing, you agree that your contribution is licensed under the same terms, and you certify what the [Developer Certificate of Origin 1.1](https://developercertificate.org) states: you wrote the contribution, or otherwise have the right to submit it under an open source license, and you accept that it and the record of it are public. Opening the pull request is that certification; no `Signed-off-by` line is needed.
 
 ## Conduct and governance
 
