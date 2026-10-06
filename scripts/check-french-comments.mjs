@@ -192,8 +192,7 @@ const KEYWORDS_BEFORE_EXPRESSION = new Set([
 const WORD = /[\p{L}\p{N}_$]+/uy;
 const RUST_RAW_STRING = /b?r(#*)"/y;
 const RUST_CHAR = /'(?:\\(?:u\{[0-9a-fA-F]+\}|x[0-9a-fA-F]{2}|.)|[^\\'\n])'/uy;
-// Lower case only, as Svelte reads them: a <SCRIPT> or a <Style> is a component, whose content is markup.
-const SVELTE_EMBEDDED = /<(script|style)\b[^>]*>/y;
+const TAG_NAME = /[A-Za-z][\w-]*/y;
 
 function matchAt(pattern, text, index) {
   pattern.lastIndex = index;
@@ -404,23 +403,32 @@ function scanCss(comments, index, limit) {
   }
 }
 
+// The <script> or <style> block opened by the `<` at `index`: its name and where its content starts, or null. The
+// name is read whole and compared as written, lower case only, as Svelte reads them: a <SCRIPT> or a <Style> is a
+// component, a <style-sheet> a custom element, and the content of both is markup.
+function embeddedBlockAt(text, index) {
+  const name = matchAt(TAG_NAME, text, index + 1);
+  if (!name || (name[0] !== 'script' && name[0] !== 'style')) return null;
+  const open = text.indexOf('>', TAG_NAME.lastIndex);
+  return open === -1 ? null : { name: name[0], bodyStart: open + 1 };
+}
+
 // Markup: HTML comments, then JavaScript in <script> and in `{…}` expressions, CSS in <style>. Text and attribute
 // values are not code: an apostrophe there opens no string.
 function scanSvelte(comments) {
   const { text } = comments;
   let i = 0;
   while (i < text.length) {
-    const embedded = text[i] === '<' && matchAt(SVELTE_EMBEDDED, text, i);
+    const embedded = text[i] === '<' && embeddedBlockAt(text, i);
     if (text.startsWith('<!--', i)) {
       const end = after(text, i + 4, text.length, '-->');
       comments.add(i, end);
       i = end;
     } else if (embedded) {
-      const bodyStart = SVELTE_EMBEDDED.lastIndex;
-      const close = text.indexOf(`</${embedded[1]}`, bodyStart);
+      const close = text.indexOf(`</${embedded.name}`, embedded.bodyStart);
       const bodyEnd = close === -1 ? text.length : close;
-      if (embedded[1] === 'script') scanJs(comments, bodyStart, bodyEnd, false);
-      else scanCss(comments, bodyStart, bodyEnd);
+      if (embedded.name === 'script') scanJs(comments, embedded.bodyStart, bodyEnd, false);
+      else scanCss(comments, embedded.bodyStart, bodyEnd);
       i = bodyEnd;
     } else if (text[i] === '{' && text[i + 1] === '/') {
       // The end of a block ({/if}, {/each}…) holds no expression.

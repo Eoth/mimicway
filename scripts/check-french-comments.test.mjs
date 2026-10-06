@@ -118,6 +118,17 @@ test('Svelte: a <SCRIPT> or a <Style> is a component, as Svelte reads it, and it
   assert.deepEqual(check({ 'A.svelte': svelte.join('\n') }), ['A.svelte:4: // Ouvre le formulaire']);
 });
 
+test('Svelte: a tag whose name only starts with script or style, like a custom element, is not a code block', () => {
+  const svelte = [
+    '<scripts>// pour la suite</scripts>',
+    '<style-sheet>/* pour plus tard */</style-sheet>',
+    '<script lang="ts">',
+    '  // Ouvre le formulaire',
+    '</script>',
+  ];
+  assert.deepEqual(check({ 'A.svelte': svelte.join('\n') }), ['A.svelte:4: // Ouvre le formulaire']);
+});
+
 test('Rust: strings, raw strings, character literals and lifetimes do not hide or fake a comment', () => {
   const rust = [
     "fn f<'a>(s: &'a str) -> char { '\"' } // returns a quote",
