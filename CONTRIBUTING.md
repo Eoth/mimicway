@@ -41,6 +41,7 @@ The Kafka feature builds librdkafka from source: it needs cmake, a C toolchain a
 ## What a good change looks like
 
 - **One logical change per commit**, with a [Conventional Commits](https://www.conventionalcommits.org) message in English, in the imperative (`fix(proxy): keep the query string on rule-level proxying`). The body says why: the cause, what was measured, what was traded off. Code comments are in English and explain why the code is the way it is today; history belongs in the commit message. CI fails on a French comment or test title (including the names of end-to-end scenarios) in the paths listed by `scripts/check-french-comments.mjs`.
+- **A new feature comes with its tests**, in the automated suites the CI runs: unit tests for its logic (Rust or Vitest), and an end-to-end scenario when it changes what someone does in the interface. A pull request that adds a feature without them is not merged.
 - **A bug fix comes with the test that failed before it.**
 - **Tests sit next to the code**: Rust tests below `#[cfg(test)]` or in a sibling `tests.rs`, UI tests in `frontend/src/tests/`, end-to-end scenarios in `frontend/e2e/`.
 - **No `unsafe`**, tests included: the crate forbids it. A setting read from an environment variable goes through a lookup (`src/settings.rs`), so that a test passes its own values instead of changing the environment that the tests running beside it share.
