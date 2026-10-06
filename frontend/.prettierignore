@@ -1,0 +1,7 @@
+# Built or written by tools, not by hand.
+dist/
+test-results/
+playwright-report/
+# Data and prose keep the form they are written in: catalogues, end-to-end scenarios, manifests, Markdown.
+*.json
+*.md
