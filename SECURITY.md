@@ -72,4 +72,4 @@ Out of scope:
 
 ## How Mimicway is secured
 
-[docs/security.md](docs/en/security.md) describes the threat model, every outbound network flow, the defaults and how to harden a deployment. [REVIEWING.md](REVIEWING.md) is a guide for a security or code review of the project.
+[docs/en/security.md](docs/en/security.md) describes the threat model, every outbound network flow, the defaults and how to harden a deployment. [REVIEWING.md](REVIEWING.md) is a guide for a security or code review of the project.

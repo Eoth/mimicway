@@ -37,14 +37,14 @@ With `AUTH_ENABLED=false` every caller is an anonymous super-admin: this mode is
 | `GET /api/health`, `GET /api/auth/status`, `POST /api/auth/login`, `POST /api/auth/validate` | Anyone (no token) |
 | `GET /api/auth/me`, `POST /api/script/validate`, `POST /api/rule-test`, `POST /api/rule-conflicts` | Any authenticated user (the last three are stateless) |
 | `GET /api/config`, `GET /api/services`, `GET /api/logs`, `GET /api/observation/status` | Any authenticated user, filtered to what they can access |
-| `PUT /api/config`, `DELETE /api/config/reset`, `GET /api/config/backups`, `POST /api/config/restore/:file` | Super-admins |
+| `PUT /api/config`, `DELETE /api/config/reset`, `GET /api/config/backups`, `POST /api/config/restore/{file}` | Super-admins |
 | `POST /api/services` | Super-admins anywhere; group admins inside their group |
 | `GET`, `PUT` a service; toggle, ping, reorder rules, observe, suggestions | Members and admins of the service's group, super-admins. Moving a service to another group also requires the right to create it there |
 | `DELETE` a service | Super-admins |
 | `GET /api/groups` | Groups the user belongs to (all for super-admins) |
 | `POST /api/groups` | Any authenticated user, who becomes its admin |
-| `GET /api/groups/:name` | Its members and admins, super-admins |
-| `PUT`, `DELETE /api/groups/:name`, `PUT /api/groups/:name/members` | Its admins, super-admins |
+| `GET /api/groups/{name}` | Its members and admins, super-admins |
+| `PUT`, `DELETE /api/groups/{name}`, `PUT /api/groups/{name}/members` | Its admins, super-admins |
 | `/api/tcp/...` (feature `tcp-mock`) | Reading: any authenticated user; changes: super-admins |
 | `/api/messaging/...` (feature `messaging-kafka`) | Status: any authenticated user; log and simulation: super-admins |
 
@@ -77,9 +77,9 @@ grep -rhn "env::var(\"" src --include=*.rs | grep -o "\"[A-Z_]*\"" | sort -u
 
 | Crate | Purpose |
 |---|---|
-| `axum`, `tower`, `tower-http`, `http`, `http-body-util`, `tokio`, `futures-util` | HTTP server, middleware (CORS, static files), async runtime |
+| `axum`, `tower-http`, `http`, `http-body-util`, `tokio`, `futures-util` | HTTP server, middleware (CORS, static files), async runtime |
 | `reqwest` (rustls, no OpenSSL) | Proxy and Keycloak client |
-| `jsonwebtoken` | Access token validation |
+| `jsonwebtoken` | Access token validation; its cryptography is AWS-LC (C and assembly), through `aws-lc-rs` |
 | `serde`, `serde_json`, `serde_yaml` | API payloads and configuration file |
 | `quick-xml` | XPath-like conditions and XML helpers on request bodies |
 | `regex` | Regex conditions (linear-time engine, no catastrophic backtracking) |
@@ -93,4 +93,4 @@ Development only: `proptest` (property tests of the suggestion engine), `ring` a
 
 ## Out of scope of the code
 
-TLS termination, rate limiting and network egress control are left to the deployment (ingress, service mesh, network policies); [docs/security.md](docs/en/security.md) lists what to configure.
+TLS termination, rate limiting and network egress control are left to the deployment (ingress, service mesh, network policies); [docs/en/security.md](docs/en/security.md) lists what to configure.
