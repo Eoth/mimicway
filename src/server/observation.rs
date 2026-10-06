@@ -109,6 +109,7 @@ pub struct ObservedExchange {
 }
 
 impl ObservedExchange {
+    // One argument per part of the exchange, request then response, as the proxy captured them.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         request_query_params: HashMap<String, String>,

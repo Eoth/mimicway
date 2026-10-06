@@ -196,6 +196,7 @@ async fn do_proxy(
 /// Only called for a service a user chose to observe. `ProxyClient::forward_with_capture` falls back to plain
 /// streaming whenever a capture would not be safe (size unknown or too large): the relayed traffic is unchanged,
 /// only that exchange is not observed.
+// More arguments than clippy's default allows, as for do_proxy; they belong in a request context struct.
 #[allow(clippy::too_many_arguments)]
 async fn do_proxy_observed(
     state: &AppState,

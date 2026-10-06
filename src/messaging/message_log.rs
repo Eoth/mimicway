@@ -92,7 +92,6 @@ impl MessageLog {
         entries.push_back(entry);
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn record(
         &self,
         direction: &str,

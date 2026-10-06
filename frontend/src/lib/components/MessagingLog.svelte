@@ -257,6 +257,7 @@
 </section>
 
 {#if detailLog}
+  <!-- The dialog itself only listens for Escape and for a click on its backdrop; its buttons are the controls. -->
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
   <div
     class="modal-overlay"

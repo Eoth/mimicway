@@ -423,6 +423,7 @@ mod tests {
         (HashMap::new(), HashMap::new(), HashMap::new())
     }
 
+    // One argument per field of the context, so that each test shows what it sets.
     #[allow(clippy::too_many_arguments)]
     fn make_ctx_full<'a>(
         path: &'a HashMap<String, String>,

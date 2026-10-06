@@ -31,12 +31,25 @@ cargo clippy --all-targets --features tcp-mock -- -D warnings
 cargo test --features tcp-mock
 cargo deny check                       # when Cargo.toml or Cargo.lock change
 cd frontend && npm test                # unit tests, including translation checks
+cd frontend && npm run format:check    # the interface and scripts/ follow Prettier (npm run format rewrites them)
 cd frontend && npm run test:e2e        # with Mimicway running, see frontend/e2e/README.md
 ```
 
 The fuzz targets (`fuzz/`; `src/fuzzing.rs` says what each one checks) build with a nightly toolchain and [cargo-fuzz](https://github.com/rust-fuzz/cargo-fuzz), against the server's lock file: `cp Cargo.lock fuzz/ && cargo +nightly fuzz run config_import -- -max_total_time=300`. CI runs them five minutes on a pull request that changes the server, and an hour every week; a crash becomes a fix with its regression test.
 
 The Kafka feature builds librdkafka from source: it needs cmake, a C toolchain and, on Linux, the libcurl headers (`libcurl4-openssl-dev` on Debian and Ubuntu). Then `cargo test --features messaging-kafka`.
+
+## Coding style
+
+Each language follows a published style, applied by a tool that CI runs; a contribution follows it.
+
+| Language | Style | Checked by |
+|---|---|---|
+| Rust | The [Rust Style Guide](https://doc.rust-lang.org/style-guide/), as `cargo fmt` applies it with its default settings, and the default lints of [Clippy](https://doc.rust-lang.org/clippy/), no warning allowed | `cargo fmt --check`, `cargo clippy -- -D warnings` |
+| JavaScript, Svelte, CSS and HTML (`frontend/`, `scripts/`) | [Prettier](https://prettier.io)'s style with the settings of `frontend/prettier.config.js` (120 columns, single quotes), and no warning of the Svelte compiler | `npm run format:check`, `npm run build` |
+| All | Comments, test titles and messages in English; visible texts through `t()` or `tr()`; colors, sizes and spacing from the design system's tokens | `scripts/check-french-comments.mjs`, the translation and design system tests |
+
+A warning that is wrong for one place is silenced there, with its reason: `#[allow(...)]` in Rust, a `svelte-ignore` comment in a component. A change of form only, such as a new formatter version, goes in a commit of its own, listed in `.git-blame-ignore-revs`.
 
 ## What a good change looks like
 
