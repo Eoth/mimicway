@@ -86,9 +86,31 @@ test('a lock file or a policy runs the supply chain job', () => {
 test('the Kubernetes manifests and the workflows run their own checks', () => {
   assert.deepEqual(jobsOf('push', ['k8s/base/deployment.yaml']), ['checks', 'secrets', 'kubernetes']);
   assert.deepEqual(planFor('push', ['.github/workflows/release.yml']), {
-    jobs: ['checks', 'secrets', 'workflows', 'codeql'],
+    jobs: ['checks', 'secrets', 'reproducible', 'workflows', 'codeql'],
     codeql: ['actions'],
   });
+});
+
+test('what decides how the release binary is built runs the two builds compared, the code it builds does not', () => {
+  for (const file of [
+    'Dockerfile',
+    '.dockerignore',
+    'Cargo.toml',
+    'Cargo.lock',
+    'build.rs',
+    '.cargo/config.toml',
+    'frontend/package.json',
+    'frontend/package-lock.json',
+    'frontend/vite.config.js',
+    'frontend/svelte.config.js',
+    'scripts/release-archive.sh',
+    '.github/workflows/release.yml',
+  ]) {
+    assert.ok(jobsOf('push', [file]).includes('reproducible'), file);
+  }
+  for (const file of ['src/main.rs', 'frontend/src/App.svelte', 'Dockerfile.release', 'scripts/bootstrap-linux.sh']) {
+    assert.ok(!jobsOf('push', [file]).includes('reproducible'), file);
+  }
 });
 
 test('an unknown kind of file, the CI workflow or the plan itself runs every job', () => {
@@ -104,9 +126,9 @@ test('an unknown kind of file, the CI workflow or the plan itself runs every job
   assert.deepEqual(planFor('workflow_dispatch', []).codeql, ['actions', 'javascript-typescript', 'rust']);
 });
 
-test('the weekly run checks the advisories published since, runs every CodeQL analysis and the long fuzzing', () => {
+test('the weekly run checks the advisories, compares two release builds, runs CodeQL and the long fuzzing', () => {
   assert.deepEqual(planFor('schedule', []), {
-    jobs: ['supply-chain', 'codeql', 'fuzz-batch'],
+    jobs: ['supply-chain', 'reproducible', 'codeql', 'fuzz-batch'],
     codeql: ['actions', 'javascript-typescript', 'rust'],
   });
 });

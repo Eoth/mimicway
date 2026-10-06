@@ -29,6 +29,7 @@ export const JOBS = [
   'format',
   'e2e',
   'docker',
+  'reproducible',
   'kubernetes',
   'workflows',
   'codeql',
@@ -78,6 +79,19 @@ const RULES = {
   e2e: [...RUST, /^frontend\//],
   // What the Dockerfile copies: the UI (its end-to-end suite aside) and the server.
   docker: [/^Dockerfile$/, /^\.dockerignore$/, /^Cargo\.(toml|lock)$/, /^build\.rs$/, /^src\//, /^frontend\/(?!e2e\/)/],
+  // What decides how the release's Linux binary and its archive are built, not the code they are built from: two builds
+  // without cache cost twice the image's slowest build, too much for every change of code, which the weekly run covers.
+  reproducible: [
+    /^Dockerfile$/,
+    /^\.dockerignore$/,
+    /^Cargo\.(toml|lock)$/,
+    /^build\.rs$/,
+    /^\.cargo\//,
+    /^frontend\/package(-lock)?\.json$/,
+    /^frontend\/(vite|svelte)\.config\.js$/,
+    /^scripts\/release-archive\.sh$/,
+    /^\.github\/workflows\/release\.yml$/,
+  ],
   kubernetes: [/^k8s\//],
   workflows: [/^\.github\/workflows\//, /^\.github\/actions\//],
   fuzz: [...RUST, ...FUZZING],
@@ -113,9 +127,9 @@ const matches = (patterns, file) => patterns.some((pattern) => pattern.test(file
 // changes are unknown (a new branch, a force push whose start is gone): everything runs.
 export function planFor(event, files) {
   if (event === 'schedule') {
-    // The weekly run: advisories published against unchanged lock files, the queries CodeQL added since, and the long
-    // fuzzing campaign.
-    return { jobs: ['supply-chain', 'codeql', 'fuzz-batch'], codeql: [...CODEQL_LANGUAGES] };
+    // The weekly run: advisories published against unchanged lock files, the queries CodeQL added since, the long
+    // fuzzing campaign, and two builds of the release binary, which the changes of code since may have made differ.
+    return { jobs: ['supply-chain', 'reproducible', 'codeql', 'fuzz-batch'], codeql: [...CODEQL_LANGUAGES] };
   }
   const jobs = new Set(ALWAYS);
   const codeql = new Set();

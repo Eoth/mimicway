@@ -11,7 +11,7 @@ on:
   pull_request:
   schedule:
     # Weekly, on develop: the advisories published since against lock files that did not change, the queries CodeQL
-    # added since, and an hour of fuzzing.
+    # added since, an hour of fuzzing, and two builds of the release binary compared.
     - cron: "41 3 * * 1"
   workflow_dispatch:
 
@@ -300,6 +300,38 @@ jobs:
           ignore-unfixed: true
           exit-code: "1"
 
+  # The release's Linux binary, built twice as the release workflow builds it (the Dockerfile's binary stage, then
+  # scripts/release-archive.sh), from two checkouts and without cache: the two binaries and their archives must be the
+  # same bytes, as SECURITY.md promises anyone who rebuilds a release.
+  reproducible:
+    name: Reproducible build (two builds compared)
+    needs: changes
+    if: contains(fromJSON(needs.changes.outputs.jobs), 'reproducible')
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: first
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: second
+          persist-credentials: false
+      - name: Build twice and compare
+        run: |
+          version=$(grep -m1 '^version = ' first/Cargo.toml | cut -d'"' -f2)
+          target=x86_64-unknown-linux-musl
+          for build in first second; do
+            docker build --no-cache --target binary --output "type=local,dest=out-$build" "$build"
+            cd "$build"
+            bash scripts/release-archive.sh "../out-$build/mimicway" "$target" "$version" "../dist-$build"
+            cd ..
+          done
+          archive="mimicway-$version-$target.tar.gz"
+          sha256sum out-*/mimicway dist-*/"$archive"
+          cmp out-first/mimicway out-second/mimicway
+          cmp "dist-first/$archive" "dist-second/$archive"
+
   kubernetes:
     name: Kubernetes manifests (render, schema check)
     needs: changes
@@ -423,6 +455,7 @@ jobs:
       - format
       - e2e
       - docker
+      - reproducible
       - kubernetes
       - workflows
       - codeql

@@ -1,7 +1,9 @@
 # Publishes a release when a version tag (vX.Y.Z) is pushed: binaries for Linux, macOS and Windows with the UI
 # embedded, a multi-architecture image on GHCR, CycloneDX SBOMs and checksums. Every artifact gets a build provenance
 # attestation, and the image a keyless cosign signature: SECURITY.md says how to verify them.
-# The Dockerfile builds the Linux binaries, with Rust and Node.js pinned by digest and the same paths on every machine.
+# The Linux binaries are reproducible: the Dockerfile builds them with Rust and Node.js pinned by digest, a second
+# machine builds them again, and nothing is published unless both give the same bytes. SECURITY.md says how anyone can
+# rebuild them.
 name: Release
 
 on:
@@ -139,6 +141,43 @@ jobs:
           name: archives
           path: dist/*
 
+  reproduce:
+    name: Rebuild (${{ matrix.target }}) and compare
+    needs: [check, archives]
+    strategy:
+      matrix:
+        include:
+          - { target: x86_64-unknown-linux-musl, os: ubuntu-24.04 }
+          - { target: aarch64-unknown-linux-musl, os: ubuntu-24.04-arm }
+    runs-on: ${{ matrix.os }}
+    env:
+      TARGET: ${{ matrix.target }}
+      VERSION: ${{ needs.check.outputs.version }}
+    steps:
+      # Another machine, another directory, no cache: what someone rebuilding the release would have.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: rebuild
+          persist-credentials: false
+      - working-directory: rebuild
+        run: |
+          docker build --no-cache --target binary --output type=local,dest=../out .
+          bash scripts/release-archive.sh ../out/mimicway "$TARGET" "$VERSION" ../dist
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: binary-${{ matrix.target }}
+          path: published
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: archives
+          path: published
+      - name: The rebuild gives the bytes of the release, binary and archive
+        run: |
+          archive="mimicway-$VERSION-$TARGET.tar.gz"
+          sha256sum published/mimicway out/mimicway "published/$archive" "dist/$archive"
+          cmp published/mimicway out/mimicway
+          cmp "published/$archive" "dist/$archive"
+
   sbom:
     name: SBOMs
     needs: check
@@ -170,7 +209,7 @@ jobs:
 
   release:
     name: GitHub release
-    needs: [check, archives, sbom]
+    needs: [check, archives, reproduce, sbom]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -203,7 +242,7 @@ jobs:
 
   image:
     name: Container image
-    needs: [check, linux]
+    needs: [check, linux, reproduce]
     runs-on: ubuntu-24.04
     permissions:
       contents: read
