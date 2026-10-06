@@ -319,7 +319,8 @@ jobs:
           persist-credentials: false
       - name: Build twice and compare
         run: |
-          version=$(grep -m1 '^version = ' first/Cargo.toml | cut -d'"' -f2)
+          # Named by the commit, not by Cargo.toml's version: nothing built here is a release.
+          version=${GITHUB_SHA::7}
           target=x86_64-unknown-linux-musl
           for build in first second; do
             docker build --no-cache --target binary --output "type=local,dest=out-$build" "$build"
