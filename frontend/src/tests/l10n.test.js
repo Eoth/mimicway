@@ -2,8 +2,8 @@
 // used; a language adds a catalogue (src/locales/<locale>.json) and nothing else.
 //
 // What it checks:
-//   * every message given to t / tCount is a double-quoted string literal (or such literals joined by +), so it
-//     can be extracted: a template string or a variable would be a sentence no catalogue can know;
+//   * every message given to t / tCount is a string literal, single- or double-quoted (or such literals joined by
+//     +), so it can be extracted: a template string or a variable would be a sentence no catalogue can know;
 //   * each catalogue translates exactly the existing messages (nothing missing, nothing left over from a sentence
 //     that was reworded) and keeps their {0}, {1}… placeholders;
 //   * no visible word of the interface escapes t: the components are rendered in a pseudo-locale where every
@@ -58,16 +58,32 @@ function argumentsOf(source, open) {
   return args;
 }
 
-/** The message of a literal argument (double-quoted literals joined by +), or undefined for anything else. */
+/** The value of a string literal's body written between `quote`s; a single-quoted one is read as its JSON twin. */
+function literalValue(quote, body) {
+  if (quote === '"') return JSON.parse(`"${body}"`);
+  let twin = '';
+  for (let k = 0; k < body.length; k += 1) {
+    if (body[k] === '\\') {
+      twin += body[k + 1] === "'" ? "'" : body.slice(k, k + 2);
+      k += 1;
+    } else {
+      twin += body[k] === '"' ? '\\"' : body[k];
+    }
+  }
+  return JSON.parse(`"${twin}"`);
+}
+
+/** The message of a literal argument (quoted literals joined by +), or undefined for anything else. */
 function messageOf(argument) {
   const text = argument.trim();
   let value = '';
   let i = 0;
   while (i < text.length) {
-    if (text[i] !== '"') return undefined;
+    const quote = text[i];
+    if (quote !== '"' && quote !== "'") return undefined;
     let j = i + 1;
-    while (j < text.length && text[j] !== '"') j += text[j] === '\\' ? 2 : 1;
-    value += JSON.parse(text.slice(i, j + 1));
+    while (j < text.length && text[j] !== quote) j += text[j] === '\\' ? 2 : 1;
+    value += literalValue(quote, text.slice(i + 1, j));
     const rest = text.slice(j + 1).match(/^\s*(\+\s*)?/);
     i = j + 1 + rest[0].length;
     if (rest[1] === undefined && i < text.length) return undefined;
@@ -109,6 +125,12 @@ describe('translations', () => {
   it('extracts every message as a literal', () => {
     expect(unextractable).toEqual([]);
     expect(messages.size).toBeGreaterThan(500);
+  });
+
+  it('reads a message the same in single and double quotes', () => {
+    expect(messageOf(`'It\\'s "{0}"\\n' + "done"`)).toBe('It\'s "{0}"\ndone');
+    expect(messageOf(`"It's \\"{0}\\"\\n" + 'done'`)).toBe('It\'s "{0}"\ndone');
+    expect(messageOf('`It is {0}`')).toBeUndefined();
   });
 
   for (const [name, catalogue] of Object.entries(catalogues)) {

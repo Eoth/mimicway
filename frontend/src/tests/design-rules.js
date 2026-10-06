@@ -116,9 +116,15 @@ export function unscaledValues(css) {
     .map(({ line, property, value }) => `${line}: ${property}: ${value}`);
 }
 
-/** The custom properties of the first block whose selector list is exactly `selector`, values as written. */
+/**
+ * The custom properties of the first block whose selector list is exactly `selector`, values as written. Spaces and
+ * the kind of quotes do not matter: the formatter decides them.
+ */
 export function block(tokens, selector) {
-  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s*');
+  const escaped = selector
+    .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    .replace(/\s+/g, '\\s*')
+    .replace(/["']/g, `["']`);
   const match = new RegExp(`(?:^|})\\s*${escaped}\\s*\\{([^}]*)\\}`).exec(tokens);
   if (!match) throw new Error(`no block ${selector} in ${TOKENS_FILE}`);
   return new Map(declarations(match[1]).filter((d) => d.property.startsWith('--')).map((d) => [d.property, d.value]));
