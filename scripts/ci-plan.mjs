@@ -26,6 +26,7 @@ export const JOBS = [
   'kafka',
   'supply-chain',
   'ui',
+  'format',
   'e2e',
   'docker',
   'kubernetes',
@@ -67,6 +68,13 @@ const RULES = {
   kafka: [...RUST, /^frontend\//],
   'supply-chain': [...MANIFESTS, /^deny\.toml$/, /^osv-scanner\.toml$/],
   ui: [/^frontend\/(?!e2e\/)/, ...READ_BY_UI_TESTS.map((file) => new RegExp(`^${escape(file)}$`))],
+  // What `npm run format:check` reads: the code of the interface, end-to-end tests included, and of the repository's
+  // scripts, and what decides the formatting (its configuration, and its version in the lock file).
+  format: [
+    /^frontend\/.*\.(js|mjs|cjs|svelte|css|html)$/,
+    /^frontend\/(\.prettierignore|package(-lock)?\.json)$/,
+    /^scripts\/.*\.(js|mjs)$/,
+  ],
   e2e: [...RUST, /^frontend\//],
   // What the Dockerfile copies: the UI (its end-to-end suite aside) and the server.
   docker: [/^Dockerfile$/, /^\.dockerignore$/, /^Cargo\.(toml|lock)$/, /^build\.rs$/, /^src\//, /^frontend\/(?!e2e\/)/],
@@ -81,12 +89,14 @@ const CODEQL_RULES = {
   rust: [/^src\/.*\.rs$/, /^tests\/.*\.rs$/, /^build\.rs$/, /^fuzz\/.*\.rs$/, /^Cargo\.(toml|lock)$/],
 };
 // Checked by the always-on jobs, or by no job at all: claimed so that changing them does not run everything.
-// Dockerfile.release is built by the release workflow only, on a tag; the bootstrap scripts are run by people.
+// Dockerfile.release is built by the release workflow only, on a tag; the bootstrap scripts are run by people;
+// .git-blame-ignore-revs lists the commits that git blame skips.
 const ALWAYS_ONLY = [
   /^scripts\//,
   /^Dockerfile\.release$/,
   /^\.gitignore$/,
   /^\.gitattributes$/,
+  /^\.git-blame-ignore-revs$/,
   /^\.editorconfig$/,
   /^\.github\/dependabot\.yml$/,
 ];

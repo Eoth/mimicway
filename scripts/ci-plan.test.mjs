@@ -33,6 +33,29 @@ test('a change of an end-to-end spec runs the end-to-end jobs, not the unit test
   assert.ok(!jobs.includes('ui') && !jobs.includes('docker') && !jobs.includes('rust'));
 });
 
+test('a change of the code Prettier formats, or of what decides its format, runs the format check', () => {
+  for (const file of [
+    'frontend/src/lib/components/RuleForm.svelte',
+    'frontend/src/app.css',
+    'frontend/e2e/rule-tester.spec.js',
+    'frontend/index.html',
+    'frontend/prettier.config.js',
+    'frontend/.prettierignore',
+    'frontend/package-lock.json',
+    'scripts/check-doc-links.mjs',
+  ]) {
+    assert.ok(jobsOf('push', [file]).includes('format'), file);
+  }
+  for (const file of ['src/main.rs', 'frontend/src/locales/fr.json', 'scripts/bootstrap-linux.sh', 'README.md']) {
+    assert.ok(!jobsOf('push', [file]).includes('format'), file);
+  }
+  assert.deepEqual(planFor('push', ['scripts/check-doc-links.mjs']), {
+    jobs: ['checks', 'secrets', 'format', 'codeql'],
+    codeql: ['javascript-typescript'],
+  });
+  assert.deepEqual(jobsOf('push', ['.git-blame-ignore-revs']), ['checks', 'secrets']);
+});
+
 test('a change of documentation runs the always-on jobs only', () => {
   const docs = ['README.md', 'docs/en/matching-rules.md', 'docs/fr/screenshots/rule-form.png', 'frontend/README.md'];
   assert.deepEqual(planFor('push', docs), { jobs: ['checks', 'secrets'], codeql: [] });
