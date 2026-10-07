@@ -6,7 +6,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
-## [0.2.0] - 2026-10-06
+## [0.2.0] - 2026-10-07
 
 ### Added
 - Releases: pushing a `vX.Y.Z` tag builds static Linux binaries (x86_64, arm64), macOS and Windows binaries with the UI inside, a multi-architecture image on `ghcr.io/eoth/mimicway`, CycloneDX SBOMs and checksums; each archive and SBOM is published with its keyless signature (`.sigstore.json`) and the build provenance of all of them (`.intoto.jsonl`, also in GitHub's attestation store), and the image is signed and attested the same way. SECURITY.md shows how to verify them; both Dockerfiles pin their base images by digest.
