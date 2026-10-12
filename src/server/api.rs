@@ -1803,6 +1803,9 @@ impl IntoResponse for AppError {
 mod authz_tests;
 
 #[cfg(test)]
+mod suggestion_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 

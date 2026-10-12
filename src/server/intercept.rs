@@ -106,6 +106,14 @@ fn build_effective_pattern(group_code: Option<&str>, name: &str, listen_path: &s
     }
 }
 
+/// Where an observed request sits in its service, for traffic observation: the rest of the path after the listen path
+/// (what a rule's sub-path is matched against, so a suggested rule matches the calls it was built from) and the
+/// parameters the listen path itself captured.
+struct ObservedRoute {
+    sub_path: String,
+    path_params: HashMap<String, String>,
+}
+
 // More arguments than clippy's default allows; they belong in a request context struct.
 #[allow(clippy::too_many_arguments)]
 async fn do_proxy(
@@ -117,7 +125,7 @@ async fn do_proxy(
     group_code: Option<&str>,
     req: Request<Body>,
     captured: Option<CapturedRequest>,
-    observe: bool,
+    observe: Option<ObservedRoute>,
 ) -> Response {
     // A purely mocked service has no target: never try to proxy to an empty URL. Saving refuses a pure proxy without a
     // target, but a proxy rule can still match on a service that became purely mocked later (saving only warns), so
@@ -159,9 +167,9 @@ async fn do_proxy(
         target = %crate::server::redaction::redact_url_credentials(&target),
         "proxy forwarding"
     );
-    if observe {
+    if let Some(route) = observe {
         return do_proxy_observed(
-            state, service, path, method_str, proxy_path, &target, req, captured,
+            state, service, path, method_str, proxy_path, &target, req, captured, route,
         )
         .await;
     }
@@ -207,6 +215,7 @@ async fn do_proxy_observed(
     target: &str,
     req: Request<Body>,
     captured: Option<CapturedRequest>,
+    route: ObservedRoute,
 ) -> Response {
     let max_buffer = crate::server::observation::max_buffer_size();
     match state
@@ -226,9 +235,9 @@ async fn do_proxy_observed(
                     group_name: service.group_name.clone(),
                     service_name: service.name.clone(),
                     method: method_str.to_string(),
-                    sub_path: proxy_path.to_string(),
+                    sub_path: route.sub_path,
                 };
-                let exchange = crate::server::observation::ObservedExchange::new(
+                let mut exchange = crate::server::observation::ObservedExchange::new(
                     raw.request_query_params,
                     raw.request_headers,
                     &raw.request_body,
@@ -238,6 +247,7 @@ async fn do_proxy_observed(
                     &raw.response_body,
                     raw.response_content_type,
                 );
+                exchange.request_path_params = route.path_params;
                 state.observation.store.record(key, exchange);
             }
             resp
@@ -275,7 +285,11 @@ async fn handle_service(
         let observe = state
             .observation
             .toggle
-            .is_enabled(service.group_name.as_deref(), &service.name);
+            .is_enabled(service.group_name.as_deref(), &service.name)
+            .then_some(ObservedRoute {
+                sub_path: remaining,
+                path_params,
+            });
         return do_proxy(
             state,
             service,
@@ -313,7 +327,7 @@ async fn handle_service(
                     gc,
                     req,
                     None,
-                    false,
+                    None,
                 )
                 .await;
             }
@@ -381,7 +395,7 @@ async fn handle_service(
             gc,
             proxy_req,
             captured,
-            false,
+            None,
         )
         .await;
     }

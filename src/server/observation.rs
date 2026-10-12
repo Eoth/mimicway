@@ -86,8 +86,9 @@ pub struct ObservationKey {
     pub group_name: Option<String>,
     pub service_name: String,
     pub method: String,
-    /// The literal path after the service prefix. A service-level proxy has no rule patterns, so `/orders/1` and
-    /// `/orders/2` are two endpoints for now (path parameters are not inferred).
+    /// The literal rest of the path after the service's listen path: what a rule's sub-path is matched against, so a
+    /// rule suggested from it matches the calls it comes from. `/orders/1` and `/orders/2` are two endpoints here;
+    /// suggestions group them under a route pattern (`server::suggestion`).
     pub sub_path: String,
 }
 
@@ -101,6 +102,8 @@ pub struct ObservedExchange {
     pub request_body: String,
     pub request_body_truncated: bool,
     pub request_content_type: Option<String>,
+    /// The parameters the service's listen path captured (`/v1/users/{id}`), empty when it names none.
+    pub request_path_params: HashMap<String, String>,
     pub response_status: u16,
     pub response_headers: HashMap<String, String>,
     pub response_body: String,
@@ -130,6 +133,7 @@ impl ObservedExchange {
             request_body: req_body,
             request_body_truncated: req_truncated,
             request_content_type,
+            request_path_params: HashMap::new(),
             response_status,
             response_headers: crate::server::redaction::redact_headers(&response_headers),
             response_body: resp_body,
