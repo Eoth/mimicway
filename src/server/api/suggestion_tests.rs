@@ -42,6 +42,18 @@ impl App {
         assert_eq!(resp.status(), reqwest::StatusCode::NO_CONTENT);
     }
 
+    /// A management API call (`path` after `/api`) that must succeed.
+    async fn api(&self, method: reqwest::Method, path: &str, body: Option<Value>) {
+        let mut request = self
+            .client
+            .request(method, format!("{}/api{path}", self.root));
+        if let Some(body) = body {
+            request = request.json(&body);
+        }
+        let resp = request.send().await.unwrap();
+        assert!(resp.status().is_success(), "{path}: {}", resp.status());
+    }
+
     /// `GET` on a service URL: the status and the body.
     async fn call(&self, path: &str) -> (u16, String) {
         let resp = self
@@ -125,4 +137,58 @@ async fn a_rule_suggested_under_a_listen_path_matches_the_calls_it_comes_from() 
         app.call("/shop/v1/orders").await,
         (200, "order list".into())
     );
+}
+
+/// A proxied service observed through three calls that would give a suggestion.
+async fn observed_three_times(app: &App, service: &str) {
+    app.observe(service).await;
+    for _ in 0..crate::server::suggestion::min_samples() {
+        assert_eq!(app.call(&format!("/{service}/orders")).await.0, 200);
+    }
+    assert_eq!(app.suggestions(service).await.len(), 1);
+}
+
+#[tokio::test]
+async fn observing_again_starts_from_nothing() {
+    // Suggestions read the traffic observed since observation was last turned on.
+    let target = backend(axum::Router::new().fallback(|| async { "order list" })).await;
+    let app = start(vec![proxied("shop", "", &target)]).await;
+    observed_three_times(&app, "shop").await;
+
+    app.api(reqwest::Method::DELETE, "/services/shop/observe", None)
+        .await;
+    app.observe("shop").await;
+    assert!(app.suggestions("shop").await.is_empty());
+}
+
+#[tokio::test]
+async fn a_service_created_again_does_not_inherit_the_traffic_of_a_deleted_one() {
+    // The observed calls outlived their service: a new service of the same name, maybe in front of another backend,
+    // was suggested rules from the deleted one's traffic.
+    let target = backend(axum::Router::new().fallback(|| async { "order list" })).await;
+    let service = proxied("shop", "", &target);
+    let app = start(vec![service.clone()]).await;
+    observed_three_times(&app, "shop").await;
+
+    app.api(reqwest::Method::DELETE, "/services/shop", None)
+        .await;
+    app.api(reqwest::Method::POST, "/services", Some(json!(service)))
+        .await;
+    app.observe("shop").await;
+    assert!(app.suggestions("shop").await.is_empty());
+}
+
+#[tokio::test]
+async fn a_reset_forgets_every_observed_call() {
+    let target = backend(axum::Router::new().fallback(|| async { "order list" })).await;
+    let service = proxied("shop", "", &target);
+    let app = start(vec![service.clone()]).await;
+    observed_three_times(&app, "shop").await;
+
+    app.api(reqwest::Method::DELETE, "/config/reset", None)
+        .await;
+    app.api(reqwest::Method::POST, "/services", Some(json!(service)))
+        .await;
+    app.observe("shop").await;
+    assert!(app.suggestions("shop").await.is_empty());
 }

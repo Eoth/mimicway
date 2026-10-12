@@ -203,6 +203,20 @@ impl ObservationStore {
         self.inner.read().unwrap().buckets.len()
     }
 
+    /// Forgets every exchange observed for a service, and only those.
+    pub fn forget_service(&self, group: Option<&str>, service_name: &str) {
+        let mut guard = self.inner.write().unwrap();
+        let inner = &mut *guard;
+        let belongs =
+            |k: &ObservationKey| k.group_name.as_deref() == group && k.service_name == service_name;
+        inner.buckets.retain(|k, _| !belongs(k));
+        inner.key_order.retain(|k| !belongs(k));
+    }
+
+    pub fn clear(&self) {
+        *self.inner.write().unwrap() = ObservationInner::default();
+    }
+
     /// Every endpoint followed for a service, so that suggestions (`server::suggestion`) know which method and path to
     /// examine.
     pub fn keys_for_service(&self, group: Option<&str>, service_name: &str) -> Vec<ObservationKey> {
@@ -292,6 +306,20 @@ impl ObservationState {
             toggle: ObservationToggle::new(),
             store: ObservationStore::new(),
         }
+    }
+
+    /// Stops observing a service and forgets what was observed, when a user turns observation off or the service is
+    /// deleted, renamed or moved to another group: suggestions only ever read the traffic observed since observation was
+    /// last turned on, and a service created later under the same name never inherits another one's traffic.
+    pub fn stop(&self, group: Option<&str>, name: &str) {
+        self.toggle.disable(group, name);
+        self.store.forget_service(group, name);
+    }
+
+    /// `stop` for every service, when the whole configuration is reset.
+    pub fn stop_all(&self) {
+        self.toggle.clear_all();
+        self.store.clear();
     }
 }
 
@@ -452,6 +480,60 @@ mod tests {
         store.record(sample_key("/new"), sample_exchange(b"x"));
         assert!(!store.observations(&sample_key("/0")).is_empty());
         assert!(store.observations(&sample_key("/1")).is_empty());
+    }
+
+    #[test]
+    fn forgetting_a_service_keeps_the_others_and_their_eviction_order() {
+        let store = ObservationStore::new();
+        let other = |path: &str| ObservationKey {
+            service_name: "other".into(),
+            ..sample_key(path)
+        };
+        store.record(sample_key("/a"), sample_exchange(b"x"));
+        store.record(other("/b"), sample_exchange(b"x"));
+        store.record(
+            ObservationKey {
+                group_name: Some("g".into()),
+                ..sample_key("/c")
+            },
+            sample_exchange(b"x"),
+        );
+
+        store.forget_service(None, "svc");
+
+        assert!(store.observations(&sample_key("/a")).is_empty());
+        assert_eq!(
+            store.key_count(),
+            2,
+            "same name in a group, other service kept"
+        );
+        // The forgotten endpoint left the eviction order too: filling the store evicts the others, never a ghost.
+        for i in 0..DEFAULT_MAX_KEYS - 2 {
+            store.record(other(&format!("/fill{i}")), sample_exchange(b"x"));
+        }
+        assert_eq!(store.key_count(), DEFAULT_MAX_KEYS);
+        store.record(other("/one-more"), sample_exchange(b"x"));
+        assert_eq!(store.key_count(), DEFAULT_MAX_KEYS);
+        assert!(
+            store.observations(&other("/b")).is_empty(),
+            "the oldest left"
+        );
+    }
+
+    #[test]
+    fn stopping_turns_observation_off_and_forgets_the_service() {
+        let state = ObservationState::new();
+        state.toggle.enable(None, "svc");
+        state.store.record(sample_key("/a"), sample_exchange(b"x"));
+        state.stop(None, "svc");
+        assert!(!state.toggle.is_enabled(None, "svc"));
+        assert_eq!(state.store.key_count(), 0);
+
+        state.toggle.enable(Some("g"), "svc");
+        state.store.record(sample_key("/a"), sample_exchange(b"x"));
+        state.stop_all();
+        assert!(state.toggle.active_services().is_empty());
+        assert_eq!(state.store.key_count(), 0);
     }
 
     #[test]

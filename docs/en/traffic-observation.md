@@ -38,5 +38,5 @@ Mimicway therefore waits until it has seen **several calls** to an endpoint befo
 - A call is captured only when the sizes of its request and response are known in advance (a `Content-Length` header, or no body). A response streamed in chunks (`Transfer-Encoding: chunked`, no announced size) is still relayed normally but not observed.
 - The number of observations kept is bounded, per endpoint and overall (see the `TRAFFIC_OBSERVATION_*` settings in the README): beyond that, the oldest are replaced by the newest, so memory never grows without limit.
 - Credentials are never captured: `Authorization`, cookies, API-key headers and any header listed in `REDACT_HEADERS` are kept as `[redacted]`, and suggested rules never copy them.
-- Observation stops by itself when its service is deleted, and on every full reset of the configuration.
+- Observation stops by itself when its service is deleted, renamed or moved to another group, and on every full reset of the configuration. What it observed is then forgotten, as when you stop observing: observing again starts from nothing, and a service created later under the same name never inherits another one's traffic.
 - Like the [request log](request-log.md), nothing is written to disk: a restart of Mimicway starts with no observation.

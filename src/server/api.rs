@@ -345,8 +345,8 @@ async fn reset_config(
         .await
         .map_err(AppError::Store)?;
     // Observation state lives outside the configuration: without this, a service created again after the reset would
-    // start out observed.
-    state.observation.toggle.clear_all();
+    // start out observed, with the traffic of the one deleted.
+    state.observation.stop_all();
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -490,7 +490,7 @@ async fn observe_service_impl(
     if enable {
         state.observation.toggle.enable(group.as_deref(), &name);
     } else {
-        state.observation.toggle.disable(group.as_deref(), &name);
+        state.observation.stop(group.as_deref(), &name);
     }
     Ok(StatusCode::NO_CONTENT)
 }
@@ -947,7 +947,7 @@ async fn update_service_impl(
         .map_err(AppError::Store)??;
 
     if service.group_name != group || service.name != name {
-        state.observation.toggle.disable(group.as_deref(), &name);
+        state.observation.stop(group.as_deref(), &name);
     }
     updated
         .services
@@ -1003,8 +1003,8 @@ async fn delete_service_impl(
         Err(AppError::NotFound)
     } else {
         // Observation state lives outside the configuration: without this, a service created again under the same group
-        // and name would start out observed.
-        state.observation.toggle.disable(group.as_deref(), &name);
+        // and name would start out observed, with the traffic of the one deleted.
+        state.observation.stop(group.as_deref(), &name);
         Ok(StatusCode::NO_CONTENT)
     }
 }
