@@ -99,7 +99,7 @@ impl MatchEngine {
                 return None;
             }
             let sub_params = Self::matches_sub_path(&rule.sub_path, &req.remaining_path)?;
-            if !Self::matches_group(&rule.conditions, req) {
+            if !Self::matches_group(&rule.conditions, req, Some(&sub_params)) {
                 return None;
             }
             Some((rule, sub_params))
@@ -123,15 +123,28 @@ impl MatchEngine {
     }
 
     /// Also used by `messaging::matcher` to match a Kafka message against a rule's conditions, without the HTTP-only
-    /// method and sub-path.
-    pub(crate) fn matches_group(group: &ConditionGroup, req: &RequestData) -> bool {
-        let all_ok = group.all_of.is_empty() || group.all_of.iter().all(|c| Self::eval(c, req));
-        let any_ok = group.any_of.is_empty() || group.any_of.iter().any(|c| Self::eval(c, req));
+    /// method and sub-path (`sub_params` is then `None`).
+    ///
+    /// `sub_params` holds what the rule's own sub-path pattern captured (`/orders/{id}`): a path parameter condition
+    /// reads it first, then the service's listen path parameters, the precedence the rendered response and the rule
+    /// tester (`evaluate_rule_test`) follow. Passed by reference so that the request is never copied per rule.
+    pub(crate) fn matches_group(
+        group: &ConditionGroup,
+        req: &RequestData,
+        sub_params: Option<&HashMap<String, String>>,
+    ) -> bool {
+        let eval = |c: &Condition| Self::eval(c, req, sub_params);
+        let all_ok = group.all_of.is_empty() || group.all_of.iter().all(eval);
+        let any_ok = group.any_of.is_empty() || group.any_of.iter().any(eval);
         all_ok && any_ok
     }
 
-    fn eval(condition: &Condition, req: &RequestData) -> bool {
-        let extracted = Self::extract(&condition.source, req);
+    fn eval(
+        condition: &Condition,
+        req: &RequestData,
+        sub_params: Option<&HashMap<String, String>>,
+    ) -> bool {
+        let extracted = Self::extract(&condition.source, req, sub_params);
         Self::apply_op(&condition.operator, extracted.as_deref())
     }
 
@@ -162,7 +175,7 @@ impl MatchEngine {
     }
 
     fn eval_detailed(condition: &Condition, req: &RequestData) -> ConditionEvaluation {
-        let found_value = Self::extract(&condition.source, req);
+        let found_value = Self::extract(&condition.source, req, None);
         let matched = Self::apply_op(&condition.operator, found_value.as_deref());
         let hint = if matched {
             None
@@ -336,7 +349,11 @@ impl MatchEngine {
         smaller.len() < larger.len() && smaller.iter().all(|c| larger.contains(c))
     }
 
-    fn extract(source: &ConditionSource, req: &RequestData) -> Option<String> {
+    fn extract(
+        source: &ConditionSource,
+        req: &RequestData,
+        sub_params: Option<&HashMap<String, String>>,
+    ) -> Option<String> {
         match source {
             ConditionSource::QueryParam(key) => req.query_params.get(key).cloned(),
             ConditionSource::Header(key) => {
@@ -349,7 +366,10 @@ impl MatchEngine {
             ConditionSource::JsonPointer(pointer) => Self::extract_json_pointer(&req.body, pointer),
             ConditionSource::XPath(path) => Self::extract_xpath(&req.body, path),
             ConditionSource::FormField(field) => Self::extract_form_field(&req.body, field),
-            ConditionSource::PathParam(key) => req.path_params.get(key).cloned(),
+            ConditionSource::PathParam(key) => sub_params
+                .and_then(|p| p.get(key))
+                .or_else(|| req.path_params.get(key))
+                .cloned(),
             ConditionSource::BodyRaw => String::from_utf8(req.body.clone()).ok(),
         }
     }
@@ -918,6 +938,38 @@ mod tests {
         assert!(MatchEngine::first_match(&rules, &fail_any).is_none());
     }
 
+    #[test]
+    fn path_param_condition_reads_the_rule_s_own_sub_path_parameters() {
+        // `/orders/{id}` with a condition on `id`: the rule tester merged the sub-path parameters before judging the
+        // conditions, production did not, so the rule passed in the tester and never matched a real request.
+        let rule = |name: &str, id: &str| Rule {
+            sub_path: Some("/orders/{id}".into()),
+            ..simple_rule(
+                name,
+                cg(
+                    vec![Condition {
+                        source: ConditionSource::PathParam("id".into()),
+                        operator: Operator::Eq(id.into()),
+                    }],
+                    vec![],
+                ),
+            )
+        };
+        let rules = vec![rule("first", "1"), rule("second", "2")];
+        let mut req = make_req(&[], &[], b"", None);
+        req.remaining_path = "/orders/2".into();
+
+        let (matched, params) = MatchEngine::first_match(&rules, &req).unwrap();
+        assert_eq!(matched.name, "second");
+        assert_eq!(params.get("id").map(String::as_str), Some("2"));
+
+        // A parameter of the service's listen path keeps its own value unless the sub-path names the same parameter,
+        // which then wins, as when the response is rendered.
+        req.path_params.insert("id".into(), "1".into());
+        let (matched, _) = MatchEngine::first_match(&rules, &req).unwrap();
+        assert_eq!(matched.name, "second");
+    }
+
     // --- Method matching tests ---
 
     #[test]
@@ -1215,7 +1267,7 @@ mod tests {
         ];
 
         for (group, req) in cases {
-            let boolean_result = MatchEngine::matches_group(&group, &req);
+            let boolean_result = MatchEngine::matches_group(&group, &req, None);
             let detailed_result = MatchEngine::evaluate_group(&group, &req).matched;
             assert_eq!(
                 boolean_result, detailed_result,

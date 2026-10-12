@@ -82,7 +82,7 @@ pub fn request_conditions(data: &[u8]) {
     ] {
         assert_eq!(
             MatchEngine::evaluate_group(&group, &req).matched,
-            MatchEngine::matches_group(&group, &req),
+            MatchEngine::matches_group(&group, &req, None),
             "the rule tester and production disagree"
         );
     }

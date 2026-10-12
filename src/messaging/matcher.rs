@@ -37,7 +37,7 @@ pub fn match_message<'a>(
         if let Some(rule) = service
             .rules
             .iter()
-            .find(|r| MatchEngine::matches_group(&r.conditions, &req))
+            .find(|r| MatchEngine::matches_group(&r.conditions, &req, None))
         {
             return Some(MatchedMessage {
                 service_name: &service.name,
