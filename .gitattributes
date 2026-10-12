@@ -1,2 +1,5 @@
 # Shell scripts must keep LF endings to run on Linux and macOS, whatever the checkout platform.
 *.sh text eol=lf
+# Every text file is checked out with LF endings on every platform: Prettier, the scripts and the Linux builds expect
+# LF, and a CRLF checkout on Windows is rewritten to LF by the formatter, which git then reports as modified.
+* text=auto eol=lf
