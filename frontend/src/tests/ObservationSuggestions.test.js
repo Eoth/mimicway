@@ -82,6 +82,11 @@ describe('ObservationSuggestions', () => {
     getObservationStatus.mockResolvedValue([{ service_name: 'svc-a', group_name: null }]);
     getServiceSuggestions.mockResolvedValue([
       {
+        method: 'GET',
+        sub_path: 'orders/1',
+        paths: ['orders/1'],
+        path_count: 1,
+        sample_count: 3,
         outcome: 'Unconditional',
         rule: {
           method: 'GET',
@@ -108,6 +113,11 @@ describe('ObservationSuggestions', () => {
     getObservationStatus.mockResolvedValue([{ service_name: 'svc-a', group_name: null }]);
     getServiceSuggestions.mockResolvedValue([
       {
+        method: 'GET',
+        sub_path: 'orders',
+        paths: ['orders'],
+        path_count: 1,
+        sample_count: 4,
         outcome: 'Conditional',
         rules: [
           {
@@ -160,7 +170,15 @@ describe('ObservationSuggestions', () => {
   it('affiche un signal sans regle proposable pour une variance inexpliquee', async () => {
     getObservationStatus.mockResolvedValue([{ service_name: 'svc-a', group_name: null }]);
     getServiceSuggestions.mockResolvedValue([
-      { outcome: 'VarianceUnexplained', sample_count: 4, response_class_count: 3 },
+      {
+        method: 'GET',
+        sub_path: '/flaky',
+        paths: ['/flaky'],
+        path_count: 1,
+        sample_count: 4,
+        outcome: 'VarianceUnexplained',
+        response_class_count: 3,
+      },
     ]);
     const { getByText } = render(ObservationSuggestions, {
       props: { serviceName: 'svc-a', isMocked: false },
@@ -171,5 +189,137 @@ describe('ObservationSuggestions', () => {
 
     await waitFor(() => expect(getByText(/^Varying responses observed/)).toBeInTheDocument());
     expect(getByText(/\(4 calls, 3 distinct responses\)/)).toBeInTheDocument();
+  });
+
+  // A suggestion for a route pattern, as the server sends it: the route fields next to the outcome.
+  function routeSuggestion(fields) {
+    return {
+      method: 'GET',
+      sub_path: '/service/{hash}/{name}',
+      paths: ['/service/9f86d081/restBilling', '/service/9f86d081/restOrders', '/service/9f86d081/restStock'],
+      path_count: 4,
+      sample_count: 4,
+      ...fields,
+    };
+  }
+
+  async function showSuggestions(suggestions, props = {}) {
+    getObservationStatus.mockResolvedValue([{ service_name: 'svc-a', group_name: null }]);
+    getServiceSuggestions.mockResolvedValue(suggestions);
+    const view = render(ObservationSuggestions, { props: { serviceName: 'svc-a', isMocked: false, ...props } });
+    await waitFor(() => expect(view.getByText('Stop observing')).toBeInTheDocument());
+    await fireEvent.click(view.getByText('Refresh the suggestions'));
+    return view;
+  }
+
+  it('names the route a suggestion covers and a few of the paths it groups', async () => {
+    const echo = {
+      method: 'GET',
+      sub_path: '/service/{hash}/{name}',
+      condition: null,
+      echo: { type: 'PathParam', key: 'name' },
+      sample_count: 4,
+      response: {
+        status: 200,
+        headers: [],
+        body: [
+          { type: 'Literal', value: '<url>http://backend/ws/' },
+          { type: 'Template', template: '{{path.name}}' },
+          { type: 'Literal', value: '</url>' },
+        ],
+        chaos: null,
+      },
+    };
+    const onUseSuggestion = vi.fn();
+    const { getByTestId, getByText } = await showSuggestions([routeSuggestion({ outcome: 'Echo', rule: echo })], {
+      onUseSuggestion,
+    });
+
+    await waitFor(() =>
+      expect(getByTestId('observation-suggestion-paths-svc-a-0')).toHaveTextContent(
+        'GET /service/{hash}/{name} groups 4 observed paths, such as /service/9f86d081/restBilling, ' +
+          '/service/9f86d081/restOrders, /service/9f86d081/restStock',
+      ),
+    );
+    expect(getByText('no condition: the response repeats Path parameter "name" (4 calls)')).toBeInTheDocument();
+    // The preview shows the expression that repeats the value, where it stands in the body.
+    expect(getByText('<url>http://backend/ws/{{path.name}}</url>')).toBeInTheDocument();
+
+    await fireEvent.click(getByText('Use this suggestion'));
+    expect(onUseSuggestion).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sub_path: '/service/{hash}/{name}',
+        conditions: { all_of: [], any_of: [] },
+        response: echo.response,
+      }),
+    );
+  });
+
+  it('names the one observed path a pattern stands for', async () => {
+    const rule = {
+      method: 'GET',
+      sub_path: '/service/{hash}/status',
+      condition: null,
+      echo: null,
+      sample_count: 3,
+      response: { status: 200, headers: [], body: [{ type: 'Literal', value: 'up' }], chaos: null },
+    };
+    const { getByTestId, queryByTestId } = await showSuggestions([
+      routeSuggestion({
+        sub_path: '/service/{hash}/status',
+        paths: ['/service/9f86d081/status'],
+        path_count: 1,
+        outcome: 'Unconditional',
+        rule,
+      }),
+      routeSuggestion({
+        sub_path: '/health',
+        paths: ['/health'],
+        path_count: 1,
+        outcome: 'Unconditional',
+        rule: { ...rule, sub_path: '/health' },
+      }),
+    ]);
+
+    await waitFor(() =>
+      expect(getByTestId('observation-suggestion-paths-svc-a-0')).toHaveTextContent(
+        'GET /service/{hash}/status stands for the observed path /service/9f86d081/status',
+      ),
+    );
+    // A literal path needs no explanation.
+    expect(queryByTestId('observation-suggestion-paths-svc-a-1')).not.toBeInTheDocument();
+  });
+
+  it('labels a condition on a path parameter', async () => {
+    const rule = (value, status) => ({
+      method: 'GET',
+      sub_path: '/orders/{id}',
+      condition: { source: { type: 'PathParam', key: 'id' }, operator: { type: 'Eq', value } },
+      echo: null,
+      sample_count: 1,
+      response: { status, headers: [], body: [{ type: 'Literal', value: 'x' }], chaos: null },
+    });
+    const { getByText } = await showSuggestions([
+      routeSuggestion({ sub_path: '/orders/{id}', outcome: 'Conditional', rules: [rule('1', 200), rule('2', 404)] }),
+    ]);
+
+    await waitFor(() => expect(getByText('if Path parameter "id" = "1"')).toBeInTheDocument());
+    expect(getByText('if Path parameter "id" = "2"')).toBeInTheDocument();
+  });
+
+  it('says which route varies when no field explains its responses', async () => {
+    const { getByTestId } = await showSuggestions([
+      routeSuggestion({
+        sub_path: '/status',
+        paths: ['/status'],
+        path_count: 1,
+        outcome: 'VarianceUnexplained',
+        response_class_count: 3,
+      }),
+    ]);
+
+    await waitFor(() =>
+      expect(getByTestId('observation-suggestion-unexplained-svc-a-0')).toHaveTextContent(/^GET \/status Varying/),
+    );
   });
 });

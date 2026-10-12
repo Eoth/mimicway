@@ -171,9 +171,9 @@ Tout se règle par des variables d'environnement ; aucune n'est obligatoire.
 | `REQUEST_LOG_MAX_BODY_SIZE` | `16384` | Octets de chaque corps conservés dans le journal des requêtes. |
 | `TRAFFIC_OBSERVATION_MAX_BODY_SIZE` | `16384` | Octets de chaque corps conservés par l'observation de trafic. |
 | `TRAFFIC_OBSERVATION_MAX_BUFFER_SIZE` | `10485760` | Plus grand corps de requête ou de réponse (d'après son `Content-Length`) que l'observation de trafic met en mémoire pour capturer un échange ; les corps plus grands ou sans taille sont transmis au fil de l'eau et non observés. |
-| `TRAFFIC_OBSERVATION_MAX_KEYS` | `200` | Formes de requête distinctes observées par service. |
-| `TRAFFIC_OBSERVATION_SAMPLES_PER_KEY` | `8` | Échanges conservés par forme de requête. |
-| `TRAFFIC_OBSERVATION_MIN_SAMPLES` | `3` | Échanges nécessaires avant qu'une règle soit suggérée. |
+| `TRAFFIC_OBSERVATION_MAX_KEYS` | `200` | Chemins distincts (méthode et chemin) suivis en même temps, tous services observés confondus ; le moins récemment appelé laisse sa place. |
+| `TRAFFIC_OBSERVATION_SAMPLES_PER_KEY` | `8` | Échanges conservés par chemin. |
+| `TRAFFIC_OBSERVATION_MIN_SAMPLES` | `3` | Échanges d'une route (les chemins regroupés sous un même modèle) nécessaires avant qu'une règle soit suggérée. |
 | `AUTH_ENABLED` | `false` | Active l'authentification Keycloak. `KEYCLOAK_URL`, `KEYCLOAK_REALM` et `KEYCLOAK_CLIENT_ID` deviennent alors obligatoires ; le serveur refuse de démarrer sans eux. |
 | `KEYCLOAK_URL` | *(vide)* | URL de base que Mimicway utilise pour joindre Keycloak. |
 | `KEYCLOAK_REALM` | *(vide)* | Realm. |

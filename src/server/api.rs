@@ -527,14 +527,14 @@ async fn unobserve_service_grouped(
     observe_service_impl(state, user, Some(group), name, false).await
 }
 
-/// Computed from `ObservationStore` at each call, so there is no suggestion state to keep in sync. Endpoints with
-/// fewer observations than `suggestion::min_samples()` are left out.
+/// Computed from `ObservationStore` at each call, so there is no suggestion state to keep in sync. Routes with fewer
+/// observations than `suggestion::min_samples()` are left out.
 async fn get_service_suggestions_impl(
     state: AppState,
     user: AuthUser,
     group: Option<String>,
     name: String,
-) -> Result<Json<Vec<crate::server::suggestion::Suggestion>>, AppError> {
+) -> Result<Json<Vec<crate::server::suggestion::EndpointSuggestion>>, AppError> {
     let config = state.store.snapshot().await;
     let svc = config
         .services
@@ -548,25 +548,26 @@ async fn get_service_suggestions_impl(
         return Err(AppError::Forbidden);
     }
 
-    let keys = state
+    let endpoints: Vec<_> = state
         .observation
         .store
-        .keys_for_service(group.as_deref(), &name);
-    let suggestions = keys
+        .keys_for_service(group.as_deref(), &name)
         .into_iter()
-        .filter_map(|key| {
+        .map(|key| {
             let observations = state.observation.store.observations(&key);
-            crate::server::suggestion::suggest(&key.method, &key.sub_path, &observations)
+            (key, observations)
         })
         .collect();
-    Ok(Json(suggestions))
+    Ok(Json(crate::server::suggestion::suggest_for_service(
+        &endpoints,
+    )))
 }
 
 async fn get_service_suggestions(
     State(state): State<AppState>,
     Extension(user): Extension<AuthUser>,
     Path(name): Path<String>,
-) -> Result<Json<Vec<crate::server::suggestion::Suggestion>>, AppError> {
+) -> Result<Json<Vec<crate::server::suggestion::EndpointSuggestion>>, AppError> {
     get_service_suggestions_impl(state, user, None, name).await
 }
 
@@ -574,7 +575,7 @@ async fn get_service_suggestions_grouped(
     State(state): State<AppState>,
     Extension(user): Extension<AuthUser>,
     Path((group, name)): Path<(String, String)>,
-) -> Result<Json<Vec<crate::server::suggestion::Suggestion>>, AppError> {
+) -> Result<Json<Vec<crate::server::suggestion::EndpointSuggestion>>, AppError> {
     get_service_suggestions_impl(state, user, Some(group), name).await
 }
 

@@ -6,8 +6,11 @@
   // "Use this suggestion" does not create the rule: it fills the rule form (RuleForm.svelte, through onUseSuggestion
   // in ServiceDetail.svelte), so that the user reviews it and saves it through the usual checks (validation on the
   // server, conflict check), rather than through a one-click endpoint that would skip them.
+  //
+  // A suggestion stands for a route: the server groups the observed paths under a pattern (`/orders/{id}`), listed with
+  // a few of the paths it covers, so the user sees what the pattern was inferred from.
   import { observeService, unobserveService, getObservationStatus, getServiceSuggestions } from '../api.js';
-  import { t } from '../i18n.svelte.js';
+  import { t, tCount } from '../i18n.svelte.js';
 
   let { serviceName, groupName = null, isMocked = true, onUseSuggestion = () => {} } = $props();
 
@@ -72,6 +75,8 @@
         return t('HTTP header');
       case 'JsonPointer':
         return t('JSON field of the body');
+      case 'PathParam':
+        return t('Path parameter');
       default:
         return type;
     }
@@ -105,10 +110,30 @@
     };
   }
 
+  // An echo rule's body alternates literal text and the expression that repeats the request value: both are shown,
+  // so that the preview reads as the template it is.
   function bodyPreview(rule) {
-    const literal = rule.response?.body?.find((f) => f.type === 'Literal');
-    const text = literal?.value ?? '';
+    const text = (rule.response?.body ?? [])
+      .map((f) => (f.type === 'Literal' ? f.value : f.type === 'Template' ? f.template : ''))
+      .join('');
     return text.length > 120 ? `${text.slice(0, 120)}…` : text;
+  }
+
+  function rulesOf(suggestion) {
+    return suggestion.outcome === 'Conditional' ? suggestion.rules : [suggestion.rule];
+  }
+
+  function ruleSummary(suggestion, rule) {
+    if (rule.condition) return t('if {0}', conditionSummary(rule.condition));
+    if (suggestion.outcome === 'Echo') {
+      return t(
+        'no condition: the response repeats {0} "{1}" ({2} calls)',
+        sourceLabel(rule.echo?.type),
+        rule.echo?.key,
+        rule.sample_count,
+      );
+    }
+    return t('no condition ({0} identical calls)', rule.sample_count);
   }
 </script>
 
@@ -156,8 +181,21 @@
       {/if}
 
       {#each suggestions as suggestion, i (i)}
+        {#if suggestion.path_count > 1 || suggestion.paths[0] !== suggestion.sub_path}
+          <p class="suggestion-paths" data-testid="observation-suggestion-paths-{serviceName}-{i}">
+            {tCount(
+              suggestion.path_count,
+              '{1} {2} stands for the observed path {3}',
+              '{1} {2} groups {0} observed paths, such as {3}',
+              suggestion.method,
+              suggestion.sub_path,
+              suggestion.paths.slice(0, 3).join(', '),
+            )}
+          </p>
+        {/if}
         {#if suggestion.outcome === 'VarianceUnexplained'}
           <p class="panel-unexplained" role="status" data-testid="observation-suggestion-unexplained-{serviceName}-{i}">
+            <code>{suggestion.method} {suggestion.sub_path}</code>
             {t(
               'Varying responses observed ({0} calls, {1} distinct responses) but no field of the request tells them apart reliably: no rule suggested.',
               suggestion.sample_count,
@@ -165,15 +203,11 @@
             )}
           </p>
         {:else}
-          {#each suggestion.outcome === 'Unconditional' ? [suggestion.rule] : suggestion.rules as rule, j (j)}
+          {#each rulesOf(suggestion) as rule, j (j)}
             <div class="suggestion-card" data-testid="observation-suggestion-{serviceName}-{i}-{j}">
               <div class="suggestion-summary">
                 <code>{rule.method} {rule.sub_path}</code>
-                {#if conditionSummary(rule.condition)}
-                  <span class="suggestion-condition">{t('if {0}', conditionSummary(rule.condition))}</span>
-                {:else}
-                  <span class="suggestion-condition">{t('no condition ({0} identical calls)', rule.sample_count)}</span>
-                {/if}
+                <span class="suggestion-condition">{ruleSummary(suggestion, rule)}</span>
               </div>
               <div class="suggestion-response">
                 <span class="suggestion-status">{rule.response.status}</span>
@@ -229,6 +263,13 @@
 
   .panel-actions {
     margin-top: var(--space-3);
+  }
+
+  .suggestion-paths {
+    margin: var(--space-4) 0 0;
+    font-size: var(--text-s);
+    color: var(--color-text-muted);
+    overflow-wrap: anywhere;
   }
 
   .panel-empty,

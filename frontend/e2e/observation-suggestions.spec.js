@@ -150,4 +150,68 @@ test.describe('Observed proxy traffic and suggested rules', () => {
       target.close();
     }
   });
+
+  test('names called once each through a directory give one rule that answers any name', async ({ page, request }) => {
+    test.setTimeout(30000);
+    // A service directory: /service/<hash>/<name> answers the address of the named service. Each name is called once:
+    // the route pools the calls, and since the answers differ only by the name they repeat, one rule covers them all.
+    const target = await new Promise((resolve) => {
+      const server = http.createServer((req, res) => {
+        const name = req.url.split('/').pop();
+        const body = `<lookup><url>http://backend.internal:8080/ws/${name}</url></lookup>`;
+        res.writeHead(200, { 'content-type': 'text/xml', 'content-length': Buffer.byteLength(body) });
+        res.end(body);
+      });
+      server.listen(0, '127.0.0.1', () => resolve(server));
+    });
+    const targetPort = target.address().port;
+
+    try {
+      const created = await request.post(`${API}/services`, { data: proxyService('directory', targetPort) });
+      expect(created.ok()).toBe(true);
+      await request.post(`${API}/services/directory/observe`);
+      for (const name of ['restOrders', 'restStock', 'restBilling']) {
+        const r = await request.get(`http://localhost:7342/directory/service/9f86d081884c7d65/${name}`);
+        expect(r.status()).toBe(200);
+      }
+
+      await page.goto('/');
+      await page.waitForLoadState('networkidle');
+      await page.getByText('No group').click();
+      await page.getByTestId('service-card-configure-button-directory').click();
+      await page.getByTestId('observation-refresh-suggestions-button-directory').click();
+
+      await expect(page.getByTestId('observation-suggestion-paths-directory-0')).toHaveText(
+        'GET /service/{hash}/{name} groups 3 observed paths, such as /service/9f86d081884c7d65/restBilling, ' +
+          '/service/9f86d081884c7d65/restOrders, /service/9f86d081884c7d65/restStock',
+      );
+      const card = page.getByTestId('observation-suggestion-directory-0-0');
+      await expect(card).toContainText('no condition: the response repeats Path parameter "name" (3 calls)');
+      await expect(card).toContainText('<url>http://backend.internal:8080/ws/{{path.name}}</url>');
+      await expect(page.getByTestId('observation-suggestion-directory-0-1')).toHaveCount(0);
+      await docsScreenshot(
+        page,
+        'observation-route-suggestion.png',
+        '[data-testid="observation-suggestion-paths-directory-0"], [data-testid="observation-suggestion-directory-0-0"]',
+      );
+
+      await page.getByTestId('observation-use-suggestion-directory-0-0').click();
+      await expect(page.getByTestId('rule-form-subpath-input')).toHaveValue('/service/{hash}/{name}');
+      await page.getByTestId('rule-form-name-input').fill('any-service');
+      await page.getByTestId('rule-form-submit-button').click();
+      await expect(page.getByTestId('rule-list-item-any-service')).toBeVisible();
+
+      // Mocked, with no backend left: a name never observed gets its own address.
+      const saved = await (await request.get(`${API}/services/directory`)).json();
+      const updated = await request.put(`${API}/services/directory`, {
+        data: { ...saved, is_mocked: true, real_target_url: '' },
+      });
+      expect(updated.ok()).toBe(true);
+      const answer = await request.get('http://localhost:7342/directory/service/0123456789abcdef/restInvoices');
+      expect(answer.status()).toBe(200);
+      expect(await answer.text()).toBe('<lookup><url>http://backend.internal:8080/ws/restInvoices</url></lookup>');
+    } finally {
+      target.close();
+    }
+  });
 });

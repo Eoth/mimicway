@@ -192,3 +192,49 @@ async fn a_reset_forgets_every_observed_call() {
     app.observe("shop").await;
     assert!(app.suggestions("shop").await.is_empty());
 }
+
+#[tokio::test]
+async fn a_directory_called_once_per_name_gives_one_rule_that_answers_any_name() {
+    // A service directory: `/service/{hash}/{name}` answers the address of the named service. Each name is called once:
+    // no literal path reaches the three samples a suggestion waits for, the route does, and since the answers differ
+    // only by the name they repeat, one rule covers every name, including one never observed.
+    async fn lookup(
+        axum::extract::Path((_hash, name)): axum::extract::Path<(String, String)>,
+    ) -> axum::response::Response {
+        let body = format!("<lookup><url>http://backend.internal:8080/ws/{name}</url></lookup>");
+        ([("content-type", "text/xml")], body).into_response()
+    }
+    use axum::response::IntoResponse;
+    let target =
+        backend(axum::Router::new().route("/service/{hash}/{name}", axum::routing::get(lookup)))
+            .await;
+    let app = start(vec![proxied("directory", "", &target)]).await;
+    app.observe("directory").await;
+    for name in ["restOrders", "restStock", "restBilling"] {
+        let (status, _) = app
+            .call(&format!("/directory/service/9f86d081884c7d65/{name}"))
+            .await;
+        assert_eq!(status, 200);
+    }
+
+    let suggestions = app.suggestions("directory").await;
+    assert_eq!(suggestions.len(), 1, "{suggestions:?}");
+    let s = &suggestions[0];
+    assert_eq!(s["outcome"], "Echo");
+    assert_eq!(s["sub_path"], "/service/{hash}/{name}");
+    assert_eq!(s["path_count"], 3);
+    assert_eq!(
+        s["rule"]["echo"],
+        json!({"type": "PathParam", "key": "name"})
+    );
+
+    app.save_as_mock("directory", &[&s["rule"]]).await;
+    assert_eq!(
+        app.call("/directory/service/0123456789abcdef/restInvoices")
+            .await,
+        (
+            200,
+            "<lookup><url>http://backend.internal:8080/ws/restInvoices</url></lookup>".into()
+        )
+    );
+}

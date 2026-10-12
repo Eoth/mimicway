@@ -492,7 +492,7 @@ impl MatchEngine {
 
 /// Percent-decodes `s` into UTF-8 (an invalid sequence becomes U+FFFD): `%C3%A9` is `é`, in any script. Decoding
 /// byte by byte into chars read every escaped byte as Latin-1, so non-ASCII path parameters came out garbled.
-fn url_decode(s: &str) -> String {
+pub(crate) fn url_decode(s: &str) -> String {
     let bytes = s.as_bytes();
     let mut decoded = Vec::with_capacity(bytes.len());
     let mut i = 0;

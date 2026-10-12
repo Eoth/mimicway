@@ -111,6 +111,11 @@ export function answerApi(api) {
   api.getObservationStatus.mockResolvedValue([{ group_name: 'g1', service_name: 'a1' }]);
   api.getServiceSuggestions.mockResolvedValue([
     {
+      method: 'GET',
+      sub_path: '/x2',
+      paths: ['/x2'],
+      path_count: 1,
+      sample_count: 3,
       outcome: 'Conditional',
       rules: [
         {
@@ -123,16 +128,45 @@ export function answerApi(api) {
       ],
     },
     {
+      method: 'GET',
+      sub_path: '/x3/{hash}',
+      paths: ['/x3/9f86d081'],
+      path_count: 1,
+      sample_count: 3,
       outcome: 'Unconditional',
       rule: {
         method: 'GET',
-        sub_path: '/x3',
+        sub_path: '/x3/{hash}',
         condition: null,
         response: { status: 404, headers: [], body: [] },
         sample_count: 3,
       },
     },
-    { outcome: 'VarianceUnexplained', sample_count: 4, response_class_count: 2 },
+    {
+      method: 'GET',
+      sub_path: '/x4/{name}',
+      paths: ['/x4/restA', '/x4/restB'],
+      path_count: 2,
+      sample_count: 3,
+      outcome: 'Echo',
+      rule: {
+        method: 'GET',
+        sub_path: '/x4/{name}',
+        condition: null,
+        echo: { type: 'PathParam', key: 'name' },
+        response: { status: 200, headers: [], body: [{ type: 'Template', template: '{{path.name}}' }] },
+        sample_count: 3,
+      },
+    },
+    {
+      method: 'GET',
+      sub_path: '/x5',
+      paths: ['/x5'],
+      path_count: 1,
+      sample_count: 4,
+      outcome: 'VarianceUnexplained',
+      response_class_count: 2,
+    },
   ]);
   api.testRule.mockResolvedValue({
     overall_matched: false,

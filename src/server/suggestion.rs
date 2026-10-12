@@ -2,19 +2,30 @@
 // computed from `ObservationStore` when asked: the input is already bounded, so recomputing costs less than a cache
 // to invalidate, and suggestions can never lag behind what was observed.
 //
-// The trap: two calls to the same method and path can legitimately get different answers, and a rule built from
-// the first answer seen would silently break the others. Hence three steps: (1) group the observations by
-// equivalent response; (2) one group gives an unconditional rule; (3) several groups need a request field that
-// tells them apart perfectly (same value, same group; different groups, different values) before anything is
-// suggested. When no field does, nothing is suggested: no rule beats a fragile one.
-use crate::models::{Condition, ConditionSource, HeaderEntry, MockResponse, Operator};
-use crate::server::observation::ObservedExchange;
-use std::collections::{BTreeSet, HashMap};
+// First the literal paths of each method are grouped into route patterns (`routes`): `/orders/1` and `/orders/2`
+// pool their samples under `/orders/{id}`, whose parameter becomes a condition source like any request field.
+//
+// Then, per route, the trap: two calls to the same route can legitimately get different answers, and a rule built
+// from the first answer seen would silently break the others. Hence three steps: (1) group the observations by
+// equivalent response; (2) one group gives an unconditional rule; (3) several groups need a request field that tells
+// them apart perfectly (same value, same group; different groups, different values) before anything is suggested.
+// When that value is all that differs between the responses (the backend repeats it), one rule that repeats it
+// (`{{path.name}}`) replaces one rule per value. When no field tells the groups apart, nothing is suggested: no rule
+// beats a fragile one.
+use crate::models::{
+    BodyFragment, Condition, ConditionSource, HeaderEntry, MockResponse, Operator,
+};
+use crate::server::observation::{ObservationKey, ObservedExchange};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+
+mod routes;
 
 const DEFAULT_MIN_SAMPLES: usize = 3;
+/// Literal paths listed with a suggestion, as examples of what its pattern covers.
+const MAX_LISTED_PATHS: usize = 10;
 
-/// Observations needed for one endpoint (service, method, sub-path) before anything is suggested: one response, or
-/// two identical ones, prove nothing about how stable the endpoint is.
+/// Observations needed for one route (service, method, route pattern) before anything is suggested: one response, or
+/// two identical ones, prove nothing about how stable the route is.
 pub fn min_samples() -> usize {
     std::env::var("TRAFFIC_OBSERVATION_MIN_SAMPLES")
         .ok()
@@ -37,13 +48,15 @@ const NOISY_HEADERS: &[&str] = &[
     "user-agent",
 ];
 
-/// A suggested rule: the unconditional one (no variance observed), or one of the conditional rules covering each
-/// distinct response (`condition` is then `Some`).
+/// A suggested rule: the unconditional one (no variance observed, or a response that repeats a request value), or one
+/// of the conditional rules covering each distinct response (`condition` is then `Some`).
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SuggestedRule {
     pub method: String,
     pub sub_path: String,
     pub condition: Option<Condition>,
+    /// The request field whose value the response repeats, through a template fragment of `response.body`.
+    pub echo: Option<ConditionSource>,
     pub sample_count: usize,
     pub response: MockResponse,
 }
@@ -53,13 +66,102 @@ pub struct SuggestedRule {
 pub enum Suggestion {
     /// No variance in the sample: one rule, without condition.
     Unconditional { rule: Box<SuggestedRule> },
+    /// Responses that differ only by a request value they repeat: one rule, without condition, whose response repeats
+    /// that value.
+    Echo { rule: Box<SuggestedRule> },
     /// Variance explained by a request field: one rule per value seen, each with an `Eq` condition.
     Conditional { rules: Vec<SuggestedRule> },
     /// Variance that no field explains reliably in the sample: nothing to suggest, only a diagnosis.
-    VarianceUnexplained {
-        sample_count: usize,
-        response_class_count: usize,
-    },
+    VarianceUnexplained { response_class_count: usize },
+}
+
+/// The suggestion for one route of a service.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct EndpointSuggestion {
+    pub method: String,
+    /// The route pattern, in the syntax of a rule's sub-path (`/orders/{id}`).
+    pub sub_path: String,
+    /// Literal paths observed under the pattern, sorted, at most `MAX_LISTED_PATHS` of them.
+    pub paths: Vec<String>,
+    pub path_count: usize,
+    pub sample_count: usize,
+    #[serde(flatten)]
+    pub outcome: Suggestion,
+}
+
+/// One observed exchange of a route, with the path parameters it carries: those the route's pattern takes from its
+/// literal path, and those the service's listen path captured.
+struct Sample<'a> {
+    exchange: &'a ObservedExchange,
+    path_params: BTreeMap<String, String>,
+}
+
+/// The suggestions for one service, from the exchanges observed on each of its endpoints (method, literal path):
+/// grouped by method and route pattern, most specific pattern first; a route observed fewer than `min_samples()`
+/// times is left out.
+pub fn suggest_for_service(
+    endpoints: &[(ObservationKey, Vec<ObservedExchange>)],
+) -> Vec<EndpointSuggestion> {
+    let mut by_method: BTreeMap<&str, Vec<routes::ObservedPath>> = BTreeMap::new();
+    for (key, exchanges) in endpoints {
+        by_method
+            .entry(key.method.as_str())
+            .or_default()
+            .push(routes::ObservedPath {
+                path: &key.sub_path,
+                exchanges,
+            });
+    }
+
+    let mut suggestions = Vec::new();
+    for (method, paths) in by_method {
+        let reserved: BTreeSet<String> = paths
+            .iter()
+            .flat_map(|p| p.exchanges.iter())
+            .flat_map(|e| e.request_path_params.keys().cloned())
+            .collect();
+        for route in routes::infer(&paths, &reserved) {
+            let mut samples = Vec::new();
+            let mut literal_paths = Vec::new();
+            for &member in &route.members {
+                let path = &paths[member];
+                literal_paths.push(path.path);
+                let params = route.params_of(path.path);
+                for exchange in path.exchanges {
+                    let mut path_params: BTreeMap<String, String> = exchange
+                        .request_path_params
+                        .iter()
+                        .map(|(k, v)| (k.clone(), v.clone()))
+                        .collect();
+                    path_params.extend(params.iter().cloned());
+                    samples.push(Sample {
+                        exchange,
+                        path_params,
+                    });
+                }
+            }
+            // Oldest first, so that the last sample of a group is the latest response seen.
+            samples.sort_by_key(|s| s.exchange.timestamp);
+            let pattern = route.pattern();
+            let Some(outcome) = suggest_route(method, &pattern, &samples) else {
+                continue;
+            };
+            literal_paths.sort_unstable();
+            suggestions.push(EndpointSuggestion {
+                method: method.to_string(),
+                path_count: literal_paths.len(),
+                paths: literal_paths
+                    .iter()
+                    .take(MAX_LISTED_PATHS)
+                    .map(|p| p.to_string())
+                    .collect(),
+                sub_path: pattern,
+                sample_count: samples.len(),
+                outcome,
+            });
+        }
+    }
+    suggestions
 }
 
 /// What makes two responses equal: status and body, byte for byte. Bodies are already truncated to
@@ -69,62 +171,74 @@ fn response_signature(exchange: &ObservedExchange) -> (u16, &str) {
     (exchange.response_status, exchange.response_body.as_str())
 }
 
-/// The suggestion for one endpoint (service, method, sub-path) from its observations. `None` while the sample is
-/// smaller than `min_samples()`: no decision yet, either way.
-pub fn suggest(
-    method: &str,
-    sub_path: &str,
-    observations: &[ObservedExchange],
-) -> Option<Suggestion> {
-    if observations.len() < min_samples() {
+/// The suggestion for one route from its samples (oldest first). `None` while the sample is smaller than
+/// `min_samples()`: no decision yet, either way.
+fn suggest_route(method: &str, sub_path: &str, samples: &[Sample]) -> Option<Suggestion> {
+    if samples.len() < min_samples() {
         return None;
     }
 
-    let mut classes: Vec<Vec<&ObservedExchange>> = Vec::new();
-    for obs in observations {
-        let sig = response_signature(obs);
-        match classes.iter_mut().find(|c| response_signature(c[0]) == sig) {
-            Some(class) => class.push(obs),
-            None => classes.push(vec![obs]),
+    // Groups of equivalent responses, as indices into `samples`, in order of first appearance.
+    let mut classes: Vec<Vec<usize>> = Vec::new();
+    for (i, sample) in samples.iter().enumerate() {
+        let signature = response_signature(sample.exchange);
+        match classes
+            .iter_mut()
+            .find(|class| response_signature(samples[class[0]].exchange) == signature)
+        {
+            Some(class) => class.push(i),
+            None => classes.push(vec![i]),
         }
     }
+    let latest = |class: &[usize]| samples[class[class.len() - 1]].exchange;
+    let rule = |condition, echo, sample_count, response| SuggestedRule {
+        method: method.to_string(),
+        sub_path: sub_path.to_string(),
+        condition,
+        echo,
+        sample_count,
+        response,
+    };
 
     if classes.len() == 1 {
-        let representative = classes[0].last().expect("a class is never empty");
+        let response = build_response(latest(&classes[0]));
         return Some(Suggestion::Unconditional {
-            rule: Box::new(SuggestedRule {
-                method: method.to_string(),
-                sub_path: sub_path.to_string(),
-                condition: None,
-                sample_count: observations.len(),
-                response: build_response(representative),
-            }),
+            rule: Box::new(rule(None, None, samples.len(), response)),
         });
     }
 
-    if let Some((source, values_per_class)) = find_discriminator(observations, &classes) {
+    if let Some((candidate, values)) = find_discriminator(samples, &classes) {
+        let representatives: Vec<&ObservedExchange> = classes.iter().map(|c| latest(c)).collect();
+        if let Some(response) = echo_response(&candidate, &representatives, &values) {
+            return Some(Suggestion::Echo {
+                rule: Box::new(rule(
+                    None,
+                    Some(candidate.source()),
+                    samples.len(),
+                    response,
+                )),
+            });
+        }
         let rules = classes
             .iter()
-            .zip(values_per_class)
+            .zip(values)
             .map(|(class, value)| {
-                let representative = class.last().expect("a class is never empty");
-                SuggestedRule {
-                    method: method.to_string(),
-                    sub_path: sub_path.to_string(),
-                    condition: Some(Condition {
-                        source: source.clone_with(value.clone()),
-                        operator: Operator::Eq(value),
-                    }),
-                    sample_count: class.len(),
-                    response: build_response(representative),
-                }
+                let condition = Condition {
+                    source: candidate.source(),
+                    operator: Operator::Eq(value),
+                };
+                rule(
+                    Some(condition),
+                    None,
+                    class.len(),
+                    build_response(latest(class)),
+                )
             })
             .collect();
         return Some(Suggestion::Conditional { rules });
     }
 
     Some(Suggestion::VarianceUnexplained {
-        sample_count: observations.len(),
         response_class_count: classes.len(),
     })
 }
@@ -134,8 +248,8 @@ pub fn suggest(
 /// soon as the body is edited), and `date` would freeze a timestamp that means nothing in a static configuration.
 const NEVER_SUGGESTED_RESPONSE_HEADERS: &[&str] = &["content-length", "date"];
 
-fn build_response(exchange: &ObservedExchange) -> MockResponse {
-    let headers = exchange
+fn suggested_headers(exchange: &ObservedExchange) -> Vec<HeaderEntry> {
+    exchange
         .response_headers
         .iter()
         .filter(|(name, _)| {
@@ -146,44 +260,119 @@ fn build_response(exchange: &ObservedExchange) -> MockResponse {
             name: name.clone(),
             value: value.clone(),
         })
-        .collect();
+        .collect()
+}
+
+/// The captured body becomes a `Literal` fragment, which rendering copies as it is: whatever a backend sent, it never
+/// becomes a template.
+fn build_response(exchange: &ObservedExchange) -> MockResponse {
     MockResponse {
         status: exchange.response_status,
-        headers,
-        body: vec![crate::models::BodyFragment::Literal {
+        headers: suggested_headers(exchange),
+        body: vec![BodyFragment::Literal {
             value: exchange.response_body.clone(),
         }],
         chaos: None,
     }
 }
 
+/// The response of an echo rule, when the groups' responses (their latest one each) differ only by the value that
+/// tells them apart: same status, each body holding its group's value, and the same text around every occurrence. The
+/// text around stays in `Literal` fragments; only the expression that reads the value (`{{path.name}}`, written here,
+/// never taken from the traffic) is a template. Headers are not templates when rendered, so a response that repeats
+/// the value in a header cannot be generalized.
+fn echo_response(
+    candidate: &Candidate,
+    representatives: &[&ObservedExchange],
+    values: &[String],
+) -> Option<MockResponse> {
+    let expression = candidate.template_expression()?;
+    let latest = representatives.iter().max_by_key(|e| e.timestamp)?;
+    let headers = suggested_headers(latest);
+    let mut pieces: Option<Vec<&str>> = None;
+    for (exchange, value) in representatives.iter().zip(values) {
+        if value.is_empty()
+            || exchange.response_status != latest.response_status
+            || !exchange.response_body.contains(value.as_str())
+            || headers.iter().any(|h| h.value.contains(value.as_str()))
+            || suggested_headers(exchange)
+                .iter()
+                .any(|h| h.value.contains(value.as_str()))
+        {
+            return None;
+        }
+        let split: Vec<&str> = exchange.response_body.split(value.as_str()).collect();
+        match &pieces {
+            None => pieces = Some(split),
+            Some(previous) if *previous != split => return None,
+            Some(_) => {}
+        }
+    }
+    let mut body = Vec::new();
+    for (i, piece) in pieces?.into_iter().enumerate() {
+        if i > 0 {
+            body.push(BodyFragment::Template {
+                template: expression.clone(),
+            });
+        }
+        if !piece.is_empty() {
+            body.push(BodyFragment::Literal {
+                value: piece.to_string(),
+            });
+        }
+    }
+    Some(MockResponse {
+        status: latest.response_status,
+        headers,
+        body,
+        chaos: None,
+    })
+}
+
 /// A candidate condition source, without its value (known once the field is chosen).
 #[derive(Clone)]
-enum SourceTemplate {
+enum Candidate {
+    PathParam(String),
     QueryParam(String),
     JsonPointer(String),
     Header(String),
 }
 
-impl SourceTemplate {
-    fn clone_with(&self, _value: String) -> ConditionSource {
+impl Candidate {
+    fn source(&self) -> ConditionSource {
         match self {
-            SourceTemplate::QueryParam(k) => ConditionSource::QueryParam(k.clone()),
-            SourceTemplate::JsonPointer(k) => ConditionSource::JsonPointer(format!("/{k}")),
-            SourceTemplate::Header(k) => ConditionSource::Header(k.clone()),
+            Candidate::PathParam(k) => ConditionSource::PathParam(k.clone()),
+            Candidate::QueryParam(k) => ConditionSource::QueryParam(k.clone()),
+            Candidate::JsonPointer(k) => ConditionSource::JsonPointer(format!("/{k}")),
+            Candidate::Header(k) => ConditionSource::Header(k.clone()),
         }
     }
 
-    fn extract(
-        &self,
-        obs: &ObservedExchange,
-        json_fields: &HashMap<String, String>,
-    ) -> Option<String> {
+    fn extract(&self, sample: &Sample, json_fields: &HashMap<String, String>) -> Option<String> {
+        let exchange = sample.exchange;
         match self {
-            SourceTemplate::QueryParam(k) => obs.request_query_params.get(k).cloned(),
-            SourceTemplate::JsonPointer(k) => json_fields.get(k).cloned(),
-            SourceTemplate::Header(k) => obs.request_headers.get(k).cloned(),
+            Candidate::PathParam(k) => sample.path_params.get(k).cloned(),
+            Candidate::QueryParam(k) => exchange.request_query_params.get(k).cloned(),
+            Candidate::JsonPointer(k) => json_fields.get(k).cloned(),
+            Candidate::Header(k) => exchange.request_headers.get(k).cloned(),
         }
+    }
+
+    /// The template expression that reads this source's value in a response. Only for a name made of letters, digits,
+    /// `_`, `-` and `.`: a query parameter's name comes from the observed traffic, and an expression ends at the first
+    /// `}}`, so any other name could write more template than the one variable meant.
+    fn template_expression(&self) -> Option<String> {
+        let (variable, key) = match self {
+            Candidate::PathParam(k) => ("path", k),
+            Candidate::QueryParam(k) => ("query", k),
+            Candidate::Header(k) => ("header", k),
+            Candidate::JsonPointer(_) => return None,
+        };
+        let plain = !key.is_empty()
+            && key
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-' | b'.'));
+        plain.then(|| format!("{{{{{variable}.{key}}}}}"))
     }
 }
 
@@ -203,71 +392,61 @@ fn json_top_level_fields(body: &str) -> HashMap<String, String> {
         .collect()
 }
 
-/// Looks, in order of preference (query parameter, top-level JSON field, header), for a field whose value splits
-/// the observations exactly like the response groups: same value, same group; different groups, different values.
-/// Returns the chosen source and the value that stands for each group (in the order of `classes`).
+/// Looks, in order of preference (path parameter, query parameter, top-level JSON field, header), for a field whose
+/// value splits the samples exactly like the response groups: same value, same group; different groups, different
+/// values. Returns the chosen field and the value that stands for each group (in the order of `classes`).
 fn find_discriminator(
-    observations: &[ObservedExchange],
-    classes: &[Vec<&ObservedExchange>],
-) -> Option<(SourceTemplate, Vec<String>)> {
-    let json_fields: Vec<HashMap<String, String>> = observations
+    samples: &[Sample],
+    classes: &[Vec<usize>],
+) -> Option<(Candidate, Vec<String>)> {
+    let json_fields: Vec<HashMap<String, String>> = samples
         .iter()
-        .map(|o| json_top_level_fields(&o.request_body))
+        .map(|s| json_top_level_fields(&s.exchange.request_body))
         .collect();
-    let json_fields_by_ptr = |obs_idx: usize| json_fields[obs_idx].clone();
-    let _ = json_fields_by_ptr; // helper inutilise directement, cf boucle ci-dessous
 
+    let mut path_keys = BTreeSet::new();
     let mut query_keys = BTreeSet::new();
     let mut json_keys = BTreeSet::new();
     let mut header_keys = BTreeSet::new();
-    for (i, obs) in observations.iter().enumerate() {
-        query_keys.extend(obs.request_query_params.keys().cloned());
-        json_keys.extend(json_fields[i].keys().cloned());
+    for (sample, fields) in samples.iter().zip(&json_fields) {
+        path_keys.extend(sample.path_params.keys().cloned());
+        query_keys.extend(sample.exchange.request_query_params.keys().cloned());
+        json_keys.extend(fields.keys().cloned());
         header_keys.extend(
-            obs.request_headers
+            sample
+                .exchange
+                .request_headers
                 .keys()
                 .filter(|k| !NOISY_HEADERS.contains(&k.to_lowercase().as_str()))
                 .cloned(),
         );
     }
 
-    let candidates: Vec<SourceTemplate> = query_keys
+    path_keys
         .into_iter()
-        .map(SourceTemplate::QueryParam)
-        .chain(json_keys.into_iter().map(SourceTemplate::JsonPointer))
-        .chain(header_keys.into_iter().map(SourceTemplate::Header))
-        .collect();
-
-    for candidate in candidates {
-        if let Some(values) = discriminator_values(&candidate, classes, &json_fields, observations)
-        {
-            return Some((candidate, values));
-        }
-    }
-    None
+        .map(Candidate::PathParam)
+        .chain(query_keys.into_iter().map(Candidate::QueryParam))
+        .chain(json_keys.into_iter().map(Candidate::JsonPointer))
+        .chain(header_keys.into_iter().map(Candidate::Header))
+        .find_map(|candidate| {
+            discriminator_values(&candidate, samples, classes, &json_fields)
+                .map(|values| (candidate, values))
+        })
 }
 
-/// Checks one candidate: every observation of a group carries the same value for this field (a missing value
-/// disqualifies it), and no other group shares that value. Returns the value of each group when it holds.
+/// Checks one candidate: every sample of a group carries the same value for this field (a missing value disqualifies
+/// it), and no other group shares that value. Returns the value of each group when it holds.
 fn discriminator_values(
-    candidate: &SourceTemplate,
-    classes: &[Vec<&ObservedExchange>],
+    candidate: &Candidate,
+    samples: &[Sample],
+    classes: &[Vec<usize>],
     json_fields: &[HashMap<String, String>],
-    all_observations: &[ObservedExchange],
 ) -> Option<Vec<String>> {
-    let index_of = |obs: &ObservedExchange| -> usize {
-        all_observations
-            .iter()
-            .position(|o| std::ptr::eq(o, obs))
-            .expect("observation appartient au meme slice")
-    };
-
     let mut values = Vec::with_capacity(classes.len());
     for class in classes {
         let mut class_value: Option<String> = None;
-        for obs in class {
-            let idx = index_of(obs);
-            let v = candidate.extract(obs, &json_fields[idx])?;
+        for &i in class {
+            let v = candidate.extract(&samples[i], &json_fields[i])?;
             match &class_value {
                 None => class_value = Some(v),
                 Some(existing) if *existing != v => return None,
@@ -278,368 +457,14 @@ fn discriminator_values(
     }
 
     let distinct: BTreeSet<&String> = values.iter().collect();
-    if distinct.len() != values.len() {
-        return None;
-    }
-    Some(values)
+    (distinct.len() == values.len()).then_some(values)
 }
+
+#[cfg(any(test, fuzzing))]
+pub(crate) mod replay;
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::collections::HashMap;
+mod tests;
 
-    fn exchange(status: u16, body: &str) -> ObservedExchange {
-        ObservedExchange::new(
-            HashMap::new(),
-            HashMap::new(),
-            b"",
-            Some("application/json".into()),
-            status,
-            HashMap::new(),
-            body.as_bytes(),
-            Some("application/json".into()),
-        )
-    }
-
-    fn exchange_with_query(status: u16, body: &str, query: &[(&str, &str)]) -> ObservedExchange {
-        let mut e = exchange(status, body);
-        e.request_query_params = query
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.to_string()))
-            .collect();
-        e
-    }
-
-    fn exchange_with_header(status: u16, body: &str, header: (&str, &str)) -> ObservedExchange {
-        let mut e = exchange(status, body);
-        e.request_headers
-            .insert(header.0.to_string(), header.1.to_string());
-        e
-    }
-
-    fn exchange_with_json_body_field(
-        status: u16,
-        resp_body: &str,
-        req_field: (&str, &str),
-    ) -> ObservedExchange {
-        let mut e = exchange(status, resp_body);
-        e.request_body = format!(r#"{{"{}":"{}"}}"#, req_field.0, req_field.1);
-        e
-    }
-
-    #[test]
-    fn below_min_samples_returns_none() {
-        let obs = vec![exchange(200, "a"), exchange(200, "a")];
-        assert!(suggest("GET", "/orders", &obs).is_none());
-    }
-
-    #[test]
-    fn identical_responses_suggest_unconditional_rule() {
-        let obs = vec![
-            exchange(200, "ok"),
-            exchange(200, "ok"),
-            exchange(200, "ok"),
-        ];
-        let suggestion = suggest("GET", "/orders", &obs).unwrap();
-        match suggestion {
-            Suggestion::Unconditional { rule } => {
-                assert!(rule.condition.is_none());
-                assert_eq!(rule.sample_count, 3);
-                assert_eq!(rule.response.status, 200);
-            }
-            other => panic!("expected Unconditional, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn suggested_response_never_includes_credential_headers() {
-        // A rule saved from a suggestion is served to anyone: a Set-Cookie of the real backend would hand out
-        // a real session.
-        let mut e = exchange(200, "ok");
-        e.response_headers
-            .insert("Set-Cookie".into(), "session=abc".into());
-        e.response_headers.insert("x-env".into(), "prod".into());
-        let obs = vec![e.clone(), e.clone(), e];
-        let Suggestion::Unconditional { rule } = suggest("GET", "/orders", &obs).unwrap() else {
-            panic!("expected an unconditional suggestion");
-        };
-        let names: Vec<&str> = rule
-            .response
-            .headers
-            .iter()
-            .map(|h| h.name.as_str())
-            .collect();
-        assert_eq!(names, vec!["x-env"]);
-    }
-
-    #[test]
-    fn suggested_response_never_includes_content_length_or_date() {
-        // Captured from a real backend, content-length and date are in the response, but have no place in a saved rule
-        // (content-length is computed when rendering, date would freeze a timestamp). An ordinary header such as x-env
-        // stays.
-        let mut e = exchange(200, "ok");
-        e.response_headers
-            .insert("content-length".into(), "2".into());
-        e.response_headers
-            .insert("Date".into(), "Tue, 25 Aug 2026 00:00:00 GMT".into());
-        e.response_headers.insert("x-env".into(), "prod".into());
-        let obs = vec![e.clone(), e.clone(), e];
-
-        let suggestion = suggest("GET", "/orders", &obs).unwrap();
-        match suggestion {
-            Suggestion::Unconditional { rule } => {
-                let names: Vec<&str> = rule
-                    .response
-                    .headers
-                    .iter()
-                    .map(|h| h.name.as_str())
-                    .collect();
-                assert!(
-                    !names
-                        .iter()
-                        .any(|n| n.eq_ignore_ascii_case("content-length"))
-                );
-                assert!(!names.iter().any(|n| n.eq_ignore_ascii_case("date")));
-                assert!(names.contains(&"x-env"));
-            }
-            other => panic!("expected Unconditional, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn variance_explained_by_query_param_suggests_conditional_rules() {
-        let obs = vec![
-            exchange_with_query(200, r#"{"stock":true}"#, &[("id", "1")]),
-            exchange_with_query(200, r#"{"stock":true}"#, &[("id", "1")]),
-            exchange_with_query(404, "not found", &[("id", "2")]),
-            exchange_with_query(404, "not found", &[("id", "2")]),
-        ];
-        let suggestion = suggest("GET", "/orders", &obs).unwrap();
-        match suggestion {
-            Suggestion::Conditional { rules } => {
-                assert_eq!(rules.len(), 2);
-                let statuses: Vec<u16> = rules.iter().map(|r| r.response.status).collect();
-                assert!(statuses.contains(&200));
-                assert!(statuses.contains(&404));
-                for rule in &rules {
-                    let cond = rule.condition.as_ref().unwrap();
-                    assert_eq!(cond.source, ConditionSource::QueryParam("id".into()));
-                }
-            }
-            other => panic!("expected Conditional, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn variance_explained_by_json_body_field() {
-        let obs = vec![
-            exchange_with_json_body_field(200, "actif", ("mode", "on")),
-            exchange_with_json_body_field(200, "actif", ("mode", "on")),
-            exchange_with_json_body_field(200, "inactif", ("mode", "off")),
-            exchange_with_json_body_field(200, "inactif", ("mode", "off")),
-        ];
-        let suggestion = suggest("POST", "/toggle", &obs).unwrap();
-        match suggestion {
-            Suggestion::Conditional { rules } => {
-                assert_eq!(rules.len(), 2);
-                for rule in &rules {
-                    let cond = rule.condition.as_ref().unwrap();
-                    assert_eq!(cond.source, ConditionSource::JsonPointer("/mode".into()));
-                }
-            }
-            other => panic!("expected Conditional, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn variance_explained_by_header() {
-        let obs = vec![
-            exchange_with_header(200, "prod-response", ("x-env", "prod")),
-            exchange_with_header(200, "prod-response", ("x-env", "prod")),
-            exchange_with_header(500, "staging-error", ("x-env", "staging")),
-            exchange_with_header(500, "staging-error", ("x-env", "staging")),
-        ];
-        let suggestion = suggest("GET", "/status", &obs).unwrap();
-        match suggestion {
-            Suggestion::Conditional { rules } => {
-                assert_eq!(rules.len(), 2);
-                for rule in &rules {
-                    let cond = rule.condition.as_ref().unwrap();
-                    assert_eq!(cond.source, ConditionSource::Header("x-env".into()));
-                }
-            }
-            other => panic!("expected Conditional, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn noisy_headers_are_never_used_as_discriminator() {
-        // x-request-id changes on every call and predicts nothing: never chosen, even though it splits the sample
-        // "perfectly".
-        let obs = vec![
-            exchange_with_header(200, "ok", ("x-request-id", "r1")),
-            exchange_with_header(200, "ok", ("x-request-id", "r2")),
-            exchange_with_header(500, "err", ("x-request-id", "r3")),
-        ];
-        let suggestion = suggest("GET", "/status", &obs).unwrap();
-        assert!(matches!(suggestion, Suggestion::VarianceUnexplained { .. }));
-    }
-
-    #[test]
-    fn unexplainable_variance_suggests_nothing_actionable() {
-        // The same request (no field varies) with different responses: nothing explains the variance, so never freeze an
-        // unconditional rule on the first response seen.
-        let obs = vec![
-            exchange(200, "reponse-1"),
-            exchange(200, "reponse-2"),
-            exchange(200, "reponse-3"),
-        ];
-        let suggestion = suggest("GET", "/flaky", &obs).unwrap();
-        match suggestion {
-            Suggestion::VarianceUnexplained {
-                sample_count,
-                response_class_count,
-            } => {
-                assert_eq!(sample_count, 3);
-                assert_eq!(response_class_count, 3);
-            }
-            other => panic!("expected VarianceUnexplained, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn partial_correlation_is_not_treated_as_discriminator() {
-        // "id" sometimes has the same value in two groups: it does not split them perfectly and must be rejected.
-        let obs = vec![
-            exchange_with_query(200, "a", &[("id", "1")]),
-            exchange_with_query(404, "b", &[("id", "1")]),
-            exchange_with_query(200, "a", &[("id", "2")]),
-        ];
-        let suggestion = suggest("GET", "/x", &obs).unwrap();
-        assert!(matches!(suggestion, Suggestion::VarianceUnexplained { .. }));
-    }
-}
-
-// Property-based tests: the input is untrusted (bodies of a real proxied backend, possibly hostile). They generate
-// random and adversarial observations (statuses, JSON or not, noisy headers) and check invariants no hand-written
-// case covers all at once: never a panic, never a computed header (content-length, date) nor a noise header in a
-// suggested rule.
 #[cfg(test)]
-mod proptests {
-    use super::*;
-    use proptest::prelude::*;
-    use std::collections::HashMap;
-
-    fn arb_body() -> impl Strategy<Value = String> {
-        prop_oneof![
-            "[\\PC]{0,40}",
-            "\\{\"[a-z]{1,5}\":\"[a-zA-Z0-9]{0,10}\"\\}",
-            Just(String::new()),
-            Just("not json at all {{{".to_string()),
-        ]
-    }
-
-    fn arb_small_map() -> impl Strategy<Value = HashMap<String, String>> {
-        prop::collection::hash_map(
-            prop_oneof![
-                Just("id".to_string()),
-                Just("x-env".to_string()),
-                Just("x-request-id".to_string()),
-                Just("authorization".to_string()),
-                "[a-z-]{1,8}",
-            ],
-            "[a-zA-Z0-9 ]{0,10}",
-            0..3,
-        )
-    }
-
-    fn arb_exchange() -> impl Strategy<Value = ObservedExchange> {
-        (
-            arb_small_map(),
-            arb_small_map(),
-            arb_body(),
-            100u16..600,
-            arb_small_map(),
-            arb_body(),
-        )
-            .prop_map(
-                |(query, headers, req_body, status, resp_headers, resp_body)| {
-                    ObservedExchange::new(
-                        query,
-                        headers,
-                        req_body.as_bytes(),
-                        Some("application/json".into()),
-                        status,
-                        resp_headers,
-                        resp_body.as_bytes(),
-                        Some("application/json".into()),
-                    )
-                },
-            )
-    }
-
-    fn suggestion_rules(s: &Suggestion) -> Vec<&SuggestedRule> {
-        match s {
-            Suggestion::Unconditional { rule } => vec![rule.as_ref()],
-            Suggestion::Conditional { rules } => rules.iter().collect(),
-            Suggestion::VarianceUnexplained { .. } => vec![],
-        }
-    }
-
-    proptest! {
-        #[test]
-        fn suggest_never_panics(obs in prop::collection::vec(arb_exchange(), 0..15)) {
-            let _ = suggest("GET", "/fuzz", &obs);
-        }
-
-        #[test]
-        fn identical_responses_always_suggest_unconditional(
-            status in 100u16..600,
-            body in arb_body(),
-            n in 3usize..10,
-        ) {
-            let obs: Vec<ObservedExchange> = (0..n)
-                .map(|_| {
-                    ObservedExchange::new(
-                        HashMap::new(), HashMap::new(), body.as_bytes(), None,
-                        status, HashMap::new(), body.as_bytes(), None,
-                    )
-                })
-                .collect();
-            let suggestion = suggest("GET", "/fuzz", &obs);
-            let is_unconditional = matches!(suggestion, Some(Suggestion::Unconditional { .. }));
-            prop_assert!(is_unconditional);
-        }
-
-        #[test]
-        fn suggested_headers_never_contain_content_length_or_date(
-            obs in prop::collection::vec(arb_exchange(), 3..15)
-        ) {
-            if let Some(suggestion) = suggest("GET", "/fuzz", &obs) {
-                for rule in suggestion_rules(&suggestion) {
-                    for h in &rule.response.headers {
-                        let lower = h.name.to_lowercase();
-                        prop_assert_ne!(lower.as_str(), "content-length");
-                        prop_assert_ne!(lower.as_str(), "date");
-                    }
-                }
-            }
-        }
-
-        #[test]
-        fn suggested_condition_never_uses_a_noisy_header(
-            obs in prop::collection::vec(arb_exchange(), 3..15)
-        ) {
-            if let Some(suggestion) = suggest("GET", "/fuzz", &obs) {
-                for rule in suggestion_rules(&suggestion) {
-                    if let Some(cond) = &rule.condition
-                        && let ConditionSource::Header(k) = &cond.source
-                    {
-                        prop_assert!(!NOISY_HEADERS.contains(&k.to_lowercase().as_str()));
-                    }
-                }
-            }
-        }
-    }
-}
+mod proptests;

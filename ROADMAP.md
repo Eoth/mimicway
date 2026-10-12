@@ -463,16 +463,6 @@ Size M
 
 **Done when.** A request-response protocol with a correlation identifier can be mocked.
 
-### E5. Observation keys by route pattern
-
-Size S
-
-**Why.** Observation groups exchanges by literal path, so `/orders/1` and `/orders/2` never pool their samples.
-
-**What.** Group by the service's route pattern and suggest path-parameter conditions; add a fuzz target for the suggestion code next to its property tests.
-
-**Done when.** Calls to `/orders/{id}` with different ids produce one suggestion with conditions on `id`.
-
 ### E6. Shared test application builder
 
 Size S

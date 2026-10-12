@@ -112,6 +112,49 @@ pub fn template(data: &[u8]) {
     let _ = render_template(&text(template), &ctx);
 }
 
+/// Exchanges as traffic observation keeps them (a path, a query string, a status, a response body and its kind),
+/// through the rule suggestions: paths and bodies are whatever a proxied application and its backend sent. The calls
+/// are cut at the 0xFE bytes, ten at most, so that every route lists all its paths. Checked: each suggested pattern
+/// matches the paths it lists, and the suggested rules, replayed on the calls they come from, answer exactly what the
+/// backend answered.
+pub fn suggestions(data: &[u8]) {
+    use crate::server::observation::{ObservationKey, ObservedExchange};
+    let mut endpoints: Vec<(ObservationKey, Vec<ObservedExchange>)> = Vec::new();
+    for call in data.split(|&b| b == 0xFE).take(10) {
+        let [selector, path, query, body] = fields(call);
+        let selector = selector.first().copied().unwrap_or(0);
+        let status = [200, 201, 404, 500][usize::from(selector % 4)];
+        let content_type =
+            ["application/json", "text/xml", "text/plain"][usize::from(selector / 4 % 3)];
+        let exchange = ObservedExchange::new(
+            query_params(query),
+            HashMap::new(),
+            b"",
+            None,
+            status,
+            HashMap::new(),
+            body,
+            Some(content_type.into()),
+        );
+        let path = text(path);
+        match endpoints.iter_mut().find(|(key, _)| key.sub_path == path) {
+            Some((_, exchanges)) => exchanges.push(exchange),
+            None => endpoints.push((
+                ObservationKey {
+                    group_name: None,
+                    service_name: "fuzz".into(),
+                    method: "GET".into(),
+                    sub_path: path,
+                },
+                vec![exchange],
+            )),
+        }
+    }
+    if let Err(failure) = crate::server::suggestion::replay::check(&endpoints) {
+        panic!("{failure}");
+    }
+}
+
 /// The hexadecimal text that raw TCP mocks keep in YAML: any bytes encode and decode back to themselves, and any text
 /// that decodes re-encodes to the same bytes.
 #[cfg(feature = "tcp-mock")]

@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Added
+- Traffic suggestions group the paths of a service into routes: calls that differ by an identifier (`/orders/1`, `/orders/2`), or by words answered with documents of the same structure (the services a directory knows), pool their samples under a pattern such as `/orders/{id}`, and the pattern's parameters are the first fields tried to explain the responses. Three calls to a route are enough, where each path needed three of its own. When the responses differ only by the value that tells them apart, because the backend repeats it, one rule repeats it (`{{path.name}}`) instead of one rule per value, and also answers the values never observed. Each suggestion names its pattern and the paths it groups; a literal path is suggested before a pattern that would also match it.
+- A fuzz target for the suggestions (`fuzz/fuzz_targets/suggestions.rs`): like the property tests, it replays the suggested rules on the calls they come from and fails unless each gets back exactly what the backend answered.
+
 ### Fixed
 - A rule whose sub-path names a parameter (`/orders/{id}`) and that has a condition on that parameter now matches the requests it was written for: path parameter conditions were judged on the parameters of the service's listen path only, so such a rule passed in the rule tester and never matched a real request.
 - Stopping the observation of a service, deleting, renaming or moving it, or resetting the configuration now forgets the calls observed for it: they used to stay, so observing again mixed old and new traffic, and a service created again under the same name was suggested rules from the traffic of the deleted one, maybe in front of another backend.

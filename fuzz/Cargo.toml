@@ -59,3 +59,10 @@ path = "fuzz_targets/config_import.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "suggestions"
+path = "fuzz_targets/suggestions.rs"
+test = false
+doc = false
+bench = false
