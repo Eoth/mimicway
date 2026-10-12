@@ -233,7 +233,7 @@ Size M
 
 Size S
 
-**Why.** `serde_yaml` is no longer maintained, and `smartstring` (pulled in by the script engine) is flagged unmaintained, which `deny.toml` currently tolerates.
+**Why.** `serde_yaml` is no longer maintained, nor is `unsafe-libyaml`, which it brings, and `smartstring` (pulled in by the script engine) is flagged unmaintained: `deny.toml` and `osv-scanner.toml` currently tolerate both notices.
 
 **What.** Move to a maintained YAML implementation, keeping the file format byte-compatible; follow Rhai's releases and drop the `smartstring` exception as soon as a release no longer depends on it.
 

@@ -13,6 +13,9 @@ ignore = [
     # smartstring is unmaintained (no known vulnerability). It is an internal detail of rhai, the script engine,
     # whose latest release still depends on it; to be dropped when rhai moves away from it (see ROADMAP.md).
     { id = "RUSTSEC-2026-0249", reason = "unmaintained, no vulnerability, internal to rhai with no alternative release" },
+    # unsafe-libyaml is unmaintained (no known vulnerability). serde_yaml brings it, and only reads the configuration
+    # file Mimicway writes itself (imports go through JSON); to be dropped with serde_yaml (see ROADMAP.md).
+    { id = "RUSTSEC-2024-0449", reason = "unmaintained, no vulnerability, brought by serde_yaml, which only reads Mimicway's own configuration file" },
 ]
 
 [licenses]

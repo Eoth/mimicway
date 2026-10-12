@@ -5,3 +5,7 @@
 [[IgnoredVulns]]
 id = "RUSTSEC-2026-0249"
 reason = "smartstring is unmaintained, with no known vulnerability; it is internal to rhai, the script engine, whose latest release still depends on it"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0449"
+reason = "unsafe-libyaml is unmaintained, with no known vulnerability; serde_yaml brings it, and only reads the configuration file Mimicway writes itself (imports go through JSON)"
