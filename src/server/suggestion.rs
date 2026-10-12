@@ -343,7 +343,11 @@ impl Candidate {
         match self {
             Candidate::PathParam(k) => ConditionSource::PathParam(k.clone()),
             Candidate::QueryParam(k) => ConditionSource::QueryParam(k.clone()),
-            Candidate::JsonPointer(k) => ConditionSource::JsonPointer(format!("/{k}")),
+            // RFC 6901: `~` and `/` in a name are written `~0` and `~1`, or the pointer names another field.
+            Candidate::JsonPointer(k) => ConditionSource::JsonPointer(format!(
+                "/{}",
+                k.replace('~', "~0").replace('/', "~1")
+            )),
             Candidate::Header(k) => ConditionSource::Header(k.clone()),
         }
     }

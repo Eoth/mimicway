@@ -13,6 +13,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 ### Fixed
 - A rule whose sub-path names a parameter (`/orders/{id}`) and that has a condition on that parameter now matches the requests it was written for: path parameter conditions were judged on the parameters of the service's listen path only, so such a rule passed in the rule tester and never matched a real request.
 - Stopping the observation of a service, deleting, renaming or moving it, or resetting the configuration now forgets the calls observed for it: they used to stay, so observing again mixed old and new traffic, and a service created again under the same name was suggested rules from the traffic of the deleted one, maybe in front of another backend.
+- A rule suggested from observed traffic with a condition on a JSON field whose name holds `/` or `~` now matches: the name went into the JSON pointer unescaped, so the pointer named another field.
 - A rule suggested from observed traffic on a service with a listen path (`/v1/*`) now matches the calls it comes from: its sub-path kept the listen path's part (`/v1/orders` instead of `/orders`), which rules never see.
 
 ## [0.2.0] - 2026-10-07

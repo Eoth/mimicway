@@ -464,3 +464,27 @@ fn suggestions_serialize_with_their_route_and_outcome_side_by_side() {
     assert_eq!(json[0]["rule"]["sub_path"], "/orders/{id}");
     assert_eq!(json[0]["rule"]["echo"], serde_json::Value::Null);
 }
+
+#[test]
+fn a_json_field_name_with_a_slash_or_a_tilde_is_escaped_in_its_pointer() {
+    // A JSON pointer reads `/` as a level and `~` as an escape (RFC 6901): `/a/b~c` named another field, so the
+    // suggested condition never matched the requests it came from.
+    let calls: Vec<ObservedExchange> = ["on", "on", "off", "off"]
+        .iter()
+        .map(|mode| {
+            let mut e = exchange(200, mode);
+            e.request_body = format!(r#"{{"a/b~c":"{mode}"}}"#);
+            e
+        })
+        .collect();
+    let Suggestion::Conditional { rules } = suggest("POST", "/toggle", &calls).unwrap() else {
+        panic!("expected a conditional suggestion");
+    };
+    let pointer = match &rules[0].condition.as_ref().unwrap().source {
+        ConditionSource::JsonPointer(p) => p.clone(),
+        other => panic!("expected a JSON pointer, got {other:?}"),
+    };
+    assert_eq!(pointer, "/a~1b~0c");
+    let body: serde_json::Value = serde_json::from_str(&calls[0].request_body).unwrap();
+    assert_eq!(body.pointer(&pointer), Some(&serde_json::json!("on")));
+}
