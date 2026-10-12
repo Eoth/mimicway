@@ -20,7 +20,7 @@ Each item has an identifier that never changes, a size (S: a day or less, M: a f
 
 1. [Ready for an international launch](#1-ready-for-an-international-launch): R2, R10 (with R16, R17, R18), R11, R12, R13, R14, R9.
 2. [Trust and operations](#2-trust-and-operations): T1 to T11.
-3. [Make it indispensable](#3-make-it-indispensable): U1 to U16, in the listed order.
+3. [Make it indispensable](#3-make-it-indispensable): U1, U2, U17, then U3 to U16, in the listed order.
 4. [Engineering backlog](#4-engineering-backlog): taken alongside, when they unblock an item above.
 
 ## 1. Ready for an international launch
@@ -270,6 +270,18 @@ Size M
 **What.** A "record" switch on a proxied service that turns every distinct exchange into a rule (grouped by the same correlation as suggestions), credentials removed, then switches the service to mock mode on demand.
 
 **Done when.** Recording a session against a real backend, then cutting the network, replays the same responses for the same requests.
+
+### U17. Follow the services a response points to
+
+Size M. **Decision needed** on one point, below.
+
+**Why.** Many backends answer with the addresses of others: a service directory giving the address of each service it knows, links between resources, a redirect, the address in a WSDL. The application then calls those addresses directly, past Mimicway, so they can be neither observed nor mocked, and finding them means reading the responses by hand, service after service: with twenty services behind a directory, that is the main cost left once the directory itself is suggested as one rule (route patterns and echo rules).
+
+**What.** From the observed responses (bodies, and the `Location`, `Content-Location` and `Link` headers), list the absolute addresses by origin, each with a few examples and the routes that returned them, leaving out XML namespace and schema addresses (`xmlns`, `xsi:schemaLocation`) and Mimicway's own address (the request's `Host`). For an origin no service covers, offer to create a proxy service in front of it: the service form filled with a name taken from the host and the origin as target, saved through the usual checks. For an origin a service covers (its target is a prefix of the address, and its listen path accepts the rest), write the rules suggested from those responses with that service's address in Mimicway instead of the real one, built when the rule answers from the request that reached Mimicway (`{{header.x-forwarded-proto | default("http")}}://{{header.host}}`, then the group code and the service name), in a template fragment of its own, the observed text staying literal. An application served by the mocked directory then calls Mimicway, whose proxy services can be observed in turn, and so on down the chain. A property test checks that a rewritten rule, rendered with a request to Mimicway, answers the observed body with exactly the covered addresses replaced.
+
+**Decision needed.** Whether the addresses are rewritten only in suggested rules (recommended: the relayed traffic stays untouched, as the observation guide promises, and the directory is mocked first, which is the first step anyway), or also in the live responses of a proxied service, which would let the chain be observed before anything is mocked but changes what the application receives from a real backend. See E18 for the existing flag.
+
+**Done when.** Observing a directory lists the backends it names; creating the suggested service then refreshing gives a directory rule whose answer, once the directory is mocked, sends the application to Mimicway; an end-to-end test covers it, and the guide describes it in both languages.
 
 ### U3. Verify what the application called
 
@@ -542,3 +554,13 @@ Size S
 **What.** `retention-days: 7` on each upload of `.github/workflows/release.yml`, a week being enough to rerun a failed job of the same run. Made with the next change of that file: a change of it on `develop` starts a rehearsal, 31.5 job-minutes on 06c595c, which costs more than the storage it would save.
 
 **Done when.** The artifacts of a release run expire a week after it.
+
+### E18. The "directory URL rewriting" flag does nothing
+
+Size S. **Decision needed.**
+
+**Why.** Every service carries `rewrite_directory_urls`, set by the service form when the service type is SOAP, shown on the service page ("Directory URL rewriting: Yes") and listed by the README among the features, but no code reads it: nothing is ever rewritten. A user who relies on it gets the real addresses.
+
+**What.** Recommended: stop showing the flag and drop it from the README's feature list now, keep accepting it in imported configurations (ignored, so that no existing file breaks), and let U17 decide whether a rewriting of live traffic is ever wanted; if it is, it gets a setting of its own, named by what it does. The other way, giving the flag that meaning, waits for the U17 decision.
+
+**Done when.** No screen, document or feature list claims a rewriting that does not happen, and configurations that carry the flag still import.
