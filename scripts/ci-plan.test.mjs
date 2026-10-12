@@ -1,12 +1,13 @@
 // Tests of ci-plan.mjs: a change of code runs the jobs that check it, a change of documentation runs the always-on
 // jobs only, an unknown kind of file runs everything, ci.yml waits for and conditions every job the plan knows, and
-// the verdict fails on a planned job that did not pass. Run with: node --test scripts/*.test.mjs
+// the verdict fails on a planned job that did not pass, and the plan of a push fetches the commit it starts from
+// only when the checkout lacks it. Run with: node --test scripts/*.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { JOBS, READ_BY_UI_TESTS, planFor, verdict } from './ci-plan.mjs';
+import { JOBS, READ_BY_UI_TESTS, changedFiles, planFor, verdict } from './ci-plan.mjs';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const jobsOf = (event, files) => planFor(event, files).jobs;
@@ -223,4 +224,44 @@ test('the verdict fails on a planned job that failed, was cancelled or was skipp
   assert.deepEqual(verdict(needs({ ...all, docker: 'cancelled' }), ['checks']), ['docker: cancelled']);
   assert.deepEqual(verdict(needs({ ...all, changes: 'failure' }), []), ['changes: failure']);
   assert.deepEqual(verdict(needs(all), ['checks', 'e2e']), ['e2e: planned, but "CI passed" does not wait for it']);
+});
+
+// A fake git for changedFiles: records every call, answers `diff` with two files and `cat-file -e` as `present` says.
+function fakeGit(present) {
+  const calls = [];
+  const git = (...args) => {
+    calls.push(args);
+    if (args[0] === 'cat-file' && !present) throw new Error('fatal: Not a valid object name');
+    if (args[0] === 'diff') return 'README.md\nsrc/main.rs\n';
+    return '';
+  };
+  return { git, calls };
+}
+
+test('the plan of a push in a full clone diffs against the commit it starts from without fetching it', () => {
+  const { git, calls } = fakeGit(true);
+  assert.deepEqual(changedFiles('push', 'abc123', git), ['README.md', 'src/main.rs']);
+  assert.deepEqual(
+    calls.map((call) => call[0]),
+    ['cat-file', 'diff'],
+  );
+  assert.deepEqual(calls[1], ['diff', '--name-only', 'abc123', 'HEAD']);
+});
+
+test('a checkout that lacks the commit a push starts from fetches that commit alone, then diffs', () => {
+  const { git, calls } = fakeGit(false);
+  assert.deepEqual(changedFiles('push', 'abc123', git), ['README.md', 'src/main.rs']);
+  assert.deepEqual(
+    calls.map((call) => call[0]),
+    ['cat-file', 'fetch', 'diff'],
+  );
+  assert.deepEqual(calls[1], ['fetch', '--no-tags', '--depth=1', 'origin', 'abc123']);
+});
+
+test('a pull request diffs against its first parent, and a push of a new branch has no known changes', () => {
+  const { git, calls } = fakeGit(true);
+  assert.deepEqual(changedFiles('pull_request', undefined, git), ['README.md', 'src/main.rs']);
+  assert.deepEqual(calls, [['diff', '--name-only', 'HEAD^1', 'HEAD']]);
+  assert.equal(changedFiles('push', '0000000000000000000000000000000000000000', git), null);
+  assert.equal(calls.length, 1);
 });

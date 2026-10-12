@@ -13,6 +13,8 @@
 //                                      from).
 //   node scripts/ci-plan.mjs verdict   reads NEEDS (toJSON(needs)) and PLANNED (the `jobs` output), exits 1 on a
 //                                      planned job that did not pass, or on any failed or cancelled job.
+//   GITHUB_EVENT_NAME=push BEFORE=<sha> node scripts/ci-plan.mjs plan
+//                                      previews, in a clone, the plan of a push from <sha> to HEAD.
 import { execFileSync } from 'node:child_process';
 import { appendFileSync } from 'node:fs';
 import path from 'node:path';
@@ -180,13 +182,26 @@ export function verdict(needs, planned) {
   return problems;
 }
 
-function changedFiles(event, before) {
-  const git = (...args) => execFileSync('git', args, { encoding: 'utf8' });
+const defaultGit = (...args) => execFileSync('git', args, { encoding: 'utf8' });
+
+function hasCommit(sha, git) {
+  try {
+    git('cat-file', '-e', `${sha}^{commit}`);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function changedFiles(event, before, git = defaultGit) {
   try {
     // A pull request is checked out as a merge commit: its first parent is the target branch.
     if (event === 'pull_request') return git('diff', '--name-only', 'HEAD^1', 'HEAD').split('\n').filter(Boolean);
     if (event === 'push' && before && !/^0+$/.test(before)) {
-      git('fetch', '--no-tags', '--depth=1', 'origin', before);
+      // A CI checkout (fetch-depth 2) lacks the commit a push of several commits starts from: it is fetched alone,
+      // shallow. A full clone, where a developer previews the plan, already has it, and that same fetch would mark
+      // the clone shallow at that commit, hiding every older one (merges and tags fail) until `git fetch --unshallow`.
+      if (!hasCommit(before, git)) git('fetch', '--no-tags', '--depth=1', 'origin', before);
       return git('diff', '--name-only', before, 'HEAD').split('\n').filter(Boolean);
     }
   } catch (error) {
