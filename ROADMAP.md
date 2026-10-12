@@ -273,13 +273,13 @@ Size M
 
 ### U17. Follow the services a response points to
 
-Size M. **Decision needed** on one point, below.
+Size M
 
 **Why.** Many backends answer with the addresses of others: a service directory giving the address of each service it knows, links between resources, a redirect, the address in a WSDL. The application then calls those addresses directly, past Mimicway, so they can be neither observed nor mocked, and finding them means reading the responses by hand, service after service: with twenty services behind a directory, that is the main cost left once the directory itself is suggested as one rule (route patterns and echo rules).
 
 **What.** From the observed responses (bodies, and the `Location`, `Content-Location` and `Link` headers), list the absolute addresses by origin, each with a few examples and the routes that returned them, leaving out XML namespace and schema addresses (`xmlns`, `xsi:schemaLocation`) and Mimicway's own address (the request's `Host`). For an origin no service covers, offer to create a proxy service in front of it: the service form filled with a name taken from the host and the origin as target, saved through the usual checks. For an origin a service covers (its target is a prefix of the address, and its listen path accepts the rest), write the rules suggested from those responses with that service's address in Mimicway instead of the real one, built when the rule answers from the request that reached Mimicway (`{{header.x-forwarded-proto | default("http")}}://{{header.host}}`, then the group code and the service name), in a template fragment of its own, the observed text staying literal. An application served by the mocked directory then calls Mimicway, whose proxy services can be observed in turn, and so on down the chain. A property test checks that a rewritten rule, rendered with a request to Mimicway, answers the observed body with exactly the covered addresses replaced.
 
-**Decision needed.** Whether the addresses are rewritten only in suggested rules (recommended: the relayed traffic stays untouched, as the observation guide promises, and the directory is mocked first, which is the first step anyway), or also in the live responses of a proxied service, which would let the chain be observed before anything is mocked but changes what the application receives from a real backend. See E18 for the existing flag.
+**Decided (2026-10-12).** Addresses are rewritten only in suggested rules, never in the live responses of a proxied service: the relayed traffic stays untouched, as the observation guide promises, and the directory is mocked first, which is the first step anyway. A rewriting of live traffic is not planned (see E18).
 
 **Done when.** Observing a directory lists the backends it names; creating the suggested service then refreshing gives a directory rule whose answer, once the directory is mocked, sends the application to Mimicway; an end-to-end test covers it, and the guide describes it in both languages.
 
@@ -557,10 +557,10 @@ Size S
 
 ### E18. The "directory URL rewriting" flag does nothing
 
-Size S. **Decision needed.**
+Size S
 
 **Why.** Every service carries `rewrite_directory_urls`, set by the service form when the service type is SOAP, shown on the service page ("Directory URL rewriting: Yes") and listed by the README among the features, but no code reads it: nothing is ever rewritten. A user who relies on it gets the real addresses.
 
-**What.** Recommended: stop showing the flag and drop it from the README's feature list now, keep accepting it in imported configurations (ignored, so that no existing file breaks), and let U17 decide whether a rewriting of live traffic is ever wanted; if it is, it gets a setting of its own, named by what it does. The other way, giving the flag that meaning, waits for the U17 decision.
+**What.** Decided (2026-10-12): stop showing the flag (service form, service page) and drop it from the README's feature list, in both languages; keep accepting it in imported and stored configurations, ignored, so that no existing file breaks; no longer write it in new ones if the format allows a missing key. Live traffic is never rewritten (U17), so the flag gets no other meaning.
 
 **Done when.** No screen, document or feature list claims a rewriting that does not happen, and configurations that carry the flag still import.
