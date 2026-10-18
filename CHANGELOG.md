@@ -16,6 +16,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - A rule suggested from observed traffic with a condition on a JSON field whose name holds `/` or `~` now matches: the name went into the JSON pointer unescaped, so the pointer named another field.
 - A rule suggested from observed traffic on a service with a listen path (`/v1/*`) now matches the calls it comes from: its sub-path kept the listen path's part (`/v1/orders` instead of `/orders`), which rules never see.
 
+### Security
+- rustls 0.23.46, past four advisories of 0.23.45 (RUSTSEC-2026-0346 to -0349). None reached Mimicway's outbound connections (the proxy, the identity provider): they need a custom session store, Encrypted Client Hello, rustls's Brotli certificate decompression or a post-quantum key exchange, and Mimicway uses none of them (rustls's own session store, on its ring provider, which offers only classical groups). The lock file changes on that package alone.
+
 ## [0.2.0] - 2026-10-07
 
 ### Added
