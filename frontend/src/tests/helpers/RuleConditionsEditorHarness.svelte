@@ -1,8 +1,7 @@
 <script>
-  // Reproduit exactement le cablage reel de RuleForm.svelte
-  // (`allOf`/`anyOf` en $state, onAllOfChange/onAnyOfChange qui reassignent)
-  // pour tester des scenarios ou l'ordre des mises a jour synchrones importe
-  // (ex. suppression d'une condition pendant l'edition d'une autre).
+  // Wires `RuleConditionsEditor` as `RuleForm.svelte` does (`allOf` and `anyOf` in `$state`, reassigned by the change
+  // callbacks), for tests where the order of synchronous updates matters, such as removing a condition while another
+  // one is being edited.
   import { untrack } from 'svelte';
   import RuleConditionsEditor from '../../lib/components/RuleConditionsEditor.svelte';
 

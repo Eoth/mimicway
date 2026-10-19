@@ -15,31 +15,31 @@ const mockRules = [
 ];
 
 describe('RuleList', () => {
-  it('affiche un message quand pas de regles', () => {
+  it('shows a message when there is no rule', () => {
     const { getByText } = render(RuleList, { props: { rules: [] } });
     expect(getByText('No rule defined. Requests will get 404.')).toBeInTheDocument();
   });
 
-  it('affiche toutes les regles', () => {
+  it('shows every rule', () => {
     const { getByText } = render(RuleList, { props: { rules: mockRules } });
     expect(getByText('rule-siret')).toBeInTheDocument();
     expect(getByText('catch-all')).toBeInTheDocument();
   });
 
-  it('affiche le nombre de conditions', () => {
+  it('shows the condition count, or Catch-all without conditions', () => {
     const { getByText } = render(RuleList, { props: { rules: mockRules } });
     expect(getByText('1 condition')).toBeInTheDocument();
     expect(getByText('Catch-all')).toBeInTheDocument();
   });
 
-  it('le bouton ajouter appelle onAddRule', async () => {
+  it('the add button calls onAddRule', async () => {
     const onAddRule = vi.fn();
     const { getByText } = render(RuleList, { props: { rules: mockRules, onAddRule } });
     await fireEvent.click(getByText('+ Add a rule'));
     expect(onAddRule).toHaveBeenCalledOnce();
   });
 
-  it('le bouton modifier appelle onEditRule avec l index', async () => {
+  it('the edit button calls onEditRule with the index', async () => {
     const onEditRule = vi.fn();
     const { getAllByTitle } = render(RuleList, { props: { rules: mockRules, onEditRule } });
     const editBtns = getAllByTitle('Edit');
@@ -47,7 +47,7 @@ describe('RuleList', () => {
     expect(onEditRule).toHaveBeenCalledWith(0);
   });
 
-  it('le bouton supprimer appelle onDeleteRule avec l index', async () => {
+  it('the delete button calls onDeleteRule with the index', async () => {
     const onDeleteRule = vi.fn();
     const { getAllByTitle } = render(RuleList, { props: { rules: mockRules, onDeleteRule } });
     const deleteBtns = getAllByTitle('Delete');
@@ -55,7 +55,7 @@ describe('RuleList', () => {
     expect(onDeleteRule).toHaveBeenCalledWith(1);
   });
 
-  it('le bouton ajouter fonctionne meme avec des regles existantes', async () => {
+  it('the add button stays enabled and works when rules exist', async () => {
     const onAddRule = vi.fn();
     const { getByText } = render(RuleList, { props: { rules: mockRules, onAddRule } });
     const btn = getByText('+ Add a rule');
@@ -64,7 +64,7 @@ describe('RuleList', () => {
     expect(onAddRule).toHaveBeenCalledOnce();
   });
 
-  it('les boutons monter/descendre sont desactives aux extremites', () => {
+  it('the move up and move down buttons are disabled at the ends', () => {
     const { getAllByTitle } = render(RuleList, { props: { rules: mockRules } });
     const upBtns = getAllByTitle('Move up');
     const downBtns = getAllByTitle('Move down');

@@ -20,7 +20,7 @@ async function submitForm(container) {
 }
 
 describe('RuleForm: rule name uniqueness', () => {
-  it('refuse un nom de regle deja existant dans le service', async () => {
+  it('refuses a rule name that already exists in the service', async () => {
     const onSave = vi.fn();
     const { getByLabelText, container, getByRole } = render(RuleForm, {
       props: { existingRules: [{ name: 'existing-rule' }], onSave },
@@ -32,7 +32,7 @@ describe('RuleForm: rule name uniqueness', () => {
     expect(getByRole('alert')).toHaveTextContent('A rule named "existing-rule" already exists in this service.');
   });
 
-  it('refuse un doublon insensible a la casse', async () => {
+  it('refuses a duplicate that differs only in case', async () => {
     const onSave = vi.fn();
     const { getByLabelText, container, getByRole } = render(RuleForm, {
       props: { existingRules: [{ name: 'My-Rule' }], onSave },
@@ -44,7 +44,7 @@ describe('RuleForm: rule name uniqueness', () => {
     expect(getByRole('alert')).toHaveTextContent('A rule named "my-rule" already exists in this service.');
   });
 
-  it('accepte un nom unique', async () => {
+  it('accepts a unique name', async () => {
     checkRuleConflicts.mockResolvedValue({ conflicts: [] });
     const onSave = vi.fn();
     const { getByLabelText, container } = render(RuleForm, {
@@ -56,7 +56,7 @@ describe('RuleForm: rule name uniqueness', () => {
     await waitFor(() => expect(onSave).toHaveBeenCalled());
   });
 
-  it('accepte le meme nom en edition (exclus de la liste)', async () => {
+  it('accepts its own name when editing, the caller leaving it out of `existingRules`', async () => {
     checkRuleConflicts.mockResolvedValue({ conflicts: [] });
     const onSave = vi.fn();
     const existingRule = {
@@ -73,7 +73,7 @@ describe('RuleForm: rule name uniqueness', () => {
     await waitFor(() => expect(onSave).toHaveBeenCalled());
   });
 
-  it('refuse un nom de regle vide', async () => {
+  it('refuses an empty rule name', async () => {
     const onSave = vi.fn();
     const { getByLabelText, container, getByRole } = render(RuleForm, {
       props: { onSave },
@@ -87,7 +87,7 @@ describe('RuleForm: rule name uniqueness', () => {
 });
 
 describe('RuleForm: pre_script / post_script', () => {
-  it('envoie pre_script et post_script a null quand les toggles restent desactives', async () => {
+  it('sends pre_script and post_script as null when the toggles stay off', async () => {
     checkRuleConflicts.mockResolvedValue({ conflicts: [] });
     const onSave = vi.fn();
     const { getByLabelText, container } = render(RuleForm, { props: { onSave } });
@@ -101,21 +101,21 @@ describe('RuleForm: pre_script / post_script', () => {
     expect(payload.post_script).toBeNull();
   });
 
-  it('les toggles Pré-script et Post-script sont replies par defaut derriere "Options avancées"', () => {
+  it('the pre-script and post-script toggles start folded under "Advanced options"', () => {
     const { getByRole, queryByRole } = render(RuleForm);
     expect(getByRole('button', { name: /Advanced options/, expanded: false })).toBeInTheDocument();
     expect(queryByRole('switch', { name: 'Pre-script (preparation)' })).not.toBeInTheDocument();
     expect(queryByRole('switch', { name: 'Post-script (finalization)' })).not.toBeInTheDocument();
   });
 
-  it('deplier "Options avancées" affiche les toggles Pré-script et Post-script', async () => {
+  it('unfolding "Advanced options" shows the pre-script and post-script toggles', async () => {
     const { getByRole } = render(RuleForm);
     await fireEvent.click(getByRole('button', { name: /Advanced options/ }));
     expect(getByRole('switch', { name: 'Pre-script (preparation)' })).toBeInTheDocument();
     expect(getByRole('switch', { name: 'Post-script (finalization)' })).toBeInTheDocument();
   });
 
-  it('inclut pre_script et post_script dans le payload une fois actives et remplis', async () => {
+  it('includes pre_script and post_script in the payload once enabled and filled', async () => {
     checkRuleConflicts.mockResolvedValue({ conflicts: [] });
     const onSave = vi.fn();
     const { getByLabelText, getByRole, container } = render(RuleForm, { props: { onSave } });
@@ -140,7 +140,7 @@ describe('RuleForm: pre_script / post_script', () => {
     expect(payload.post_script).toBe('"post-result"');
   });
 
-  it("n'envoie pas pre_script si le champ reste vide meme toggle actif", async () => {
+  it('sends a null pre_script when its toggle is on but its field is empty', async () => {
     checkRuleConflicts.mockResolvedValue({ conflicts: [] });
     const onSave = vi.fn();
     const { getByLabelText, getByRole, container } = render(RuleForm, { props: { onSave } });
@@ -156,7 +156,7 @@ describe('RuleForm: pre_script / post_script', () => {
   });
 });
 
-describe('RuleForm: ouverture automatique des "Options avancées"', () => {
+describe('RuleForm: "Advanced options" opening by itself', () => {
   const baseRule = {
     name: 'existing',
     action: 'mock',
@@ -164,27 +164,27 @@ describe('RuleForm: ouverture automatique des "Options avancées"', () => {
     response: { status: 200, headers: [], body: [{ type: 'Literal', value: 'ok' }], chaos: null },
   };
 
-  it("reste repliee a l'ouverture d'une regle sans pre_script ni post_script", () => {
+  it('stays folded for a rule with neither pre_script nor post_script', () => {
     const { getByRole, queryByRole } = render(RuleForm, { props: { rule: baseRule } });
     expect(getByRole('button', { name: /Advanced options/, expanded: false })).toBeInTheDocument();
     expect(queryByRole('switch', { name: 'Pre-script (preparation)' })).not.toBeInTheDocument();
   });
 
-  it("s'ouvre automatiquement si post_script a deja du contenu", () => {
+  it('opens by itself when post_script already has content', () => {
     const rule = { ...baseRule, post_script: '"already set"' };
     const { getByRole } = render(RuleForm, { props: { rule } });
     expect(getByRole('button', { name: /Advanced options/, expanded: true })).toBeInTheDocument();
     expect(getByRole('switch', { name: 'Post-script (finalization)' })).toBeInTheDocument();
   });
 
-  it("s'ouvre automatiquement si pre_script a deja du contenu", () => {
+  it('opens by itself when pre_script already has content', () => {
     const rule = { ...baseRule, pre_script: '"already set"' };
     const { getByRole } = render(RuleForm, { props: { rule } });
     expect(getByRole('button', { name: /Advanced options/, expanded: true })).toBeInTheDocument();
     expect(getByRole('switch', { name: 'Pre-script (preparation)' })).toBeInTheDocument();
   });
 
-  it('replier/deplier "Options avancées" ne fait perdre aucun contenu deja saisi', async () => {
+  it('folding and unfolding "Advanced options" keeps the typed content', async () => {
     const { getByRole, container } = render(RuleForm);
 
     await fireEvent.click(getByRole('button', { name: /Advanced options/ }));
@@ -192,8 +192,7 @@ describe('RuleForm: ouverture automatique des "Options avancées"', () => {
     const preTextarea = container.querySelector('#rule-pre-script');
     await setInput(preTextarea, '"contenu saisi"');
 
-    // Replier la zone : le contenu ne doit pas etre reinitialise (pas de
-    // demontage du composant, juste un attribut `hidden`).
+    // Folding only sets `hidden` on the panel and does not unmount it, so the content is not reset.
     await fireEvent.click(getByRole('button', { name: /Advanced options/ }));
     expect(container.querySelector('#rule-pre-script').value).toBe('"contenu saisi"');
 
@@ -204,19 +203,19 @@ describe('RuleForm: ouverture automatique des "Options avancées"', () => {
   });
 });
 
-describe('RuleForm: assistance de saisie path/query param', () => {
-  it('ne rend pas le testeur de regle sans serviceName (retrocompat)', () => {
+describe('RuleForm: input help for path and query params', () => {
+  it('does not render the rule tester without `serviceName`', () => {
     const { queryByText } = render(RuleForm);
     expect(queryByText('Test against a real request')).not.toBeInTheDocument();
   });
 
-  it('rend le testeur de regle quand serviceName est fourni', async () => {
+  it('renders the rule tester when `serviceName` is given', async () => {
     getLogs.mockResolvedValue([]);
     const { getByText } = render(RuleForm, { props: { serviceName: 'svc-a' } });
     await waitFor(() => expect(getByText('Test against a real request')).toBeInTheDocument());
   });
 
-  it('combine les path params du service et du sous-chemin de la regle', async () => {
+  it('offers the PathParam source when the service path and the sub-path have path params', async () => {
     getLogs.mockResolvedValue([]);
     const { getByLabelText, getByRole } = render(RuleForm, {
       props: { serviceName: 'svc-a', listenPath: '/orders/{id}' },
@@ -228,7 +227,7 @@ describe('RuleForm: assistance de saisie path/query param', () => {
   });
 });
 
-describe('RuleForm: detecteur de conflit a la sauvegarde', () => {
+describe('RuleForm: conflict check on save', () => {
   const existingRules = [
     {
       name: 'existing-rule',
@@ -238,7 +237,7 @@ describe('RuleForm: detecteur de conflit a la sauvegarde', () => {
     },
   ];
 
-  it("sauvegarde directement sans avertissement quand aucun conflit n'est detecte", async () => {
+  it('saves at once, without a warning, when no conflict is found', async () => {
     checkRuleConflicts.mockResolvedValue({ conflicts: [] });
     const onSave = vi.fn();
     const { getByLabelText, container, queryByTestId } = render(RuleForm, {
@@ -252,7 +251,7 @@ describe('RuleForm: detecteur de conflit a la sauvegarde', () => {
     expect(queryByTestId('rule-form-conflict-warning')).not.toBeInTheDocument();
   });
 
-  it('affiche un avertissement non bloquant quand un conflit est detecte, sans appeler onSave', async () => {
+  it('shows a warning and does not call onSave when a conflict is found', async () => {
     checkRuleConflicts.mockResolvedValue({
       conflicts: [{ other_rule_name: 'existing-rule', winner: 'other' }],
     });
@@ -270,7 +269,7 @@ describe('RuleForm: detecteur de conflit a la sauvegarde', () => {
     expect(onSave).not.toHaveBeenCalled();
   });
 
-  it("permet de sauvegarder quand meme malgre l'avertissement", async () => {
+  it('saves anyway despite the warning', async () => {
     checkRuleConflicts.mockResolvedValue({
       conflicts: [{ other_rule_name: 'existing-rule', winner: 'draft' }],
     });
@@ -288,7 +287,7 @@ describe('RuleForm: detecteur de conflit a la sauvegarde', () => {
     expect(onSave.mock.calls[0][0].name).toBe('new-rule');
   });
 
-  it("permet d'annuler l'avertissement pour continuer a modifier la regle", async () => {
+  it('cancelling the warning closes it without saving', async () => {
     checkRuleConflicts.mockResolvedValue({
       conflicts: [{ other_rule_name: 'existing-rule', winner: 'other' }],
     });
@@ -306,7 +305,7 @@ describe('RuleForm: detecteur de conflit a la sauvegarde', () => {
     expect(onSave).not.toHaveBeenCalled();
   });
 
-  it('sauvegarde quand meme si la verification de conflit echoue (fail-open)', async () => {
+  it('saves anyway when the conflict check fails (fail open)', async () => {
     checkRuleConflicts.mockRejectedValue(new Error('network unreachable'));
     const onSave = vi.fn();
     const { getByLabelText, container } = render(RuleForm, {
@@ -320,8 +319,8 @@ describe('RuleForm: detecteur de conflit a la sauvegarde', () => {
   });
 });
 
-describe('RuleForm: action Proxy masquee pour un service purement mocke', () => {
-  it('affiche les deux actions (Mock et Proxy) quand le service a une cible', () => {
+describe('RuleForm: no proxy action for a purely mocked service', () => {
+  it('shows both actions, Mock and Proxy, when the service has a target', () => {
     const { getByTestId, queryByTestId } = render(RuleForm, {
       props: { isPurelyMocked: false },
     });
@@ -331,7 +330,7 @@ describe('RuleForm: action Proxy masquee pour un service purement mocke', () => 
     expect(queryByTestId('rule-form-purely-mocked-hint')).not.toBeInTheDocument();
   });
 
-  it("masque l'action Proxy quand le service est purement mocke", () => {
+  it('hides the Proxy action when the service is purely mocked', () => {
     const { getByTestId, queryByTestId } = render(RuleForm, {
       props: { isPurelyMocked: true },
     });
@@ -340,7 +339,7 @@ describe('RuleForm: action Proxy masquee pour un service purement mocke', () => 
     expect(queryByTestId('rule-form-action-proxy-radio')).not.toBeInTheDocument();
   });
 
-  it("une regle heritee en action=proxy repasse en mock a l'ouverture si le service est purement mocke", async () => {
+  it('a proxy rule opened on a purely mocked service is saved as a mock', async () => {
     checkRuleConflicts.mockResolvedValue({ conflicts: [] });
     const onSave = vi.fn();
     const staleRule = {
@@ -354,8 +353,7 @@ describe('RuleForm: action Proxy masquee pour un service purement mocke', () => 
     });
 
     await submitForm(container);
-    // Avertissement obligatoire avant sauvegarde reelle (voir describe
-    // dedie ci-dessous) : pas de onSave direct ici.
+    // The warning about the change of action comes first: the submit alone does not save.
     expect(onSave).not.toHaveBeenCalled();
     await fireEvent.click(getByTestId('rule-form-stale-proxy-save-anyway-button'));
     await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
@@ -363,7 +361,7 @@ describe('RuleForm: action Proxy masquee pour un service purement mocke', () => 
   });
 });
 
-describe('RuleForm: avertissement avant de persister le changement proxy -> mock', () => {
+describe('RuleForm: warning before saving the change from proxy to mock', () => {
   function staleProxyRule(overrides = {}) {
     return {
       name: 'stale-proxy-rule',
@@ -374,11 +372,10 @@ describe('RuleForm: avertissement avant de persister le changement proxy -> mock
     };
   }
 
-  it("affiche un avertissement explicite et bloque la sauvegarde tant qu'il n'est pas confirme", async () => {
+  it('shows a warning naming both actions and does not save until it is confirmed', async () => {
     const onSave = vi.fn();
-    // Le mock `checkRuleConflicts` est partage entre tous les tests de ce
-    // fichier (pas de reset global) : on compare le nombre d'appels avant/
-    // apres plutot que de supposer un compteur a zero.
+    // The `checkRuleConflicts` mock is shared by every test of this file and never reset: the test compares the call
+    // count before and after rather than expect zero.
     const conflictCallsBefore = checkRuleConflicts.mock.calls.length;
     const { container, getByTestId } = render(RuleForm, {
       props: { rule: staleProxyRule(), existingRules: [], isPurelyMocked: true, onSave },
@@ -390,12 +387,11 @@ describe('RuleForm: avertissement avant de persister le changement proxy -> mock
     expect(warning).toHaveTextContent('Proxy');
     expect(warning).toHaveTextContent('Mock');
     expect(onSave).not.toHaveBeenCalled();
-    // Le detecteur de conflit (appel reseau) n'est pas interroge tant que
-    // l'avertissement local n'est pas resolu.
+    // The conflict check, a server call, waits until the local warning is resolved.
     expect(checkRuleConflicts.mock.calls.length).toBe(conflictCallsBefore);
   });
 
-  it('"Enregistrer quand meme" persiste effectivement le changement vers mock', async () => {
+  it('"Save anyway" saves the change to mock', async () => {
     checkRuleConflicts.mockResolvedValue({ conflicts: [] });
     const onSave = vi.fn();
     const { container, getByTestId, queryByTestId } = render(RuleForm, {
@@ -410,7 +406,7 @@ describe('RuleForm: avertissement avant de persister le changement proxy -> mock
     expect(queryByTestId('rule-form-stale-proxy-warning')).not.toBeInTheDocument();
   });
 
-  it('"Modifier la regle" referme l\'avertissement sans rien sauvegarder', async () => {
+  it('"Edit the rule" closes the warning without saving', async () => {
     const onSave = vi.fn();
     const { container, getByTestId, queryByTestId } = render(RuleForm, {
       props: { rule: staleProxyRule(), existingRules: [], isPurelyMocked: true, onSave },
@@ -423,7 +419,7 @@ describe('RuleForm: avertissement avant de persister le changement proxy -> mock
     expect(queryByTestId('rule-form-stale-proxy-warning')).not.toBeInTheDocument();
   });
 
-  it("n'apparait jamais pour une regle mock ordinaire sur un service purement mocke", async () => {
+  it('never shows for an ordinary mock rule on a purely mocked service', async () => {
     checkRuleConflicts.mockResolvedValue({ conflicts: [] });
     const onSave = vi.fn();
     const ordinaryRule = staleProxyRule({ name: 'ordinary-mock-rule', action: 'mock' });
@@ -436,7 +432,7 @@ describe('RuleForm: avertissement avant de persister le changement proxy -> mock
     expect(queryByTestId('rule-form-stale-proxy-warning')).not.toBeInTheDocument();
   });
 
-  it("n'apparait jamais pour une regle proxy sur un service qui a une cible (pas purement mocke)", async () => {
+  it('never shows for a proxy rule on a service that has a target', async () => {
     checkRuleConflicts.mockResolvedValue({ conflicts: [] });
     const onSave = vi.fn();
     const { container, queryByTestId } = render(RuleForm, {
@@ -450,12 +446,10 @@ describe('RuleForm: avertissement avant de persister le changement proxy -> mock
   });
 });
 
-// Restauration de la vue d'origine a l'edition (retour 1). Avant cette
-// passe, TOUTE regle deja construite via un mode structure atterrissait en
-// "Template avance" a la reouverture -- Rule.response_mode (backend) leve
-// l'ambiguite.
-describe("RuleForm: restauration de la vue d'origine a l'edition (retour 1)", () => {
-  it('une regle sauvegardee en JSON "par exemple" reouvre directement la vue assistee (pas le template avance)', () => {
+// The structured views all save a single Template fragment, which does not tell them apart: `Rule.response_mode`
+// records the view, so that reopening a rule shows that view rather than the advanced template.
+describe('RuleForm: reopening a rule shows the view that built it', () => {
+  it('a rule saved in the JSON by-example view reopens in that view', () => {
     const rule = {
       name: 'existing',
       action: 'mock',
@@ -470,9 +464,8 @@ describe("RuleForm: restauration de la vue d'origine a l'edition (retour 1)", ()
     };
     const { container, queryByTestId } = render(RuleForm, { props: { rule } });
 
-    // La vue assistee (paste) est affichee directement, avec le champ deja
-    // reconstruit -- pas la zone de collage (parsed=true des le depart), et
-    // pas le controle "cle" du mode detail (json-guided).
+    // The view shows the field read back from the template: neither the paste area nor the key input of the detailed
+    // view (json-guided).
     const sourceSelect = container.querySelector('[data-testid="json-paste-builder-source-select-0"]');
     expect(sourceSelect).toBeInTheDocument();
     expect(sourceSelect.value).toBe('path');
@@ -480,7 +473,7 @@ describe("RuleForm: restauration de la vue d'origine a l'edition (retour 1)", ()
     expect(queryByTestId('json-builder-key-input-0')).not.toBeInTheDocument();
   });
 
-  it('une regle sauvegardee en JSON "en detail" reouvre directement la vue detaillee (pas le template avance)', () => {
+  it('a rule saved in the detailed JSON view reopens in that view', () => {
     const rule = {
       name: 'existing',
       action: 'mock',
@@ -498,12 +491,11 @@ describe("RuleForm: restauration de la vue d'origine a l'edition (retour 1)", ()
     const keyInput = queryByTestId('json-builder-key-input-0');
     expect(keyInput).toBeInTheDocument();
     expect(keyInput.value).toBe('siret');
-    // Le bouton "Modifier en detail" n'apparait que dans la vue assistee :
-    // deja en detail, il n'a pas lieu d'etre.
+    // The "Edit in detail" button belongs to the by-example view only.
     expect(queryByTestId('rule-form-open-detail-button')).not.toBeInTheDocument();
   });
 
-  it('une regle sauvegardee en XML "par exemple" reouvre directement la vue assistee, avec le pipe restaure', () => {
+  it('a rule saved in the XML by-example view reopens in that view, with its pipe', () => {
     const rule = {
       name: 'existing',
       action: 'mock',
@@ -526,7 +518,7 @@ describe("RuleForm: restauration de la vue d'origine a l'edition (retour 1)", ()
     expect(queryByTestId('xml-paste-builder-textarea')).not.toBeInTheDocument();
   });
 
-  it("une regle sans response_mode (sauvegardee avant l'ajout de ce champ) degrade gracieusement vers l'ancienne heuristique (Template avance)", () => {
+  it('a rule saved without `response_mode` falls back to the advanced template for a single Template fragment', () => {
     const rule = {
       name: 'existing',
       action: 'mock',
@@ -544,7 +536,7 @@ describe("RuleForm: restauration de la vue d'origine a l'edition (retour 1)", ()
     expect(queryByTestId('json-paste-builder-source-select-0')).not.toBeInTheDocument();
   });
 
-  it('une regle avec response_mode structure mais un corps qui ne correspond plus a cette forme degrade vers Template avance plutot que de planter', () => {
+  it('a structured `response_mode` with a body of another shape opens the advanced template instead of failing', () => {
     const rule = {
       name: 'existing',
       action: 'mock',
@@ -562,12 +554,10 @@ describe("RuleForm: restauration de la vue d'origine a l'edition (retour 1)", ()
   });
 });
 
-// Fusion Format x Assiste/Detail (retour 3). 5 boutons de Format au lieu de
-// 7 boutons de mode a plat ; JSON/XML se declinent en 2 sous-modes via un
-// bouton "Modifier en detail" plutot qu'un second niveau de bouton visible
-// d'emblee.
-describe('RuleForm: fusion Format x Assiste/Detail (retour 3)', () => {
-  it('affiche 5 boutons de format (JSON/XML/Texte/Template avance/Vide), pas 7', () => {
+// One button per format: JSON and XML each have two views, by example and in detail, and the "Edit in detail" button
+// switches between them, so the format selector stays a single row.
+describe('RuleForm: one button per format, two views for JSON and XML', () => {
+  it('shows five format buttons: JSON, XML, Text, Advanced template and Empty', () => {
     const { container } = render(RuleForm);
     const buttons = container.querySelectorAll('[data-testid^="rule-form-mode-button-"]');
     expect(buttons).toHaveLength(5);
@@ -581,7 +571,7 @@ describe('RuleForm: fusion Format x Assiste/Detail (retour 3)', () => {
     ]);
   });
 
-  it('une regle neuve en JSON affiche d\'abord la vue assistee (paste), avec le bouton "Modifier en detail"', async () => {
+  it('a new rule in JSON shows the by-example view first, with the "Edit in detail" button', async () => {
     const { container, queryByTestId } = render(RuleForm);
     await fireEvent.click(container.querySelector('[data-testid="rule-form-mode-button-json"]'));
 
@@ -589,7 +579,7 @@ describe('RuleForm: fusion Format x Assiste/Detail (retour 3)', () => {
     expect(queryByTestId('rule-form-open-detail-button')).toBeInTheDocument();
   });
 
-  it('"Modifier en detail" revele le mode guide SANS avertissement de perte de donnees (transition sans risque)', async () => {
+  it('"Edit in detail" shows the detailed view without a data loss warning', async () => {
     const { container, queryByTestId, queryByRole } = render(RuleForm);
     await fireEvent.click(container.querySelector('[data-testid="rule-form-mode-button-json"]'));
     await fireEvent.click(container.querySelector('[data-testid="rule-form-open-detail-button"]'));
@@ -598,7 +588,7 @@ describe('RuleForm: fusion Format x Assiste/Detail (retour 3)', () => {
     expect(queryByRole('alert')).not.toBeInTheDocument();
   });
 
-  it('re-cliquer sur le meme bouton de format (deja actif) ne reinitialise pas la structure en cours', async () => {
+  it('clicking the active format button again keeps the structure being built', async () => {
     const { container } = render(RuleForm);
     await fireEvent.click(container.querySelector('[data-testid="rule-form-mode-button-json"]'));
     await fireEvent.click(container.querySelector('[data-testid="rule-form-open-detail-button"]'));
@@ -612,14 +602,8 @@ describe('RuleForm: fusion Format x Assiste/Detail (retour 3)', () => {
   });
 });
 
-// Correctif "diagnostic reponse JSON/XML", symptome 2 : convertir un
-// template "Template avance" XML valide vers le format XML echouait
-// TOUJOURS (tryAdvancedToXmlGuided etait un stub qui ne faisait jamais
-// aboutir la conversion, meme pour du XML syntaxiquement correct) alors que
-// coller le meme contenu directement dans la vue "par exemple" fonctionnait
-// sans probleme (elle ne passe jamais par cette fonction). Desormais alignee
-// sur l'equivalent JSON (tryAdvancedToJsonGuided), qui reussissait deja.
-describe('RuleForm: conversion Template avance -> XML (correctif symptome 2)', () => {
+// A well-formed XML advanced template converts to the XML format without a warning, as a JSON one converts to JSON.
+describe('RuleForm: converting an advanced template to XML', () => {
   async function buildAdvancedXmlTemplate(container, getByLabelText, tpl) {
     await setInput(getByLabelText('Rule name'), 'test-rule');
     await fireEvent.click(container.querySelector('[data-testid="rule-form-mode-button-advanced"]'));
@@ -629,7 +613,7 @@ describe('RuleForm: conversion Template avance -> XML (correctif symptome 2)', (
     await setInput(tplTextarea, tpl);
   }
 
-  it('un template XML valide en mode avance se convertit vers XML par exemple sans avertissement', async () => {
+  it('a valid XML advanced template converts to the XML by-example view without a warning', async () => {
     const { container, getByLabelText, queryByRole } = render(RuleForm);
     await buildAdvancedXmlTemplate(container, getByLabelText, '<response><nom>ACME</nom></response>');
 
@@ -641,7 +625,7 @@ describe('RuleForm: conversion Template avance -> XML (correctif symptome 2)', (
     expect(container.querySelector('[data-testid="xml-paste-builder-value-input-0"]').value).toBe('ACME');
   });
 
-  it('les attributs de la racine du template avance sont preserves lors de la conversion', async () => {
+  it('the conversion shows the root attributes of the advanced template', async () => {
     const { container, getByLabelText } = render(RuleForm);
     await buildAdvancedXmlTemplate(container, getByLabelText, '<devisResponse ver="1"><nom>ACME</nom></devisResponse>');
 
@@ -650,7 +634,7 @@ describe('RuleForm: conversion Template avance -> XML (correctif symptome 2)', (
     expect(container.querySelector('[data-testid^="xml-paste-builder-attr-source-select-root"]')).toBeInTheDocument();
   });
 
-  it('un template XML invalide en mode avance affiche toujours un avertissement de conversion', async () => {
+  it('an invalid XML advanced template gets a conversion warning', async () => {
     const { container, getByLabelText, queryByRole } = render(RuleForm);
     await buildAdvancedXmlTemplate(container, getByLabelText, '<response><nom>ACME</response>');
 
@@ -660,14 +644,10 @@ describe('RuleForm: conversion Template avance -> XML (correctif symptome 2)', (
   });
 });
 
-// Correctif "diagnostic reponse JSON/XML", symptome 3 : la fusion Format x
-// Assiste/Detail (retour 3) n'offrait qu'un aller simple ("Modifier en
-// detail") vers la vue detail, sans aucun moyen de revenir a la vue "par
-// exemple" sans perdre le travail en cours. `backToPasteMode()` est le
-// symetrique de `revealDetailMode()` : meme structure de Fields entre les
-// deux sous-modes, donc copie directe sans avertissement de perte.
-describe('RuleForm: retour vers la vue "par exemple" depuis le detail (correctif symptome 3)', () => {
-  it('le bouton retour est absent en vue par exemple et apparait en vue detail', async () => {
+// `backToPasteMode()` mirrors `revealDetailMode()`: both views share the shape of their fields, so going back copies
+// them without a data loss warning.
+describe('RuleForm: back to the by-example view from the detailed one', () => {
+  it('the back button is absent from the by-example view and present in the detailed one', async () => {
     const { container, queryByTestId } = render(RuleForm);
     await fireEvent.click(container.querySelector('[data-testid="rule-form-mode-button-json"]'));
     expect(queryByTestId('rule-form-back-to-paste-button')).not.toBeInTheDocument();
@@ -676,7 +656,7 @@ describe('RuleForm: retour vers la vue "par exemple" depuis le detail (correctif
     expect(queryByTestId('rule-form-back-to-paste-button')).toBeInTheDocument();
   });
 
-  it('JSON : revenir a la vue par exemple depuis le detail preserve le contenu, sans avertissement', async () => {
+  it('JSON: going back to the by-example view keeps the content, without a warning', async () => {
     const { container, queryByRole } = render(RuleForm);
     await fireEvent.click(container.querySelector('[data-testid="rule-form-mode-button-json"]'));
     const textarea = container.querySelector('[data-testid="json-paste-builder-textarea"]');
@@ -687,15 +667,14 @@ describe('RuleForm: retour vers la vue "par exemple" depuis le detail (correctif
     await fireEvent.click(container.querySelector('[data-testid="rule-form-back-to-paste-button"]'));
 
     expect(queryByRole('alert')).not.toBeInTheDocument();
-    // La liste de champs deja peuplee s'affiche directement (pas la zone de
-    // collage vide) : `startParsed` doit refleter le contenu REEL au moment
-    // du remontage du composant, pas un etat fige a l'ouverture du formulaire.
+    // The fields show at once, not an empty paste area: `startParsed` is read when the builder mounts again, not
+    // fixed when the form opened.
     expect(container.querySelector('[data-testid="json-paste-builder-textarea"]')).not.toBeInTheDocument();
     const sourceSelect = container.querySelector('[data-testid="json-paste-builder-source-select-0"]');
     expect(sourceSelect).toBeInTheDocument();
   });
 
-  it('XML : revenir a la vue par exemple depuis le detail preserve le contenu, sans avertissement', async () => {
+  it('XML: going back to the by-example view keeps the content, without a warning', async () => {
     const { container, queryByRole } = render(RuleForm);
     await fireEvent.click(container.querySelector('[data-testid="rule-form-mode-button-xml"]'));
     const textarea = container.querySelector('[data-testid="xml-paste-builder-textarea"]');
@@ -710,7 +689,7 @@ describe('RuleForm: retour vers la vue "par exemple" depuis le detail (correctif
     expect(container.querySelector('[data-testid="xml-paste-builder-source-select-0"]')).toBeInTheDocument();
   });
 
-  it('un aller-retour detail -> par exemple -> detail conserve les modifications faites en detail', async () => {
+  it('a round trip from the detailed view to the by-example one and back keeps the changes made in detail', async () => {
     const { container } = render(RuleForm);
     await fireEvent.click(container.querySelector('[data-testid="rule-form-mode-button-json"]'));
     const textarea = container.querySelector('[data-testid="json-paste-builder-textarea"]');
@@ -728,11 +707,10 @@ describe('RuleForm: retour vers la vue "par exemple" depuis le detail (correctif
   });
 });
 
-// Pipes en mode "par exemple" (retour 2). Round-trip complet : coller un
-// exemple, assigner une source + un pipe, verifier que le payload final
-// envoye au backend contient bien `{{expr | pipe}}`.
-describe('RuleForm: pipes en mode "par exemple" (retour 2)', () => {
-  it('un pipe applique en mode JSON par exemple se retrouve dans le template du payload', async () => {
+// The whole round trip: paste a sample, give a field a source and a pipe, and find `{{expr | pipe}}` in the saved
+// template.
+describe('RuleForm: pipes in the by-example view', () => {
+  it('a pipe set in the JSON by-example view reaches the saved template', async () => {
     checkRuleConflicts.mockResolvedValue({ conflicts: [] });
     const onSave = vi.fn();
     const { getByLabelText, container } = render(RuleForm, { props: { onSave } });

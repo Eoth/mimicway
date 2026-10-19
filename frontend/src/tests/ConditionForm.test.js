@@ -7,25 +7,25 @@ async function setInput(el, value) {
   await fireEvent.input(el);
 }
 
-describe('ConditionForm: selection stricte du path param', () => {
-  it('masque l\'option "Parametre de chemin" quand aucun path param n\'est disponible', () => {
+describe('ConditionForm: strict choice of the path param', () => {
+  it('hides the "Path parameter" source when no path param is available', () => {
     const { getByLabelText } = render(ConditionForm, { props: { availablePathParams: [] } });
     const options = [...getByLabelText('Source').querySelectorAll('option')].map((o) => o.value);
     expect(options).not.toContain('PathParam');
   });
 
-  it('affiche l\'option "Parametre de chemin" quand des path params sont disponibles', () => {
+  it('shows the "Path parameter" source when path params are available', () => {
     const { getByLabelText } = render(ConditionForm, { props: { availablePathParams: ['id'] } });
     const options = [...getByLabelText('Source').querySelectorAll('option')].map((o) => o.value);
     expect(options).toContain('PathParam');
   });
 
-  it('affiche un badge du nombre de path params disponibles avant ouverture du select', () => {
+  it('shows a badge with the count and names of the available path params', () => {
     const { getByText } = render(ConditionForm, { props: { availablePathParams: ['id', 'orderId', 'userId'] } });
     expect(getByText('3 path parameters available: id, orderId, userId')).toBeInTheDocument();
   });
 
-  it('propose un select ferme (pas de saisie libre) pour la cle quand PathParam est choisi', async () => {
+  it('offers a closed select, not free text, for the key when PathParam is chosen', async () => {
     const { getByLabelText } = render(ConditionForm, { props: { availablePathParams: ['id', 'orderId'] } });
     const sourceSelect = getByLabelText('Source');
     await fireEvent.change(sourceSelect, { target: { value: 'PathParam' } });
@@ -36,7 +36,7 @@ describe('ConditionForm: selection stricte du path param', () => {
     expect(options).toEqual(['id', 'orderId']);
   });
 
-  it('conserve une condition PathParam existante meme si la liste devient vide', () => {
+  it('keeps the source and key of an existing PathParam condition when no path param is available', () => {
     const { getByLabelText } = render(ConditionForm, {
       props: {
         availablePathParams: [],
@@ -52,8 +52,8 @@ describe('ConditionForm: selection stricte du path param', () => {
   });
 });
 
-describe('ConditionForm: autocompletion query param', () => {
-  it('propose une datalist non contraignante basee sur les suggestions', async () => {
+describe('ConditionForm: query param autocompletion', () => {
+  it('offers the suggestions in a datalist on the key input', async () => {
     const { getByLabelText, container } = render(ConditionForm, {
       props: { queryParamSuggestions: ['debug', 'trace'] },
     });
@@ -64,7 +64,7 @@ describe('ConditionForm: autocompletion query param', () => {
     expect(options).toEqual(['debug', 'trace']);
   });
 
-  it('permet toujours de saisir un nom de query param inedit', async () => {
+  it('still saves a query param name outside the suggestions', async () => {
     const onSave = vi.fn();
     const { getByLabelText, container } = render(ConditionForm, {
       props: { queryParamSuggestions: ['debug'], onSave },
@@ -79,14 +79,14 @@ describe('ConditionForm: autocompletion query param', () => {
   });
 });
 
-describe('ConditionForm: libelles distincts edition vs ajout', () => {
-  it('affiche "Valider" et un aria-label d\'ajout quand condition est absente', () => {
+describe('ConditionForm: edit and add labels', () => {
+  it('shows "OK" and the add label without a condition', () => {
     const { getByRole } = render(ConditionForm, { props: {} });
     expect(getByRole('form', { name: 'Add a condition' })).toBeInTheDocument();
     expect(getByRole('button', { name: 'OK' })).toBeInTheDocument();
   });
 
-  it('affiche "Enregistrer" et un aria-label d\'edition quand une condition existante est fournie', () => {
+  it('shows "Save" and the edit label with an existing condition', () => {
     const { getByRole } = render(ConditionForm, {
       props: { condition: { source: { type: 'Header', key: 'X-Trace' }, operator: { type: 'Exists' } } },
     });
@@ -95,8 +95,8 @@ describe('ConditionForm: libelles distincts edition vs ajout', () => {
   });
 });
 
-describe('ConditionForm: distinction visuelle des sources', () => {
-  it('utilise des libelles distincts pour PathParam et QueryParam', () => {
+describe('ConditionForm: visual distinction of sources', () => {
+  it('uses distinct labels for PathParam and QueryParam', () => {
     const { getByLabelText } = render(ConditionForm, { props: { availablePathParams: ['id'] } });
     const optionTexts = [...getByLabelText('Source').querySelectorAll('option')].map((o) => o.textContent);
     const pathLabel = optionTexts.find((t) => t.includes('Path parameter'));
