@@ -25,14 +25,14 @@ describe('TcpServiceManager', () => {
     vi.clearAllMocks();
   });
 
-  it("affiche un etat vide quand aucun service TCP n'existe", async () => {
+  it('shows an empty state when no TCP service exists', async () => {
     getTcpServices.mockResolvedValue([]);
     getTcpStatus.mockResolvedValue([]);
     const { getByText } = render(TcpServiceManager);
     await waitFor(() => expect(getByText('No TCP service configured yet.')).toBeInTheDocument());
   });
 
-  it("affiche un service avec son port, son nombre de regles et le statut d'ecoute", async () => {
+  it('shows a service with its port, its rule count and its listening status', async () => {
     getTcpServices.mockResolvedValue([pingService()]);
     getTcpStatus.mockResolvedValue([{ name: 'heartbeat', listen_port: 9000, listening: true, error: null }]);
     const { getByTestId, getByText } = render(TcpServiceManager);
@@ -44,7 +44,7 @@ describe('TcpServiceManager', () => {
     expect(getByText('Listening')).toBeInTheDocument();
   });
 
-  it("affiche un badge d'echec de bind avec le detail en titre quand listening=false", async () => {
+  it('shows a bind failure badge, with the error as its title, when `listening` is false', async () => {
     getTcpServices.mockResolvedValue([pingService()]);
     getTcpStatus.mockResolvedValue([
       { name: 'heartbeat', listen_port: 9000, listening: false, error: 'address in use' },
@@ -55,7 +55,7 @@ describe('TcpServiceManager', () => {
     expect(getByText('Bind failed').getAttribute('title')).toBe('address in use');
   });
 
-  it('ouvre le formulaire de creation avec une regle vide par defaut', async () => {
+  it('opens the creation form with one empty rule', async () => {
     getTcpServices.mockResolvedValue([]);
     getTcpStatus.mockResolvedValue([]);
     const { getByTestId } = render(TcpServiceManager);
@@ -67,7 +67,7 @@ describe('TcpServiceManager', () => {
     expect(getByTestId('tcp-manager-rule-0')).toBeInTheDocument();
   });
 
-  it("cree un service : le prefixe/reponse en mode texte sont convertis en hex avant l'envoi", async () => {
+  it('creating a service sends the text-mode response as hexadecimal', async () => {
     getTcpServices.mockResolvedValue([]);
     getTcpStatus.mockResolvedValue([]);
     createTcpService.mockResolvedValue(pingService());
@@ -92,7 +92,7 @@ describe('TcpServiceManager', () => {
     );
   });
 
-  it('convertit un prefixe en mode texte en hexadecimal a la creation', async () => {
+  it('creating a service sends the text-mode prefix as hexadecimal', async () => {
     getTcpServices.mockResolvedValue([]);
     getTcpStatus.mockResolvedValue([]);
     createTcpService.mockResolvedValue(pingService());
@@ -118,7 +118,7 @@ describe('TcpServiceManager', () => {
     );
   });
 
-  it("rejette la creation sans regle avec un message explicite, sans appeler l'API", async () => {
+  it('refuses to create a service without a rule, with a clear message and no API call', async () => {
     getTcpServices.mockResolvedValue([]);
     getTcpStatus.mockResolvedValue([]);
     const { getByTestId } = render(TcpServiceManager);
@@ -139,7 +139,7 @@ describe('TcpServiceManager', () => {
     expect(createTcpService).not.toHaveBeenCalled();
   });
 
-  it("affiche l'erreur backend (ex: port deja pris) sans fermer le formulaire", async () => {
+  it('shows the server error (a port already in use) and keeps the form open', async () => {
     getTcpServices.mockResolvedValue([]);
     getTcpStatus.mockResolvedValue([]);
     createTcpService.mockRejectedValue(new Error('Port 9000 is already used by another TCP service.'));
@@ -160,7 +160,7 @@ describe('TcpServiceManager', () => {
     expect(getByTestId('tcp-manager-form')).toBeInTheDocument();
   });
 
-  it("pre-remplit le formulaire d'edition en decodant le hex en texte quand c'est de l'UTF-8 valide", async () => {
+  it('pre-fills the edit form, with the name locked and hexadecimal that is valid UTF-8 shown as text', async () => {
     getTcpServices.mockResolvedValue([pingService()]);
     getTcpStatus.mockResolvedValue([]);
     const { getByTestId } = render(TcpServiceManager);
@@ -174,7 +174,7 @@ describe('TcpServiceManager', () => {
     expect(getByTestId('tcp-manager-rule-0-response-mode-select')).toHaveValue('text');
   });
 
-  it('met a jour un service existant via PUT', async () => {
+  it('saving an edited service calls updateTcpService with the new port', async () => {
     getTcpServices.mockResolvedValue([pingService()]);
     getTcpStatus.mockResolvedValue([]);
     updateTcpService.mockResolvedValue(pingService({ listen_port: 9500 }));
@@ -190,7 +190,7 @@ describe('TcpServiceManager', () => {
     );
   });
 
-  it('supprime un service apres confirmation, pas avant', async () => {
+  it('deletes a service after confirmation, not before', async () => {
     getTcpServices.mockResolvedValue([pingService()]);
     getTcpStatus.mockResolvedValue([]);
     deleteTcpService.mockResolvedValue(null);
@@ -209,7 +209,7 @@ describe('TcpServiceManager', () => {
     expect(onNotify).toHaveBeenCalledWith('TCP service "heartbeat" deleted', 'success');
   });
 
-  it('appelle onBack au clic sur Retour', async () => {
+  it('calls onBack when Back is clicked', async () => {
     getTcpServices.mockResolvedValue([]);
     getTcpStatus.mockResolvedValue([]);
     const onBack = vi.fn();

@@ -2,27 +2,27 @@ import { describe, it, expect } from 'vitest';
 import { extractPathParamNames, combinePathParamNames } from '../lib/path-params.js';
 
 describe('extractPathParamNames', () => {
-  it('extrait les noms entre accolades', () => {
+  it('extracts the names in braces', () => {
     expect(extractPathParamNames('/orders/{id}/items/{itemId}')).toEqual(['id', 'itemId']);
   });
 
-  it('extrait les noms en syntaxe deux-points', () => {
+  it('extracts the names in colon syntax', () => {
     expect(extractPathParamNames('/orders/:id/items/:itemId')).toEqual(['id', 'itemId']);
   });
 
-  it('ignore le wildcard *', () => {
+  it('ignores the * wildcard', () => {
     expect(extractPathParamNames('/orders/*')).toEqual([]);
   });
 
-  it('deduplique les noms repetes', () => {
+  it('drops repeated names', () => {
     expect(extractPathParamNames('/a/{id}/b/{id}')).toEqual(['id']);
   });
 
-  it('retourne un tableau vide pour un pattern statique', () => {
+  it('returns an empty array for a static pattern', () => {
     expect(extractPathParamNames('/orders/list')).toEqual([]);
   });
 
-  it('retourne un tableau vide pour une valeur vide ou nulle', () => {
+  it('returns an empty array for an empty or missing value', () => {
     expect(extractPathParamNames('')).toEqual([]);
     expect(extractPathParamNames(null)).toEqual([]);
     expect(extractPathParamNames(undefined)).toEqual([]);
@@ -30,15 +30,15 @@ describe('extractPathParamNames', () => {
 });
 
 describe('combinePathParamNames', () => {
-  it('combine plusieurs patterns sans doublon, ordre de premiere apparition', () => {
+  it('combines several patterns without duplicates, in order of first appearance', () => {
     expect(combinePathParamNames(['/orders/{id}', '/{id}/sub/{subId}'])).toEqual(['id', 'subId']);
   });
 
-  it('gere des patterns vides melanges a des patterns valides', () => {
+  it('handles empty patterns mixed with valid ones', () => {
     expect(combinePathParamNames(['', '/users/{userId}'])).toEqual(['userId']);
   });
 
-  it('retourne un tableau vide si aucun pattern ne contient de param', () => {
+  it('returns an empty array when no pattern holds a parameter', () => {
     expect(combinePathParamNames(['/a/b', '/c/d'])).toEqual([]);
   });
 });

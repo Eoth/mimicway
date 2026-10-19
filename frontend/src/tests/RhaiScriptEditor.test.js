@@ -2,23 +2,21 @@ import { render, fireEvent } from '@testing-library/svelte';
 import { describe, it, expect } from 'vitest';
 import RhaiScriptEditorHarness from './helpers/RhaiScriptEditorHarness.svelte';
 
-// Simule une frappe qui ajoute du texte a la fin (cursor place en fin de
-// valeur, comme une vraie frappe clavier) : fireEvent.input ne met pas a
-// jour $state en Svelte 5, on doit setter .value puis declencher
-// l'evenement natif nous-memes.
+// Types `text` with the caret at its end, like real typing: on input, the component reads both the value and the
+// `selectionStart` of the textarea, so both are set before the event fires.
 async function typeAtEnd(el, text) {
   el.value = text;
   el.selectionStart = el.selectionEnd = text.length;
   await fireEvent.input(el);
 }
 
-describe('RhaiScriptEditor : autocompletion des fonctions Rhai', () => {
-  it("n'affiche aucune suggestion tant que rien n'est tape", () => {
+describe('RhaiScriptEditor: completion of the Rhai functions', () => {
+  it('shows no suggestion before anything is typed', () => {
     const { queryByRole } = render(RhaiScriptEditorHarness, { props: { id: 'sc' } });
     expect(queryByRole('listbox')).not.toBeInTheDocument();
   });
 
-  it('affiche les suggestions correspondant au prefixe tape', async () => {
+  it('shows the suggestions that match the typed prefix', async () => {
     const { container, getByRole, getAllByRole } = render(RhaiScriptEditorHarness, { props: { id: 'sc' } });
     const textarea = container.querySelector('#sc');
 
@@ -31,7 +29,7 @@ describe('RhaiScriptEditor : autocompletion des fonctions Rhai', () => {
     );
   });
 
-  it('ne montre pas de liste si le prefixe ne correspond a aucune fonction', async () => {
+  it('shows no list when the prefix matches no function', async () => {
     const { container, queryByRole } = render(RhaiScriptEditorHarness, { props: { id: 'sc' } });
     const textarea = container.querySelector('#sc');
 
@@ -40,7 +38,7 @@ describe('RhaiScriptEditor : autocompletion des fonctions Rhai', () => {
     expect(queryByRole('listbox')).not.toBeInTheDocument();
   });
 
-  it('Ctrl+Espace ouvre la liste complete meme sans prefixe', async () => {
+  it('Ctrl+Space opens the list even with nothing typed', async () => {
     const { container, getByRole, getAllByRole } = render(RhaiScriptEditorHarness, { props: { id: 'sc' } });
     const textarea = container.querySelector('#sc');
     textarea.focus();
@@ -51,7 +49,7 @@ describe('RhaiScriptEditor : autocompletion des fonctions Rhai', () => {
     expect(getAllByRole('option').length).toBeGreaterThan(5);
   });
 
-  it('Echap ferme la liste de suggestions', async () => {
+  it('Escape closes the list of suggestions', async () => {
     const { container, queryByRole } = render(RhaiScriptEditorHarness, { props: { id: 'sc' } });
     const textarea = container.querySelector('#sc');
 
@@ -62,24 +60,24 @@ describe('RhaiScriptEditor : autocompletion des fonctions Rhai', () => {
     expect(queryByRole('listbox')).not.toBeInTheDocument();
   });
 
-  it('la selection au clic insere la fonction avec parametres selectionnes', async () => {
+  it('picking with the mouse inserts the function with its arguments selected', async () => {
     const { container, getAllByRole, queryByRole } = render(RhaiScriptEditorHarness, { props: { id: 'sc' } });
     const textarea = container.querySelector('#sc');
 
     await typeAtEnd(textarea, 'seeded_p');
     const option = getAllByRole('option').find((o) => o.textContent.includes('seeded_pick'));
-    // mousedown (pas click) : c'est l'evenement intercepte par le
-    // composant pour inserer sans perdre le focus du textarea au passage.
+    // mousedown, not click: the component inserts on mousedown and prevents its default, so the textarea keeps the
+    // focus (a blur would close the list).
     await fireEvent.mouseDown(option);
 
     expect(textarea.value).toBe('seeded_pick(seed, ["a", "b"])');
     expect(queryByRole('listbox')).not.toBeInTheDocument();
-    // Les parametres sont selectionnes pour etre remplaces par la frappe.
+    // The arguments are selected, so that typing replaces them.
     expect(textarea.selectionStart).toBe('seeded_pick('.length);
     expect(textarea.selectionEnd).toBe('seeded_pick(seed, ["a", "b"]'.length);
   });
 
-  it('la selection au clavier (fleches + Entree) insere la fonction active', async () => {
+  it('picking with the keyboard (arrows, then Enter) inserts the active function', async () => {
     const { container, getAllByRole } = render(RhaiScriptEditorHarness, { props: { id: 'sc' } });
     const textarea = container.querySelector('#sc');
 
@@ -87,7 +85,7 @@ describe('RhaiScriptEditor : autocompletion des fonctions Rhai', () => {
     const options = getAllByRole('option');
     const seededPickIndex = options.findIndex((o) => o.textContent.includes('seeded_pick'));
 
-    // seeded_int est actif par defaut (index 0) ; on descend jusqu'a seeded_pick.
+    // The first suggestion, `seeded_int`, is active at first: move down to `seeded_pick`.
     for (let i = 0; i < seededPickIndex; i++) {
       await fireEvent.keyDown(textarea, { key: 'ArrowDown' });
     }
@@ -96,7 +94,7 @@ describe('RhaiScriptEditor : autocompletion des fonctions Rhai', () => {
     expect(textarea.value).toBe('seeded_pick(seed, ["a", "b"])');
   });
 
-  it('insere un appel sans parametre avec le curseur juste apres', async () => {
+  it('inserts a call without arguments with the caret right after it', async () => {
     const { container, getAllByRole } = render(RhaiScriptEditorHarness, { props: { id: 'sc' } });
     const textarea = container.querySelector('#sc');
 
@@ -109,7 +107,7 @@ describe('RhaiScriptEditor : autocompletion des fonctions Rhai', () => {
     expect(textarea.selectionEnd).toBe('uuid()'.length);
   });
 
-  it('remplace uniquement le prefixe tape, pas tout le contenu existant', async () => {
+  it('replaces only the typed prefix, not the rest of the content', async () => {
     const { container, getAllByRole } = render(RhaiScriptEditorHarness, { props: { id: 'sc' } });
     const textarea = container.querySelector('#sc');
 

@@ -49,22 +49,22 @@ function draft(overrides = {}) {
   });
 }
 
-describe('RuleTester: filtrage des entrees sans detail', () => {
-  it("affiche un message quand aucune requete n'a ete capturee", () => {
+describe('RuleTester: entries without details are left out', () => {
+  it('shows a message when no request has been captured', () => {
     const { getByText } = render(RuleTester, {
       props: { serviceName: 'svc-a', logs: [], getDraftRule: draft() },
     });
     expect(getByText('No request has been captured for this service yet.')).toBeInTheDocument();
   });
 
-  it('affiche un message quand seules des entrees sans detail existent', () => {
+  it('shows a message when only entries without details exist', () => {
     const { getByText } = render(RuleTester, {
       props: { serviceName: 'svc-a', logs: [logWithoutDetail], getDraftRule: draft() },
     });
     expect(getByText(/requests proxied directly/)).toBeInTheDocument();
   });
 
-  it('ne liste que les entrees avec detail capture dans le selecteur', () => {
+  it('lists only the entries with captured details in the picker', () => {
     const { getByLabelText, queryByText } = render(RuleTester, {
       props: { serviceName: 'svc-a', logs: [logWithDetail, logWithoutDetail], getDraftRule: draft() },
     });
@@ -75,8 +75,8 @@ describe('RuleTester: filtrage des entrees sans detail', () => {
   });
 });
 
-describe('RuleTester: appel API et affichage du resultat', () => {
-  it('envoie le brouillon de regle et la requete capturee choisie', async () => {
+describe('RuleTester: API call and result display', () => {
+  it('sends the draft rule and the chosen captured request', async () => {
     testRule.mockResolvedValue({
       method_matches: true,
       sub_path_matches: true,
@@ -109,7 +109,7 @@ describe('RuleTester: appel API et affichage du resultat', () => {
     expect(payload.request.remaining_path).toBe('/orders/42');
   });
 
-  it("envoie l'action et les 3 blocs de script du brouillon (pas seulement le matching)", async () => {
+  it('sends the action and the 3 script slots of the draft, not only the matching', async () => {
     testRule.mockResolvedValue({
       method_matches: true,
       sub_path_matches: true,
@@ -138,9 +138,8 @@ describe('RuleTester: appel API et affichage du resultat', () => {
     await fireEvent.click(getByRole('button', { name: /Test against this request/ }));
 
     await waitFor(() => expect(testRule).toHaveBeenCalled());
-    // .at(-1) plutot que mock.calls[0] : testRule est un mock PARTAGE (pas
-    // reinitialise entre les `it()` de ce fichier), donc [0] renverrait
-    // l'appel du tout premier test du describe plutot que celui de ce test.
+    // `.at(-1)`, not `mock.calls[0]`: nothing resets `testRule` between the tests of this file, so `[0]` is the call
+    // of an earlier test.
     const [payload] = testRule.mock.calls.at(-1);
     expect(payload.action).toBe('mock');
     expect(payload.pre_script).toBe('let x = 1;');
@@ -148,7 +147,7 @@ describe('RuleTester: appel API et affichage du resultat', () => {
     expect(payload.post_script).toBeNull();
   });
 
-  it('affiche le detail condition par condition avec icone et texte (pas seulement de la couleur)', async () => {
+  it('shows the result of each condition in words, not only by color, with its hint', async () => {
     testRule.mockResolvedValue({
       method_matches: true,
       sub_path_matches: true,
@@ -179,7 +178,7 @@ describe('RuleTester: appel API et affichage du resultat', () => {
     expect(getByText(/present as a path parameter/)).toBeInTheDocument();
   });
 
-  it("affiche une banniere d'avertissement quand le corps capture est tronque", async () => {
+  it('shows a warning when the captured body is truncated', async () => {
     testRule.mockResolvedValue({
       method_matches: true,
       sub_path_matches: true,
@@ -211,7 +210,7 @@ describe('RuleTester: appel API et affichage du resultat', () => {
     );
   });
 
-  it("affiche un message clair quand un script echoue a l'execution", async () => {
+  it('shows a clear message when a script fails to run', async () => {
     testRule.mockResolvedValue({
       method_matches: true,
       sub_path_matches: true,
@@ -242,7 +241,7 @@ describe('RuleTester: appel API et affichage du resultat', () => {
     expect(getByText(/totally_undefined_fn/)).toBeInTheDocument();
   });
 
-  it("n'affiche aucune banniere d'erreur de script quand tous les scripts reussissent", async () => {
+  it('shows no script error when every script succeeds', async () => {
     testRule.mockResolvedValue({
       method_matches: true,
       sub_path_matches: true,
@@ -269,13 +268,10 @@ describe('RuleTester: appel API et affichage du resultat', () => {
     expect(queryByTestId('rule-tester-script-errors')).not.toBeInTheDocument();
   });
 
-  // --- script_results : visibilite d'un resultat REUSSI mais errone. Un
-  // script sans erreur d'execution peut quand meme produire un resultat
-  // inattendu (typo de cle, objet imbrique non navigable) — ces tests
-  // verifient que le testeur montre desormais CE QUE le script a reellement
-  // produit, pas seulement l'absence d'erreur.
+  // `script_results`: a script that runs without error can still produce the wrong result (a misspelled key, a nested
+  // object read through a path), so the tester shows what the script produced, not only the absence of an error.
 
-  it('affiche les champs produits par un script reussi (ex: objet pioche via seeded_pick)', async () => {
+  it('shows the fields a successful script produces (e.g. an object picked by seeded_pick)', async () => {
     testRule.mockResolvedValue({
       method_matches: true,
       sub_path_matches: true,
@@ -307,11 +303,9 @@ describe('RuleTester: appel API et affichage du resultat', () => {
     expect(getByText('69000')).toBeInTheDocument();
   });
 
-  it("affiche la valeur JSON reelle d'un champ imbrique (pas la syntaxe Rhai #{...})", async () => {
-    // Cas precis diagnostique : un objet pioche imbrique sous une cle
-    // ("ville") reste une seule cle plate cote {{script.champ}} — le
-    // testeur doit exposer ca clairement, ce qui permet a l'utilisateur de
-    // constater qu'un chemin imbrique {{script.ville.name}} n'existe pas.
+  it('shows a nested object as one flat field, with the JSON text the server sends', async () => {
+    // An object nested under one key stays one flat field for `{{script.<key>}}`: the tester shows it as such, so the
+    // user sees that a nested path such as `{{script.ville.name}}` does not exist.
     testRule.mockResolvedValue({
       method_matches: true,
       sub_path_matches: true,
@@ -346,7 +340,7 @@ describe('RuleTester: appel API et affichage du resultat', () => {
     expect(getByText('{"cp":"69000","insee":"69123","name":"Lyon"}')).toBeInTheDocument();
   });
 
-  it('affiche la valeur simple ({{slot}}) quand le script retourne un scalaire (pas un map)', async () => {
+  it('shows the plain value ({{slot}}) when the script returns a scalar, not a map', async () => {
     testRule.mockResolvedValue({
       method_matches: true,
       sub_path_matches: true,
@@ -375,7 +369,7 @@ describe('RuleTester: appel API et affichage du resultat', () => {
     expect(getByText('hello')).toBeInTheDocument();
   });
 
-  it("n'affiche aucun panneau de resultat de script quand aucun script n'est configure", async () => {
+  it('shows no script result panel when no script is configured', async () => {
     testRule.mockResolvedValue({
       method_matches: true,
       sub_path_matches: true,
