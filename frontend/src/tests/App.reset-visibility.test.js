@@ -17,7 +17,7 @@ vi.mock('../lib/api.js', () => ({
   createGroup: vi.fn(),
 }));
 
-describe('App — visibilite du bouton Reset (SHOW_RESET_BUTTON)', () => {
+describe('App: the reset button follows SHOW_RESET_BUTTON', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     api.getServices.mockResolvedValue([]);
@@ -25,14 +25,14 @@ describe('App — visibilite du bouton Reset (SHOW_RESET_BUTTON)', () => {
     window.matchMedia = window.matchMedia || vi.fn().mockReturnValue({ matches: false });
   });
 
-  it('cache le bouton Reset quand auth desactivee et show_reset_button=false', async () => {
+  it('hides the reset button when authentication is off and `show_reset_button` is false', async () => {
     api.getAuthStatus.mockResolvedValue({ enabled: false, show_reset_button: false });
     const { queryByTitle } = render(App);
     await waitFor(() => expect(api.getServices).toHaveBeenCalled());
     expect(queryByTitle('Remove every service')).not.toBeInTheDocument();
   });
 
-  it('affiche le bouton Reset quand auth desactivee et show_reset_button=true', async () => {
+  it('shows the reset button when authentication is off and `show_reset_button` is true', async () => {
     api.getAuthStatus.mockResolvedValue({ enabled: false, show_reset_button: true });
     const { queryByTitle } = render(App);
     await waitFor(() => expect(queryByTitle('Remove every service')).toBeInTheDocument());

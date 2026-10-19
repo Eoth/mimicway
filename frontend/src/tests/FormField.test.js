@@ -3,14 +3,14 @@ import { describe, it, expect } from 'vitest';
 import FormFieldHarness from './helpers/FormFieldHarness.svelte';
 
 describe('FormField', () => {
-  it('associe le label au champ via for/id', () => {
+  it('ties the label to the field through `for` and `id`', () => {
     const { getByLabelText } = render(FormFieldHarness, {
       props: { id: 'svc-name', label: 'Service name' },
     });
     expect(getByLabelText('Service name')).toBeInTheDocument();
   });
 
-  it('relie le hint via aria-describedby', () => {
+  it('links the hint through `aria-describedby`', () => {
     const { getByLabelText, getByText } = render(FormFieldHarness, {
       props: { id: 'svc-name', label: 'Service name', hint: 'Unique identifier' },
     });
@@ -19,7 +19,7 @@ describe('FormField', () => {
     expect(input.getAttribute('aria-describedby')).toContain(hint.id);
   });
 
-  it("affiche l'erreur avec role alert et aria-invalid sur le champ", () => {
+  it('shows the error as an alert and sets `aria-invalid` on the field', () => {
     const { getByLabelText, getByRole } = render(FormFieldHarness, {
       props: { id: 'svc-name', label: 'Service name', error: 'The name is required.' },
     });
@@ -28,7 +28,7 @@ describe('FormField', () => {
     expect(getByRole('alert')).toHaveTextContent('The name is required.');
   });
 
-  it("n'affiche pas aria-invalid quand il n'y a pas d'erreur", () => {
+  it('sets `aria-invalid` to false when there is no error', () => {
     const { getByLabelText } = render(FormFieldHarness, {
       props: { id: 'svc-name', label: 'Service name' },
     });

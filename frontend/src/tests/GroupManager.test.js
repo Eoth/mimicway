@@ -17,7 +17,7 @@ describe('GroupManager - creation form', () => {
     getGroups.mockResolvedValue([]);
   });
 
-  it('n\'affiche plus qu\'un champ "Nom" (pas de champ code/cle manuel)', async () => {
+  it('shows a name field only, with no field for the code', async () => {
     const { getByText, container } = render(GroupManager);
     await waitFor(() =>
       expect(getByText('No group. Create one to organize your services by domain.')).toBeInTheDocument(),
@@ -32,7 +32,7 @@ describe('GroupManager - creation form', () => {
     expect(inputs[0].id).toBe('new-group-name');
   });
 
-  it('cree un groupe avec uniquement le nom saisi, le code est envoye vide (auto-genere par le backend)', async () => {
+  it('creates a group from its name alone, sending an empty code for the server to generate', async () => {
     createGroup.mockResolvedValue({ name: 'Internal APIs', code: 'ab3f9', admins: [], members: [] });
     const onNotify = vi.fn();
     const { getByText, container } = render(GroupManager, { props: { onNotify } });
@@ -57,7 +57,7 @@ describe('GroupManager - creation form', () => {
     expect(onNotify).toHaveBeenCalledWith('Group "Internal APIs" created', 'success');
   });
 
-  it('accepte un nom avec accents/espaces (la generation du code est laissee au backend)', async () => {
+  it('sends a name with accents and spaces as typed', async () => {
     createGroup.mockResolvedValue({ name: 'Équipe Café', code: 'k2m81', admins: [], members: [] });
     const { getByText, container } = render(GroupManager);
     await waitFor(() =>
@@ -80,7 +80,7 @@ describe('GroupManager - creation form', () => {
     );
   });
 
-  it("affiche l'erreur du backend (ex: collision de nom) au niveau du champ nom", async () => {
+  it('shows the server error, such as a name already taken, on the name field', async () => {
     createGroup.mockRejectedValue(new Error('A group named "Ops" already exists.'));
     const { getByText, container } = render(GroupManager);
     await waitFor(() =>
@@ -97,7 +97,7 @@ describe('GroupManager - creation form', () => {
     expect(nameInput.getAttribute('aria-invalid')).toBe('true');
   });
 
-  it("rejette localement un nom vide sans appeler l'API", async () => {
+  it('refuses an empty name without calling the API', async () => {
     const { getByText, container } = render(GroupManager);
     await waitFor(() =>
       expect(getByText('No group. Create one to organize your services by domain.')).toBeInTheDocument(),

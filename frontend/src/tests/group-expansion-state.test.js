@@ -12,23 +12,23 @@ describe('group-expansion-state', () => {
     resetGroupExpansionState();
   });
 
-  it('demarre sans aucun groupe deplie', () => {
+  it('starts with no group expanded', () => {
     expect(isGroupExpanded('team-a')).toBe(false);
     expect(getExpandedGroupKeys().size).toBe(0);
   });
 
-  it('deplie un groupe explicitement', () => {
+  it('expands a group', () => {
     setGroupExpanded('team-a', true);
     expect(isGroupExpanded('team-a')).toBe(true);
   });
 
-  it('replie un groupe explicitement', () => {
+  it('collapses a group', () => {
     setGroupExpanded('team-a', true);
     setGroupExpanded('team-a', false);
     expect(isGroupExpanded('team-a')).toBe(false);
   });
 
-  it('ne fuit pas entre plusieurs groupes distincts', () => {
+  it('keeps the state of each group apart', () => {
     setGroupExpanded('team-a', true);
     setGroupExpanded('team-b', true);
     setGroupExpanded('team-a', false);
@@ -39,7 +39,7 @@ describe('group-expansion-state', () => {
     expect(getExpandedGroupKeys().size).toBe(1);
   });
 
-  it('toggleGroupExpanded inverse l etat courant', () => {
+  it('`toggleGroupExpanded` flips the current state', () => {
     expect(isGroupExpanded('team-a')).toBe(false);
     toggleGroupExpanded('team-a');
     expect(isGroupExpanded('team-a')).toBe(true);
@@ -47,7 +47,7 @@ describe('group-expansion-state', () => {
     expect(isGroupExpanded('team-a')).toBe(false);
   });
 
-  it('resetGroupExpansionState efface tous les groupes deplies', () => {
+  it('`resetGroupExpansionState` collapses every group', () => {
     setGroupExpanded('team-a', true);
     setGroupExpanded('team-b', true);
     resetGroupExpansionState();

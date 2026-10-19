@@ -3,12 +3,12 @@ import { describe, it, expect, vi } from 'vitest';
 import ConfirmDialog from '../lib/components/ConfirmDialog.svelte';
 
 describe('ConfirmDialog', () => {
-  it('ne rend rien quand open est false', () => {
+  it('renders nothing when `open` is false', () => {
     const { queryByRole } = render(ConfirmDialog, { props: { open: false, title: 'Test' } });
     expect(queryByRole('dialog')).not.toBeInTheDocument();
   });
 
-  it('affiche le titre et le message quand open est true', () => {
+  it('shows the title and the message when `open` is true', () => {
     const { getByRole, getByText } = render(ConfirmDialog, {
       props: { open: true, title: 'Delete the service', message: 'This cannot be undone.' },
     });
@@ -17,7 +17,7 @@ describe('ConfirmDialog', () => {
     expect(getByText('This cannot be undone.')).toBeInTheDocument();
   });
 
-  it('appelle onConfirm au clic sur le bouton de confirmation', async () => {
+  it('calls `onConfirm` on the confirm button', async () => {
     const onConfirm = vi.fn();
     const { getByText } = render(ConfirmDialog, {
       props: { open: true, title: 'Test', confirmLabel: 'Yes, delete', onConfirm },
@@ -26,7 +26,7 @@ describe('ConfirmDialog', () => {
     expect(onConfirm).toHaveBeenCalled();
   });
 
-  it('appelle onCancel au clic sur Annuler', async () => {
+  it('calls `onCancel` on Cancel', async () => {
     const onCancel = vi.fn();
     const { getByText } = render(ConfirmDialog, {
       props: { open: true, title: 'Test', onCancel },
@@ -35,7 +35,7 @@ describe('ConfirmDialog', () => {
     expect(onCancel).toHaveBeenCalled();
   });
 
-  it('appelle onCancel sur la touche Escape', async () => {
+  it('calls `onCancel` on Escape', async () => {
     const onCancel = vi.fn();
     const { getByRole } = render(ConfirmDialog, {
       props: { open: true, title: 'Test', onCancel },
@@ -44,7 +44,7 @@ describe('ConfirmDialog', () => {
     expect(onCancel).toHaveBeenCalled();
   });
 
-  it("desactive le bouton de confirmation tant que le mot-cle n'est pas saisi exactement", async () => {
+  it('keeps the confirm button disabled until the keyword is typed exactly', async () => {
     const onConfirm = vi.fn();
     const { getByText, getByLabelText } = render(ConfirmDialog, {
       props: { open: true, title: 'Reset', confirmLabel: 'Confirm', confirmKeyword: 'RESET', onConfirm },
@@ -64,7 +64,7 @@ describe('ConfirmDialog', () => {
     expect(onConfirm).toHaveBeenCalled();
   });
 
-  it('remet le champ mot-cle a vide a chaque ouverture', async () => {
+  it('clears the keyword field each time it opens', async () => {
     const { getByLabelText, rerender } = render(ConfirmDialog, {
       props: { open: true, title: 'Reset', confirmKeyword: 'RESET' },
     });

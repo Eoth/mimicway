@@ -1,22 +1,20 @@
 import { describe, it, expect } from 'vitest';
 import { formatDateTime, formatDateTimePrecise } from '../lib/format-date.js';
 
-// Source unique de verite pour le formatage date/heure, regroupant les 3
-// fidelites d'affichage historiquement dupliquees (RequestLog/MessagingLog,
-// BackupManager, RuleTester). Chaque site d'appel doit continuer a produire
-// exactement le meme rendu qu'avant la centralisation.
+// Every screen formats its dates here, so `formatDateTime` must give exactly what `toLocaleString` gives for the same
+// arguments.
 describe('formatDateTime', () => {
   const ts = new Date('2026-01-10T12:05:09').getTime();
 
-  it('sans locale ni options : equivalent a toLocaleString() (usage RuleTester)', () => {
+  it('without a locale or options: same as `toLocaleString()`', () => {
     expect(formatDateTime(ts)).toBe(new Date(ts).toLocaleString());
   });
 
-  it('avec locale seule, sans options : equivalent a toLocaleString(locale) (usage BackupManager)', () => {
+  it('with a locale and no options: same as `toLocaleString(locale)`', () => {
     expect(formatDateTime(ts, undefined, 'fr-FR')).toBe(new Date(ts).toLocaleString('fr-FR'));
   });
 
-  it('avec locale et options : equivalent a toLocaleString(locale, options)', () => {
+  it('with a locale and options: same as `toLocaleString(locale, options)`', () => {
     const options = { year: 'numeric', month: 'long' };
     expect(formatDateTime(ts, options, 'en-US')).toBe(new Date(ts).toLocaleString('en-US', options));
   });

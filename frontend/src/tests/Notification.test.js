@@ -3,17 +3,17 @@ import { describe, it, expect } from 'vitest';
 import Notification from '../lib/components/Notification.svelte';
 
 describe('Notification', () => {
-  it('n affiche rien quand visible est false', () => {
+  it('shows nothing when `visible` is false', () => {
     const { queryByRole } = render(Notification, { props: { message: 'test', visible: false } });
     expect(queryByRole('alert')).not.toBeInTheDocument();
   });
 
-  it('affiche le message quand visible est true', () => {
+  it('shows the message when `visible` is true', () => {
     const { getByText } = render(Notification, { props: { message: 'Saved', type: 'success', visible: true } });
     expect(getByText('Saved')).toBeInTheDocument();
   });
 
-  it('a le role alert pour l accessibilite', () => {
+  it('has the alert role, so screen readers announce it', () => {
     const { getByRole } = render(Notification, { props: { message: 'Failed', type: 'error', visible: true } });
     expect(getByRole('alert')).toBeInTheDocument();
   });

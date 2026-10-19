@@ -3,12 +3,12 @@ import { describe, it, expect, vi } from 'vitest';
 import RemovableList from '../lib/components/RemovableList.svelte';
 
 describe('RemovableList', () => {
-  it("affiche le texte vide quand il n'y a pas d'items", () => {
+  it('shows the empty text when there are no items', () => {
     const { getByText } = render(RemovableList, { props: { items: [], emptyText: 'Nothing here.' } });
     expect(getByText('Nothing here.')).toBeInTheDocument();
   });
 
-  it('affiche chaque item avec un bouton de suppression', () => {
+  it('shows each item with a remove button', () => {
     const { getByText, getByLabelText } = render(RemovableList, {
       props: { items: ['alice', 'bob'] },
     });
@@ -18,7 +18,7 @@ describe('RemovableList', () => {
     expect(getByLabelText('Remove bob')).toBeInTheDocument();
   });
 
-  it("appelle onRemove avec l'item correspondant", async () => {
+  it('calls `onRemove` with the matching item', async () => {
     const onRemove = vi.fn();
     const { getByLabelText } = render(RemovableList, {
       props: { items: ['alice', 'bob'], onRemove },
@@ -27,7 +27,7 @@ describe('RemovableList', () => {
     expect(onRemove).toHaveBeenCalledWith('bob');
   });
 
-  it('supporte des items objets via getKey/getLabel', () => {
+  it('takes object items through `getKey` and `getLabel`', () => {
     const items = [{ username: 'alice' }, { username: 'bob' }];
     const { getByText } = render(RemovableList, {
       props: {

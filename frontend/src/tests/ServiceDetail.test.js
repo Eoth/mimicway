@@ -22,8 +22,8 @@ function svc(overrides = {}) {
   };
 }
 
-describe('ServiceDetail - suppression (regression crash null)', () => {
-  it('ne remonte pas de fausse erreur "Cannot read properties of null" si le service devient null pendant la suppression en vol', async () => {
+describe('ServiceDetail - deletion', () => {
+  it('reports success, not a null error, when the service turns null while its deletion is in flight', async () => {
     let resolveDelete;
     deleteService.mockReturnValue(
       new Promise((resolve) => {
@@ -40,11 +40,8 @@ describe('ServiceDetail - suppression (regression crash null)', () => {
     await fireEvent.click(getByText('Delete'));
     await fireEvent.click(getByText('Yes, delete'));
 
-    // Simule la course reactive : le parent (App.svelte) a deja retire le
-    // service courant (prop devient null) AVANT que la promesse de
-    // suppression ne se resolve — c'est exactement le scenario reproduit
-    // manuellement qui causait "Cannot read properties of null (reading
-    // 'name')" avant le correctif (capture de name/groupName avant l'await).
+    // The parent may drop the service (the prop turns null) before the deletion resolves: the handler must have
+    // read the name and the group before its `await`.
     await rerender({ service: null, onNotify, onDelete });
 
     resolveDelete();
@@ -55,7 +52,7 @@ describe('ServiceDetail - suppression (regression crash null)', () => {
     expect(onDelete).toHaveBeenCalledWith('svc-a', null);
   });
 
-  it('supprime via la route scopee au groupe quand le service appartient a un groupe', async () => {
+  it('deletes through the group route when the service belongs to a group', async () => {
     deleteService.mockResolvedValue(null);
     const onNotify = vi.fn();
     const onDelete = vi.fn();
@@ -72,8 +69,8 @@ describe('ServiceDetail - suppression (regression crash null)', () => {
   });
 });
 
-describe('ServiceDetail - formulaire d edition (regression URL sans code de groupe)', () => {
-  it('transmet availableGroups au formulaire d edition pour que l URL de test inclue le code du groupe', async () => {
+describe('ServiceDetail - edit form', () => {
+  it('passes `availableGroups` to the edit form, so its test URL holds the group code', async () => {
     const { getByText } = render(ServiceDetail, {
       props: {
         service: svc({ group_name: 'team-a' }),

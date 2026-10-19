@@ -19,7 +19,7 @@ vi.mock('../lib/api.js', () => ({
   getTcpStatus: vi.fn(),
 }));
 
-describe('App — visibilite du bouton "Mock TCP" (feature tcp-mock)', () => {
+describe('App: the raw TCP mock button follows the `tcp-mock` feature', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     api.getServices.mockResolvedValue([]);
@@ -29,14 +29,14 @@ describe('App — visibilite du bouton "Mock TCP" (feature tcp-mock)', () => {
     window.matchMedia = window.matchMedia || vi.fn().mockReturnValue({ matches: false });
   });
 
-  it('cache le bouton quand /api/tcp/status renvoie 404 (binaire sans la feature)', async () => {
+  it('hides the button when /api/tcp/status answers 404 (binary built without the feature)', async () => {
     api.getTcpStatus.mockRejectedValue(new Error('404 Not Found'));
     const { queryByTitle } = render(App);
     await waitFor(() => expect(api.getServices).toHaveBeenCalled());
     expect(queryByTitle('Raw TCP mock')).not.toBeInTheDocument();
   });
 
-  it('affiche le bouton quand /api/tcp/status repond (binaire avec la feature, meme liste vide)', async () => {
+  it('shows the button when /api/tcp/status answers, even with an empty list', async () => {
     api.getTcpStatus.mockResolvedValue([]);
     const { queryByTitle } = render(App);
     await waitFor(() => expect(queryByTitle('Raw TCP mock')).toBeInTheDocument());

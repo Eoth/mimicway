@@ -7,8 +7,8 @@ vi.mock('../lib/api.js', () => ({
   getLogs: vi.fn(),
 }));
 
-describe('RequestLog date/heure', () => {
-  it("affiche la date et l'heure de la requete, pas seulement l'heure", async () => {
+describe('RequestLog date and time', () => {
+  it('shows the date and the time of the request, not the time alone', async () => {
     const ts = new Date('2026-01-15T10:30:00').getTime();
     getLogs.mockResolvedValue([
       {
@@ -41,7 +41,7 @@ describe('RequestLog date/heure', () => {
     expect(cell.textContent).toBe(expected);
   });
 
-  it('affiche l\'en-tete de colonne "Date/Heure"', async () => {
+  it('shows the "Date/time" column header', async () => {
     getLogs.mockResolvedValue([
       {
         timestamp: Date.now(),

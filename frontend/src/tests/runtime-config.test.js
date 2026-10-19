@@ -1,23 +1,19 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { loadRuntimeConfig, getApiBaseUrl, _resetForTests } from '../lib/runtime-config.js';
 
-// Verifie la logique de resolution de l'URL de l'API (defaut vs configure) :
-// getApiBaseUrl() est '' tant que /runtime-config.json n'a jamais ete lu ou
-// n'a rien fourni d'exploitable, et refletera la valeur configuree sinon.
-// Config runtime plutot que build-time : une meme image Docker doit
-// pouvoir pointer vers des URLs d'API differentes selon l'environnement de
-// deploiement.
+// `getApiBaseUrl()` stays '' (relative URLs) until /runtime-config.json gives a usable value. The setting is read at
+// run time, not build time, so that one build can point at a different API in each deployment.
 describe('runtime-config', () => {
   beforeEach(() => {
     _resetForTests();
     vi.unstubAllGlobals();
   });
 
-  it('demarre avec une URL de base vide (comportement historique : chemin relatif)', () => {
+  it('starts with an empty base URL (relative paths)', () => {
     expect(getApiBaseUrl()).toBe('');
   });
 
-  it('adopte l URL configuree renvoyee par /runtime-config.json', async () => {
+  it('adopts the URL given by /runtime-config.json', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue({
@@ -32,7 +28,7 @@ describe('runtime-config', () => {
     expect(fetch).toHaveBeenCalledWith('/runtime-config.json');
   });
 
-  it('retire un slash final de l URL configuree', async () => {
+  it('drops a trailing slash from the configured URL', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue({
@@ -46,7 +42,7 @@ describe('runtime-config', () => {
     expect(getApiBaseUrl()).toBe('https://api.example.com');
   });
 
-  it('reste vide (comportement par defaut) si api_base_url est absent ou vide', async () => {
+  it('stays empty when `api_base_url` is missing', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue({
@@ -60,7 +56,7 @@ describe('runtime-config', () => {
     expect(getApiBaseUrl()).toBe('');
   });
 
-  it('reste vide si la reponse HTTP n est pas ok (jamais bloquant)', async () => {
+  it('stays empty when the HTTP answer is not ok', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false }));
 
     await loadRuntimeConfig();
@@ -68,14 +64,14 @@ describe('runtime-config', () => {
     expect(getApiBaseUrl()).toBe('');
   });
 
-  it('reste vide si fetch echoue (backend injoignable, jamais bloquant)', async () => {
+  it('stays empty and does not throw when fetch fails', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network error')));
 
     await expect(loadRuntimeConfig()).resolves.toBeUndefined();
     expect(getApiBaseUrl()).toBe('');
   });
 
-  it('reste vide si la reponse n est pas un JSON valide (jamais bloquant)', async () => {
+  it('stays empty and does not throw when the answer is not valid JSON', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue({

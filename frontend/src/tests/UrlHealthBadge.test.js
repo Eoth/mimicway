@@ -10,12 +10,12 @@ vi.mock('../lib/api.js', () => ({
 }));
 
 describe('UrlHealthBadge', () => {
-  it('affiche "Non testé" avant tout test', () => {
+  it('shows "Not tested" before any test', () => {
     const { getByText } = render(UrlHealthBadge, { props: { serviceName: 'svc-a' } });
     expect(getByText('Not tested')).toBeInTheDocument();
   });
 
-  it('teste la cible au clic et affiche "Accessible" si joignable', async () => {
+  it('tests the target on click and shows "Reachable" when it answers', async () => {
     pingService.mockResolvedValue({ reachable: true, checked_at: Date.now(), error: null });
     const { getByText } = render(UrlHealthBadge, { props: { serviceName: 'svc-a' } });
 
@@ -25,7 +25,7 @@ describe('UrlHealthBadge', () => {
     expect(pingService).toHaveBeenCalledWith('svc-a', null);
   });
 
-  it('affiche "Inaccessible" et un avertissement si la cible ne repond pas', async () => {
+  it('shows "Unreachable" and a warning when the target does not answer', async () => {
     pingService.mockResolvedValue({ reachable: false, checked_at: Date.now(), error: 'connection refused' });
     const { getByText } = render(UrlHealthBadge, { props: { serviceName: 'svc-b' } });
 
@@ -35,7 +35,7 @@ describe('UrlHealthBadge', () => {
     expect(getByText(/^Only the mock mode can be used for this service/)).toBeInTheDocument();
   });
 
-  it("affiche une erreur si l'appel echoue", async () => {
+  it('shows the error when the call fails', async () => {
     pingService.mockRejectedValue(new Error('502 Bad Gateway'));
     const { getByText } = render(UrlHealthBadge, { props: { serviceName: 'svc-c' } });
 
@@ -44,12 +44,12 @@ describe('UrlHealthBadge', () => {
     await waitFor(() => expect(getByText('502 Bad Gateway')).toBeInTheDocument());
   });
 
-  it("mentionne explicitement qu'il s'agit d'un test reseau, pas applicatif", () => {
+  it('says the test checks the network only', () => {
     const { getByText } = render(UrlHealthBadge, { props: { serviceName: 'svc-d' } });
     expect(getByText(/network only/)).toBeInTheDocument();
   });
 
-  it('affiche "Expiré" quand le dernier test date de plus de PING_TTL_MS', async () => {
+  it('shows "Expired" once the last test is older than `PING_TTL_MS`', async () => {
     vi.useFakeTimers();
     pingService.mockResolvedValue({ reachable: true, checked_at: Date.now(), error: null });
     const { getByText } = render(UrlHealthBadge, { props: { serviceName: 'svc-e' } });

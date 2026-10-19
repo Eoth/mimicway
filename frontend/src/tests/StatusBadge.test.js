@@ -3,17 +3,17 @@ import { describe, it, expect } from 'vitest';
 import StatusBadge from '../lib/components/StatusBadge.svelte';
 
 describe('StatusBadge', () => {
-  it('affiche MOCK quand actif', () => {
+  it('shows MOCK when active', () => {
     const { getByText } = render(StatusBadge, { props: { active: true } });
     expect(getByText('MOCK')).toBeInTheDocument();
   });
 
-  it('affiche PROXY quand inactif', () => {
+  it('shows PROXY when inactive', () => {
     const { getByText } = render(StatusBadge, { props: { active: false } });
     expect(getByText('PROXY')).toBeInTheDocument();
   });
 
-  it('a un role status', () => {
+  it('has the status role', () => {
     const { getByRole } = render(StatusBadge, { props: { active: true } });
     expect(getByRole('status')).toBeInTheDocument();
   });

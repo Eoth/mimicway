@@ -11,32 +11,32 @@ const mockService = {
 };
 
 describe('ServiceCard', () => {
-  it('affiche le nom du service', () => {
+  it('shows the service name', () => {
     const { getByText } = render(ServiceCard, { props: { service: mockService } });
     expect(getByText('svc-users')).toBeInTheDocument();
   });
 
-  it('affiche l URL namespacee', () => {
+  it('shows the URL prefixed with the service name', () => {
     const { getByText } = render(ServiceCard, { props: { service: mockService } });
     expect(getByText('/svc-users/users/*')).toBeInTheDocument();
   });
 
-  it('affiche l url cible', () => {
+  it('shows the target URL', () => {
     const { getByText } = render(ServiceCard, { props: { service: mockService } });
     expect(getByText('http://users:80')).toBeInTheDocument();
   });
 
-  it('affiche le nombre de regles', () => {
+  it('shows the number of rules', () => {
     const { getByText } = render(ServiceCard, { props: { service: mockService } });
     expect(getByText('2')).toBeInTheDocument();
   });
 
-  it('a un bouton Configurer', () => {
+  it('has a Configure button', () => {
     const { getByText } = render(ServiceCard, { props: { service: mockService } });
     expect(getByText('Configure')).toBeInTheDocument();
   });
 
-  it('appelle onSelect au clic sur Configurer avec le nom et le groupe du service', async () => {
+  it('calls `onSelect` with the service name and group on Configure', async () => {
     const onSelect = vi.fn();
     const svc = { ...mockService, group_name: 'team-a' };
     const { getByText } = render(ServiceCard, { props: { service: svc, onSelect } });
@@ -44,12 +44,12 @@ describe('ServiceCard', () => {
     expect(onSelect).toHaveBeenCalledWith('svc-users', 'team-a');
   });
 
-  it('affiche le badge MOCK quand is_mocked est true', () => {
+  it('shows the MOCK badge when `is_mocked` is true', () => {
     const { getByText } = render(ServiceCard, { props: { service: mockService } });
     expect(getByText('MOCK')).toBeInTheDocument();
   });
 
-  it('affiche le badge PROXY quand is_mocked est false', () => {
+  it('shows the PROXY badge when `is_mocked` is false', () => {
     const svc = { ...mockService, is_mocked: false };
     const { getByText } = render(ServiceCard, { props: { service: svc } });
     expect(getByText('PROXY')).toBeInTheDocument();

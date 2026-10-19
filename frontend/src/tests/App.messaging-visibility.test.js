@@ -18,7 +18,7 @@ vi.mock('../lib/api.js', () => ({
   getMessagingStatus: vi.fn(),
 }));
 
-describe('App — visibilite du bouton "Messages Kafka" (feature messaging-kafka)', () => {
+describe('App: the Kafka message log button follows the `messaging-kafka` feature', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     api.getServices.mockResolvedValue([]);
@@ -27,14 +27,14 @@ describe('App — visibilite du bouton "Messages Kafka" (feature messaging-kafka
     window.matchMedia = window.matchMedia || vi.fn().mockReturnValue({ matches: false });
   });
 
-  it('cache le bouton quand /api/messaging/status renvoie 404 (binaire sans la feature)', async () => {
+  it('hides the button when /api/messaging/status answers 404 (binary built without the feature)', async () => {
     api.getMessagingStatus.mockRejectedValue(new Error('404 Not Found'));
     const { queryByTitle } = render(App);
     await waitFor(() => expect(api.getServices).toHaveBeenCalled());
     expect(queryByTitle('Kafka message log')).not.toBeInTheDocument();
   });
 
-  it('affiche le bouton quand /api/messaging/status renvoie available=true (binaire avec la feature)', async () => {
+  it('shows the button when /api/messaging/status answers `available: true`', async () => {
     api.getMessagingStatus.mockResolvedValue({ available: true });
     const { queryByTitle } = render(App);
     await waitFor(() => expect(queryByTitle('Kafka message log')).toBeInTheDocument());

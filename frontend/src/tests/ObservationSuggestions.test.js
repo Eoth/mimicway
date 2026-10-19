@@ -24,7 +24,7 @@ beforeEach(() => {
 });
 
 describe('ObservationSuggestions', () => {
-  it('ne rend rien pour un service mocke (is_mocked=true)', async () => {
+  it('renders nothing for a mocked service', async () => {
     const { queryByTestId } = render(ObservationSuggestions, {
       props: { serviceName: 'svc-a', isMocked: true },
     });
@@ -32,14 +32,14 @@ describe('ObservationSuggestions', () => {
     expect(queryByTestId('observation-panel-svc-a')).not.toBeInTheDocument();
   });
 
-  it('affiche "Observer ce service" quand le service n\'est pas encore observe', async () => {
+  it('offers to observe a service not observed yet', async () => {
     const { getByText } = render(ObservationSuggestions, {
       props: { serviceName: 'svc-a', isMocked: false },
     });
     await waitFor(() => expect(getByText('Observe this service')).toBeInTheDocument());
   });
 
-  it('reflete un service deja observe au chargement', async () => {
+  it('shows a service already observed when it loads', async () => {
     getObservationStatus.mockResolvedValue([{ service_name: 'svc-a', group_name: null }]);
     const { getByText } = render(ObservationSuggestions, {
       props: { serviceName: 'svc-a', isMocked: false },
@@ -47,7 +47,7 @@ describe('ObservationSuggestions', () => {
     await waitFor(() => expect(getByText('Stop observing')).toBeInTheDocument());
   });
 
-  it("active l'observation au clic et appelle observeService avec le bon service/groupe", async () => {
+  it('starts observing on click, with the service and its group', async () => {
     observeService.mockResolvedValue(undefined);
     const { getByText } = render(ObservationSuggestions, {
       props: { serviceName: 'svc-a', groupName: 'team-a', isMocked: false },
@@ -60,7 +60,7 @@ describe('ObservationSuggestions', () => {
     expect(observeService).toHaveBeenCalledWith('svc-a', 'team-a');
   });
 
-  it("desactive l'observation au clic quand deja active", async () => {
+  it('stops observing on click when already on', async () => {
     getObservationStatus.mockResolvedValue([{ service_name: 'svc-a', group_name: null }]);
     unobserveService.mockResolvedValue(undefined);
     const { getByText } = render(ObservationSuggestions, {
@@ -74,7 +74,7 @@ describe('ObservationSuggestions', () => {
     expect(unobserveService).toHaveBeenCalledWith('svc-a', null);
   });
 
-  it("affiche une erreur si l'activation echoue", async () => {
+  it('shows the error when observing fails', async () => {
     observeService.mockRejectedValue(new Error('a purely proxied service is required'));
     const { getByText } = render(ObservationSuggestions, {
       props: { serviceName: 'svc-a', isMocked: false },
@@ -86,7 +86,7 @@ describe('ObservationSuggestions', () => {
     await waitFor(() => expect(getByText('a purely proxied service is required')).toBeInTheDocument());
   });
 
-  it('charge et affiche une suggestion inconditionnelle', async () => {
+  it('loads and shows an unconditional suggestion', async () => {
     getObservationStatus.mockResolvedValue([{ service_name: 'svc-a', group_name: null }]);
     getServiceSuggestions.mockResolvedValue([
       {
@@ -117,7 +117,7 @@ describe('ObservationSuggestions', () => {
     expect(getByTestId('observation-suggestion-svc-a-0-0')).toBeInTheDocument();
   });
 
-  it('affiche une suggestion conditionnelle avec une carte par regle et transmet le brouillon au clic', async () => {
+  it('shows one card per rule of a conditional suggestion and passes its draft on click', async () => {
     getObservationStatus.mockResolvedValue([{ service_name: 'svc-a', group_name: null }]);
     getServiceSuggestions.mockResolvedValue([
       {
@@ -175,7 +175,7 @@ describe('ObservationSuggestions', () => {
     );
   });
 
-  it('affiche un signal sans regle proposable pour une variance inexpliquee', async () => {
+  it('reports an unexplained variance with its call and response counts', async () => {
     getObservationStatus.mockResolvedValue([{ service_name: 'svc-a', group_name: null }]);
     getServiceSuggestions.mockResolvedValue([
       {

@@ -13,7 +13,7 @@ describe('MessagingLog', () => {
     vi.clearAllMocks();
   });
 
-  it('affiche un message matche avec son service/regle', async () => {
+  it('shows a matched message with its service and rule', async () => {
     getMessagingLogs.mockResolvedValue([
       {
         timestamp: Date.now(),
@@ -33,7 +33,7 @@ describe('MessagingLog', () => {
     expect(getByText('Matches')).toBeInTheDocument();
   });
 
-  it('affiche un badge "Tronque" quand le corps a ete tronque', async () => {
+  it('shows a "Truncated" badge when the body was truncated', async () => {
     getMessagingLogs.mockResolvedValue([
       {
         timestamp: Date.now(),
@@ -52,7 +52,7 @@ describe('MessagingLog', () => {
     expect(getByText('Does not match')).toBeInTheDocument();
   });
 
-  it('n\'affiche pas de badge "Tronque" quand le corps n\'est pas tronque', async () => {
+  it('shows no "Truncated" badge when the body is whole', async () => {
     getMessagingLogs.mockResolvedValue([
       {
         timestamp: Date.now(),
@@ -71,13 +71,13 @@ describe('MessagingLog', () => {
     expect(queryByText('Truncated')).not.toBeInTheDocument();
   });
 
-  it("affiche l'etat vide quand aucun message n'est journalise", async () => {
+  it('shows the empty state when no message is logged', async () => {
     getMessagingLogs.mockResolvedValue([]);
     const { getByText } = render(MessagingLog);
     await waitFor(() => expect(getByText('No Kafka message processed yet.')).toBeInTheDocument());
   });
 
-  it('envoie une simulation via le formulaire et rafraichit le journal', async () => {
+  it('sends a simulation from the form and refreshes the log', async () => {
     getMessagingLogs.mockResolvedValue([]);
     simulateMessage.mockResolvedValue(null);
     const onNotify = vi.fn();
@@ -94,7 +94,7 @@ describe('MessagingLog', () => {
     expect(onNotify).toHaveBeenCalledWith(expect.stringContaining('orders.in'), 'success');
   });
 
-  it('refuse de simuler sans topic renseigne', async () => {
+  it('refuses to simulate without a topic', async () => {
     getMessagingLogs.mockResolvedValue([]);
     const onNotify = vi.fn();
     const { getByText } = render(MessagingLog, { onNotify });

@@ -2,17 +2,15 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { getServices } from '../lib/api.js';
 import { loadRuntimeConfig, _resetForTests } from '../lib/runtime-config.js';
 
-// Verifie que api.js compose reellement ses appels avec l'URL de base
-// resolue par runtime-config.js (defaut '' -> chemin relatif, ou l'URL
-// fournie par /runtime-config.json) — le point de raccordement concret pour
-// rendre l'URL de l'API configurable independamment du Host du frontend.
-describe('api.js — resolution de l URL de base', () => {
+// `api.js` builds its calls on the base URL from `runtime-config.js`: relative by default, or the URL given by
+// /runtime-config.json, which lets the API live on another host than the UI.
+describe('api.js - base URL', () => {
   beforeEach(() => {
     _resetForTests();
     vi.unstubAllGlobals();
   });
 
-  it('appelle un chemin relatif par defaut (comportement historique inchange)', async () => {
+  it('calls a relative path by default', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue({
@@ -27,7 +25,7 @@ describe('api.js — resolution de l URL de base', () => {
     expect(fetch).toHaveBeenCalledWith('/api/services', expect.any(Object));
   });
 
-  it('prefixe les appels par l URL configuree via /runtime-config.json', async () => {
+  it('prefixes the calls with the URL from /runtime-config.json', async () => {
     vi.stubGlobal(
       'fetch',
       vi
