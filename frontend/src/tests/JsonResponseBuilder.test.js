@@ -17,13 +17,13 @@ const nestedFields = [
   },
 ];
 
-describe('JsonResponseBuilder — breadcrumb de navigation', () => {
-  it("n'affiche pas de breadcrumb tant qu'on est a la racine", () => {
+describe('JsonResponseBuilder — breadcrumb navigation', () => {
+  it('shows no breadcrumb at the root', () => {
     const { queryByLabelText } = render(JsonResponseBuilder, { props: { fields: nestedFields } });
     expect(queryByLabelText('Data path')).not.toBeInTheDocument();
   });
 
-  it('affiche le rendu complet par defaut (pas de perte de fonctionnalite)', () => {
+  it('renders every nesting level at the root by default', () => {
     const { getByDisplayValue } = render(JsonResponseBuilder, { props: { fields: nestedFields } });
     expect(getByDisplayValue('unite_legale')).toBeInTheDocument();
     expect(getByDisplayValue('nom')).toBeInTheDocument();
@@ -31,7 +31,7 @@ describe('JsonResponseBuilder — breadcrumb de navigation', () => {
     expect(getByDisplayValue('ville')).toBeInTheDocument();
   });
 
-  it('navigue dans un objet imbrique via le bouton "Naviguer"', async () => {
+  it('the "Go into" button opens a nested object and shows the breadcrumb', async () => {
     const { getByLabelText, getByRole } = render(JsonResponseBuilder, { props: { fields: nestedFields } });
 
     await fireEvent.click(getByLabelText('Go into unite_legale'));
@@ -42,7 +42,7 @@ describe('JsonResponseBuilder — breadcrumb de navigation', () => {
     expect(breadcrumb).toHaveTextContent('unite_legale');
   });
 
-  it('permet de remonter en cliquant sur "racine" dans le breadcrumb', async () => {
+  it('clicking "root" in the breadcrumb goes back up', async () => {
     const { getByLabelText, getByText, getByDisplayValue } = render(JsonResponseBuilder, {
       props: { fields: nestedFields },
     });
@@ -55,7 +55,7 @@ describe('JsonResponseBuilder — breadcrumb de navigation', () => {
     expect(getByDisplayValue('unite_legale')).toBeInTheDocument();
   });
 
-  it("le dernier segment du breadcrumb n'est pas cliquable (aria-current page)", async () => {
+  it('renders the last breadcrumb segment as plain text marked as the current page', async () => {
     const { getByLabelText, getByText } = render(JsonResponseBuilder, { props: { fields: nestedFields } });
     await fireEvent.click(getByLabelText('Go into unite_legale'));
 
@@ -63,7 +63,7 @@ describe('JsonResponseBuilder — breadcrumb de navigation', () => {
     expect(current).toHaveAttribute('aria-current', 'page');
   });
 
-  it('ajoute un nouveau champ dans le sous-niveau focus, pas a la racine', async () => {
+  it('adds a new field to the focused level, not to the root', async () => {
     const onUpdate = vi.fn();
     const { getByLabelText, getByText } = render(JsonResponseBuilder, {
       props: { fields: nestedFields, onUpdate },
@@ -78,8 +78,8 @@ describe('JsonResponseBuilder — breadcrumb de navigation', () => {
   });
 });
 
-describe('JsonResponseBuilder — pliage/depliage des noeuds imbriques', () => {
-  it('tout est deplie par defaut (aucune regression sur le rendu existant)', () => {
+describe('JsonResponseBuilder — folding of nested fields', () => {
+  it('unfolds everything by default', () => {
     const { getByLabelText, getByDisplayValue } = render(JsonResponseBuilder, { props: { fields: nestedFields } });
     expect(getByLabelText('Collapse unite_legale')).toHaveAttribute('aria-expanded', 'true');
     expect(getByDisplayValue('nom')).toBeVisible();
@@ -87,7 +87,7 @@ describe('JsonResponseBuilder — pliage/depliage des noeuds imbriques', () => {
     expect(getByDisplayValue('ville')).toBeVisible();
   });
 
-  it('replier un noeud masque son contenu et affiche un indicateur, sans perdre les donnees', async () => {
+  it('folding a field hides its content and emits no update', async () => {
     const onUpdate = vi.fn();
     const { getByLabelText, getByDisplayValue } = render(JsonResponseBuilder, {
       props: { fields: nestedFields, onUpdate },
@@ -100,11 +100,11 @@ describe('JsonResponseBuilder — pliage/depliage des noeuds imbriques', () => {
     expect(getByDisplayValue('nom')).not.toBeVisible();
     expect(getByDisplayValue('adresse')).not.toBeVisible();
     expect(getByDisplayValue('ville')).not.toBeVisible();
-    // Rien n'a ete mute : replier est un pur affichage.
+    // Folding changes the display only, never the fields.
     expect(onUpdate).not.toHaveBeenCalled();
   });
 
-  it('depliage restaure le contenu masque, aucune donnee perdue', async () => {
+  it('unfolding shows the hidden content again', async () => {
     const { getByLabelText, getByDisplayValue } = render(JsonResponseBuilder, { props: { fields: nestedFields } });
 
     await fireEvent.click(getByLabelText('Collapse unite_legale'));
@@ -116,22 +116,19 @@ describe('JsonResponseBuilder — pliage/depliage des noeuds imbriques', () => {
     expect(getByDisplayValue('ville')).toBeVisible();
   });
 
-  it('un champ de type "valeur" (sans enfants) n\'a pas de chevron de pliage', () => {
+  it('a "Value" field (without children) has no fold chevron', () => {
     const { queryByLabelText } = render(JsonResponseBuilder, { props: { fields: nestedFields } });
     expect(queryByLabelText('Collapse nom')).not.toBeInTheDocument();
     expect(queryByLabelText('Expand nom')).not.toBeInTheDocument();
   });
 });
 
-// Correctif "diagnostic reponse JSON/XML" : `needsValueInput` n'incluait pas
-// 'script', contrairement au mode "par exemple" (JsonPasteBuilder.svelte) --
-// choisir cette source masquait le champ qui permet de preciser QUELLE cle
-// du resultat de script utiliser (buildExpr produit `script.${valeur}`, cf
-// tpl-utils.js).
-describe('JsonResponseBuilder — source "Resultat du script"', () => {
+// The "Script result" source needs the value input: it names the key of the script result to read (`buildExpr` in
+// tpl-utils.js writes `script.<value>`).
+describe('JsonResponseBuilder — "Script result" source', () => {
   const scriptField = [{ key: 'nom', fieldType: 'value', source: 'fixed', value: '', pipe: '', asNumber: false }];
 
-  it('affiche le champ de saisie de valeur quand la source "script" est choisie', async () => {
+  it('shows the value input when the "script" source is chosen', async () => {
     const { getByLabelText } = render(JsonResponseBuilder, { props: { fields: scriptField } });
 
     await fireEvent.change(getByLabelText('Source of the value'), { target: { value: 'script' } });
@@ -139,7 +136,7 @@ describe('JsonResponseBuilder — source "Resultat du script"', () => {
     expect(getByLabelText('Value')).toBeInTheDocument();
   });
 
-  it('transmet la cle du script saisie via onUpdate', async () => {
+  it('passes the typed script key to onUpdate', async () => {
     const onUpdate = vi.fn();
     const { getByLabelText } = render(JsonResponseBuilder, { props: { fields: scriptField, onUpdate } });
 

@@ -34,36 +34,35 @@ const searchPlaceholder = 'Search by name, path, URL or group...';
 
 describe('ServiceList', () => {
   beforeEach(() => {
-    // L'etat deplie/replie vit desormais dans un store partage hors du cycle
-    // de vie du composant (cf group-expansion-state.svelte.js) -- isolation
-    // necessaire pour que chaque test reparte d'un etat "tout replie".
+    // The expansion state lives in a shared store that outlives the component (group-expansion-state.svelte.js):
+    // reset it so that each test starts with every group folded.
     resetGroupExpansionState();
   });
 
-  it('affiche un etat vide quand pas de services', () => {
+  it('shows an empty state when there is no service', () => {
     const { getByText } = render(ServiceList, { props: { services: [] } });
     expect(getByText('No service configured')).toBeInTheDocument();
   });
 
-  it('affiche les groupes plies par defaut', () => {
+  it('shows the groups folded by default', () => {
     const { getByText, queryByText } = render(ServiceList, { props: { services: mockServices } });
     expect(getByText('team-a')).toBeInTheDocument();
     expect(getByText('No group')).toBeInTheDocument();
     expect(queryByText('svc-users')).not.toBeInTheDocument();
   });
 
-  it('affiche les noms de groupes', () => {
+  it('shows the group names', () => {
     const { getByText } = render(ServiceList, { props: { services: mockServices } });
     expect(getByText('team-a')).toBeInTheDocument();
     expect(getByText('No group')).toBeInTheDocument();
   });
 
-  it('affiche la barre de recherche quand il y a des services', () => {
+  it('shows the search bar when there are services', () => {
     const { getByPlaceholderText } = render(ServiceList, { props: { services: mockServices } });
     expect(getByPlaceholderText(searchPlaceholder)).toBeInTheDocument();
   });
 
-  it('filtre par nom de service', async () => {
+  it('filters by service name', async () => {
     const { getByPlaceholderText, queryByText } = render(ServiceList, { props: { services: mockServices } });
     const search = getByPlaceholderText(searchPlaceholder);
     await fireEvent.input(search, { target: { value: 'insee' } });
@@ -72,7 +71,7 @@ describe('ServiceList', () => {
     expect(queryByText('svc-orders')).not.toBeInTheDocument();
   });
 
-  it('filtre par chemin d ecoute', async () => {
+  it('filters by listen path', async () => {
     const { getByPlaceholderText, queryByText } = render(ServiceList, { props: { services: mockServices } });
     const search = getByPlaceholderText(searchPlaceholder);
     await fireEvent.input(search, { target: { value: '/orders' } });
@@ -80,21 +79,21 @@ describe('ServiceList', () => {
     expect(queryByText('svc-users')).not.toBeInTheDocument();
   });
 
-  it('affiche un message quand la recherche ne matche rien', async () => {
+  it('shows a message when the search matches nothing', async () => {
     const { getByPlaceholderText, getByText } = render(ServiceList, { props: { services: mockServices } });
     const search = getByPlaceholderText(searchPlaceholder);
     await fireEvent.input(search, { target: { value: 'zzzzz' } });
     expect(getByText('No service matches “zzzzz”')).toBeInTheDocument();
   });
 
-  it('affiche le compteur de resultats pendant la recherche', async () => {
+  it('shows the result count during a search', async () => {
     const { getByPlaceholderText, getByText } = render(ServiceList, { props: { services: mockServices } });
     const search = getByPlaceholderText(searchPlaceholder);
     await fireEvent.input(search, { target: { value: 'svc' } });
     expect(getByText('2 / 3 services')).toBeInTheDocument();
   });
 
-  it('filtre par nom de groupe', async () => {
+  it('filters by group name', async () => {
     const { getByPlaceholderText, queryByText } = render(ServiceList, { props: { services: mockServices } });
     const search = getByPlaceholderText(searchPlaceholder);
     await fireEvent.input(search, { target: { value: 'team-a' } });
@@ -102,20 +101,19 @@ describe('ServiceList', () => {
     expect(queryByText('svc-users')).not.toBeInTheDocument();
   });
 
-  it('un groupe deplie manuellement reste deplie apres un demontage/remontage du composant', async () => {
+  it('a group unfolded by hand stays unfolded after the component is unmounted and mounted again', async () => {
     const first = render(ServiceList, { props: { services: mockServices } });
     await fireEvent.click(first.getByText('team-a'));
     expect(first.queryByText('insee-api')).toBeInTheDocument();
     first.unmount();
 
-    // Simule le retour a la vue liste apres navigation vers l'edition d'un
-    // service : ServiceList est recree de zero (nouveau montage), seul le
-    // store partage (hors composant) porte l'etat deplie.
+    // As when the user comes back from editing a service: `ServiceList` is mounted from scratch, and only the shared
+    // store still holds the expansion state.
     const second = render(ServiceList, { props: { services: mockServices } });
     expect(second.queryByText('insee-api')).toBeInTheDocument();
   });
 
-  it('selectionner un service force le deploiement de son groupe (visible au retour)', async () => {
+  it('selecting a service reports it with its group, and the group is still open after a remount', async () => {
     const onSelect = vi.fn();
     const first = render(ServiceList, { props: { services: mockServices, onSelect } });
     await fireEvent.click(first.getByText('team-a'));
@@ -128,7 +126,7 @@ describe('ServiceList', () => {
     expect(second.queryByText('insee-api')).toBeInTheDocument();
   });
 
-  it('un groupe replie manuellement reste replie apres un demontage/remontage du composant', async () => {
+  it('a group folded by hand stays folded after the component is unmounted and mounted again', async () => {
     const first = render(ServiceList, { props: { services: mockServices } });
     await fireEvent.click(first.getByText('team-a'));
     await fireEvent.click(first.getByText('team-a'));

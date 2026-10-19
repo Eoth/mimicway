@@ -9,7 +9,7 @@ async function pasteAndParse(getByLabelText, getByText, json) {
 }
 
 describe('JsonPasteBuilder (exampleJsonToFields via tpl-utils.js)', () => {
-  it("detecte les champs d'un objet colle et les affiche", async () => {
+  it('detects and shows the fields of a pasted object', async () => {
     const onUpdate = vi.fn();
     const { getByLabelText, getByText } = render(JsonPasteBuilder, { props: { onUpdate } });
 
@@ -20,7 +20,7 @@ describe('JsonPasteBuilder (exampleJsonToFields via tpl-utils.js)', () => {
     expect(onUpdate).toHaveBeenCalled();
   });
 
-  it('supporte un tableau racine', async () => {
+  it('takes the fields of the first element of a root array', async () => {
     const onUpdate = vi.fn();
     const { getByLabelText, getByText } = render(JsonPasteBuilder, { props: { onUpdate } });
 
@@ -31,13 +31,13 @@ describe('JsonPasteBuilder (exampleJsonToFields via tpl-utils.js)', () => {
     expect(fields[0].value).toBe('1');
   });
 
-  it('affiche une erreur sur un JSON invalide', async () => {
+  it('shows an error on invalid JSON', async () => {
     const { getByLabelText, getByText } = render(JsonPasteBuilder);
     await pasteAndParse(getByLabelText, getByText, '{invalid');
     await waitFor(() => expect(getByText(/^Invalid JSON: ./)).toBeInTheDocument());
   });
 
-  it('rejette un tableau vide avec un message explicite', async () => {
+  it('rejects an empty array with a message that says so', async () => {
     const { getByLabelText, getByText } = render(JsonPasteBuilder);
     await pasteAndParse(getByLabelText, getByText, '[]');
     await waitFor(() =>
@@ -46,13 +46,10 @@ describe('JsonPasteBuilder (exampleJsonToFields via tpl-utils.js)', () => {
   });
 });
 
-// startParsed : seede l'etat initial pour la restauration d'une regle
-// existante. Sans cette prop (comportement par defaut, teste ci-dessus), le
-// composant affiche toujours la zone de collage en premier, meme avec des
-// `fields` deja peuples -- exactement le comportement a eviter a la
-// restauration.
-describe("JsonPasteBuilder — startParsed (restauration a l'edition, retour 1)", () => {
-  it('affiche directement la liste de champs quand startParsed=true et fields deja peuple', () => {
+// `startParsed` restores an existing rule: without it, the component always opens on the paste area, even when
+// `fields` is already filled.
+describe('JsonPasteBuilder — startParsed (restoring a saved rule)', () => {
+  it('shows the list of fields at once when startParsed=true and fields is filled', () => {
     const fields = [{ key: 'siret', fieldType: 'value', source: 'path', value: 'siret', pipe: '', asNumber: false }];
     const { getByText, queryByLabelText } = render(JsonPasteBuilder, { props: { fields, startParsed: true } });
 
@@ -60,7 +57,7 @@ describe("JsonPasteBuilder — startParsed (restauration a l'edition, retour 1)"
     expect(queryByLabelText('Paste an example of the JSON response')).not.toBeInTheDocument();
   });
 
-  it('affiche la zone de collage quand startParsed=false (defaut), meme avec des fields fournis', () => {
+  it('shows the paste area when startParsed=false (the default), even with fields given', () => {
     const fields = [{ key: 'siret', fieldType: 'value', source: 'fixed', value: '123', pipe: '', asNumber: false }];
     const { getByLabelText, queryByText } = render(JsonPasteBuilder, { props: { fields } });
 
@@ -69,15 +66,12 @@ describe("JsonPasteBuilder — startParsed (restauration a l'edition, retour 1)"
   });
 });
 
-// Pliage des champs 'object' (correctif "diagnostic reponse JSON/XML") : ce
-// mode "par exemple" en etait prive par oubli, alors que son equivalent XML
-// (XmlPasteBuilder) l'a des l'origine. Contrairement a XmlPasteBuilder, ce
-// composant n'a pas de fil d'Ariane (rendu recursif a plat, divergence
-// assumee) -- seul le pliage est ajoute ici.
-describe('JsonPasteBuilder — pliage des champs objet (correctif diagnostic)', () => {
+// Unlike XmlPasteBuilder, this view has no breadcrumb: it renders the whole tree, so folding is its only way to
+// shorten it.
+describe('JsonPasteBuilder — folding of object fields', () => {
   const nestedJson = '{"client":{"nom":"ACME","siret":"123"}}';
 
-  it('tout est deplie par defaut', async () => {
+  it('unfolds everything by default', async () => {
     const { getByLabelText, getByText } = render(JsonPasteBuilder);
     await pasteAndParse(getByLabelText, getByText, nestedJson);
     await waitFor(() => expect(getByText('client')).toBeInTheDocument());
@@ -85,7 +79,7 @@ describe('JsonPasteBuilder — pliage des champs objet (correctif diagnostic)', 
     expect(getByText('siret')).toBeInTheDocument();
   });
 
-  it('replier un champ objet masque ses enfants et affiche un indicateur, sans muter les donnees', async () => {
+  it('folding an object field hides its children, shows a count and emits no update', async () => {
     const onUpdate = vi.fn();
     const { getByLabelText, getByText, queryByText } = render(JsonPasteBuilder, { props: { onUpdate } });
     await pasteAndParse(getByLabelText, getByText, nestedJson);
@@ -100,7 +94,7 @@ describe('JsonPasteBuilder — pliage des champs objet (correctif diagnostic)', 
     expect(onUpdate).not.toHaveBeenCalled();
   });
 
-  it("deplier restaure l'affichage des enfants", async () => {
+  it('unfolding shows the children again', async () => {
     const { getByLabelText, getByText, queryByText } = render(JsonPasteBuilder);
     await pasteAndParse(getByLabelText, getByText, nestedJson);
     await waitFor(() => expect(getByLabelText('Collapse client')).toBeInTheDocument());
@@ -112,7 +106,7 @@ describe('JsonPasteBuilder — pliage des champs objet (correctif diagnostic)', 
     expect(getByText('nom')).toBeVisible();
   });
 
-  it('un champ "valeur" simple n\'a pas de chevron de pliage', async () => {
+  it('a plain value field has no fold chevron', async () => {
     const { getByLabelText, getByText, queryByLabelText } = render(JsonPasteBuilder);
     await pasteAndParse(getByLabelText, getByText, '{"nom":"ACME"}');
     await waitFor(() => expect(getByText('nom')).toBeInTheDocument());
@@ -120,18 +114,16 @@ describe('JsonPasteBuilder — pliage des champs objet (correctif diagnostic)', 
   });
 });
 
-// Pipes : absents avant cette passe, ajoutes en coherence avec le mode
-// guide (JsonResponseBuilder.svelte). Visible uniquement pour une source
-// non-fixe (meme regle que le mode guide).
-describe('JsonPasteBuilder — pipes (retour 2)', () => {
-  it('n\'affiche pas de champ pipe pour une source "fixed"', async () => {
+// As in JsonResponseBuilder, the pipe input shows only for a source other than 'fixed'.
+describe('JsonPasteBuilder — pipes', () => {
+  it('shows no pipe input for a "fixed" source', async () => {
     const { getByLabelText, getByText, queryByLabelText } = render(JsonPasteBuilder);
     await pasteAndParse(getByLabelText, getByText, '{"nom":"ACME"}');
     await waitFor(() => expect(getByText('nom')).toBeInTheDocument());
     expect(queryByLabelText('Transformation pipe for nom')).not.toBeInTheDocument();
   });
 
-  it("affiche un champ pipe des qu'une source non-fixe est choisie, et le transmet via onUpdate", async () => {
+  it('shows a pipe input once another source is chosen and passes the pipe to onUpdate', async () => {
     const onUpdate = vi.fn();
     const { getByLabelText, getByText } = render(JsonPasteBuilder, { props: { onUpdate } });
     await pasteAndParse(getByLabelText, getByText, '{"siret":"123"}');

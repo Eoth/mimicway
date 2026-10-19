@@ -15,7 +15,7 @@ async function submitForm(container) {
 }
 
 describe('ServiceForm validation', () => {
-  it('refuse un nom vide', async () => {
+  it('rejects an empty name', async () => {
     const onSave = vi.fn();
     const { getByLabelText, container, getByRole } = render(ServiceForm, { props: { onSave } });
 
@@ -25,7 +25,7 @@ describe('ServiceForm validation', () => {
     expect(getByRole('alert')).toHaveTextContent('The service name is required.');
   });
 
-  it('refuse le nom reserve "api"', async () => {
+  it('rejects the reserved name "api"', async () => {
     const onSave = vi.fn();
     const { getByLabelText, container, getByRole } = render(ServiceForm, { props: { onSave } });
 
@@ -35,7 +35,7 @@ describe('ServiceForm validation', () => {
     expect(getByRole('alert')).toHaveTextContent('The name "api" is reserved by Mimicway');
   });
 
-  it('refuse le nom reserve "index.html"', async () => {
+  it('rejects the reserved name "index.html"', async () => {
     const onSave = vi.fn();
     const { getByLabelText, container, getByRole } = render(ServiceForm, { props: { onSave } });
 
@@ -45,7 +45,7 @@ describe('ServiceForm validation', () => {
     expect(getByRole('alert')).toHaveTextContent('The name "index.html" is reserved by Mimicway');
   });
 
-  it('accepte un listen_path vide (catch-all)', async () => {
+  it('accepts an empty listen_path (catch-all)', async () => {
     const onSave = vi.fn().mockResolvedValue({});
     const { getByLabelText, container } = render(ServiceForm, { props: { onSave } });
 
@@ -56,7 +56,7 @@ describe('ServiceForm validation', () => {
     expect(onSave).toHaveBeenCalled();
   });
 
-  it('accepte un listen_path "/" (catch-all)', async () => {
+  it('accepts the listen_path "/" (catch-all)', async () => {
     const onSave = vi.fn().mockResolvedValue({});
     const { getByLabelText, container } = render(ServiceForm, { props: { onSave } });
 
@@ -67,7 +67,7 @@ describe('ServiceForm validation', () => {
     expect(onSave).toHaveBeenCalled();
   });
 
-  it('accepte un listen_path "/*" (catch-all explicite)', async () => {
+  it('accepts the listen_path "/*" (explicit catch-all)', async () => {
     const onSave = vi.fn().mockResolvedValue({});
     const { getByLabelText, container } = render(ServiceForm, { props: { onSave } });
 
@@ -78,7 +78,7 @@ describe('ServiceForm validation', () => {
     expect(onSave).toHaveBeenCalled();
   });
 
-  it('accepte un listen_path valide avec sous-chemin', async () => {
+  it('accepts a listen_path with a sub-path', async () => {
     const onSave = vi.fn().mockResolvedValue({});
     const { getByLabelText, container } = render(ServiceForm, { props: { onSave } });
 
@@ -89,7 +89,7 @@ describe('ServiceForm validation', () => {
     expect(onSave).toHaveBeenCalled();
   });
 
-  it('refuse un nom contenant /', async () => {
+  it('rejects a name with a /', async () => {
     const onSave = vi.fn();
     const { getByLabelText, container, getByRole } = render(ServiceForm, { props: { onSave } });
 
@@ -99,7 +99,7 @@ describe('ServiceForm validation', () => {
     expect(getByRole('alert')).toHaveTextContent('A service name cannot contain a path separator (/ or \\).');
   });
 
-  it('permet la soumission meme si nom existe (unicite geree par le backend par groupe)', async () => {
+  it('submits a name that already exists (the backend checks uniqueness within a group)', async () => {
     const onSave = vi.fn().mockResolvedValue({});
     const { getByLabelText, container } = render(ServiceForm, {
       props: { onSave, existingNames: ['existing-svc'] },
@@ -111,7 +111,7 @@ describe('ServiceForm validation', () => {
     expect(onSave).toHaveBeenCalled();
   });
 
-  it('autorise le meme nom en edition', async () => {
+  it('accepts the same name when editing', async () => {
     const onSave = vi.fn().mockResolvedValue({});
     const existingService = {
       name: 'existing-svc',
@@ -130,7 +130,7 @@ describe('ServiceForm validation', () => {
     expect(onSave).toHaveBeenCalled();
   });
 
-  it('desactive le champ nom en mode edition', async () => {
+  it('disables the name input when editing', async () => {
     const existingService = {
       name: 'existing-svc',
       listen_path: '/v1/*',
@@ -146,7 +146,7 @@ describe('ServiceForm validation', () => {
     expect(getByLabelText('Service name')).toBeDisabled();
   });
 
-  it("laisse le champ nom editable lors d'un clonage (service pre-rempli sans isEdit)", async () => {
+  it('keeps the name input editable when cloning (a prefilled service without isEdit)', async () => {
     const clonedService = {
       name: 'existing-svc-copy',
       listen_path: '/v1/*',
@@ -170,7 +170,7 @@ describe('ServiceForm validation', () => {
     expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ name: 'renamed-clone' }));
   });
 
-  it('refuse un nom contenant un espace', async () => {
+  it('rejects a name with a space', async () => {
     const onSave = vi.fn();
     const { getByLabelText, container, getByRole } = render(ServiceForm, { props: { onSave } });
 
@@ -182,7 +182,7 @@ describe('ServiceForm validation', () => {
     );
   });
 
-  it('refuse un nom contenant un caractere special', async () => {
+  it('rejects a name with a special character', async () => {
     const onSave = vi.fn();
     const { getByLabelText, container, getByRole } = render(ServiceForm, { props: { onSave } });
 
@@ -194,7 +194,7 @@ describe('ServiceForm validation', () => {
     );
   });
 
-  it('accepte un nom avec underscores et chiffres', async () => {
+  it('accepts a name with underscores, dashes and digits', async () => {
     const onSave = vi.fn().mockResolvedValue({});
     const { getByLabelText, container } = render(ServiceForm, { props: { onSave } });
 
@@ -205,12 +205,12 @@ describe('ServiceForm validation', () => {
   });
 });
 
-describe('ServiceForm service purement mocké', () => {
-  it('cocher la case masque le champ cible et permet la creation sans cible', async () => {
+describe('ServiceForm: purely mocked service', () => {
+  it('turning the switch on hides the target input and saves without a target', async () => {
     const onSave = vi.fn().mockResolvedValue({});
     const { getByLabelText, getByRole, queryByLabelText, container } = render(ServiceForm, { props: { onSave } });
 
-    // Non coche par defaut : le champ cible est requis comme avant.
+    // Off by default, so the target input shows.
     expect(getByLabelText('Real target URL')).toBeInTheDocument();
 
     await fireEvent.click(getByRole('switch', { name: PURELY_MOCKED_LABEL }));
@@ -228,7 +228,7 @@ describe('ServiceForm service purement mocké', () => {
     );
   });
 
-  it('un service existant sans cible ouvre le formulaire avec la case deja cochee', () => {
+  it('opens an existing service without a target with the switch on', () => {
     const existingService = {
       name: 'deja-purement-mocke',
       listen_path: '',
@@ -245,7 +245,7 @@ describe('ServiceForm service purement mocké', () => {
     expect(queryByLabelText('Real target URL')).not.toBeInTheDocument();
   });
 
-  it('decocher reaffiche le champ cible sans perte des regles existantes', async () => {
+  it('turning the switch off shows the target input again and keeps the rules', async () => {
     const onSave = vi.fn().mockResolvedValue({});
     const existingRules = [{ name: 'r1', action: 'mock' }];
     const existingService = {
@@ -273,7 +273,7 @@ describe('ServiceForm service purement mocké', () => {
     );
   });
 
-  it("bascule a posteriori : avertit sans bloquer quand des regles Proxy existent deja, 'Enregistrer quand meme' sauvegarde", async () => {
+  it('switching on with Proxy rules holds the save behind a warning that lists them; "Save anyway" saves', async () => {
     const onSave = vi.fn().mockResolvedValue({});
     const existingService = {
       name: 'avec-regles-proxy',
@@ -303,7 +303,7 @@ describe('ServiceForm service purement mocké', () => {
     expect(queryByTestId('service-form-purely-mocked-warning')).not.toBeInTheDocument();
   });
 
-  it("bascule a posteriori : 'Revenir en arriere' referme l'avertissement sans sauvegarder", async () => {
+  it('switching on with Proxy rules: "Go back" closes the warning without saving', async () => {
     const onSave = vi.fn().mockResolvedValue({});
     const existingService = {
       name: 'avec-regle-proxy',
@@ -326,7 +326,7 @@ describe('ServiceForm service purement mocké', () => {
     expect(queryByTestId('service-form-purely-mocked-warning')).not.toBeInTheDocument();
   });
 
-  it("aucun avertissement quand le service purement mocke n'a aucune regle Proxy", async () => {
+  it('saves without a warning when the purely mocked service has no Proxy rule', async () => {
     const onSave = vi.fn().mockResolvedValue({});
     const existingService = {
       name: 'sans-regle-proxy',

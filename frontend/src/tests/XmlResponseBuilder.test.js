@@ -17,8 +17,8 @@ const nestedFields = [
   },
 ];
 
-describe('XmlResponseBuilder — pliage/depliage des noeuds parents', () => {
-  it('tout est deplie par defaut (aucune regression sur le rendu existant)', () => {
+describe('XmlResponseBuilder — folding of parent nodes', () => {
+  it('unfolds everything by default', () => {
     const { getByLabelText, getByDisplayValue } = render(XmlResponseBuilder, { props: { fields: nestedFields } });
     expect(getByLabelText('Collapse unite_legale')).toHaveAttribute('aria-expanded', 'true');
     expect(getByDisplayValue('nom')).toBeVisible();
@@ -26,7 +26,7 @@ describe('XmlResponseBuilder — pliage/depliage des noeuds parents', () => {
     expect(getByDisplayValue('ville')).toBeVisible();
   });
 
-  it('replier un noeud parent masque ses enfants et affiche un indicateur, sans muter les donnees', async () => {
+  it('folding a parent node hides its children and emits no update', async () => {
     const onUpdate = vi.fn();
     const { getByLabelText, getByDisplayValue } = render(XmlResponseBuilder, {
       props: { fields: nestedFields, onUpdate },
@@ -41,7 +41,7 @@ describe('XmlResponseBuilder — pliage/depliage des noeuds parents', () => {
     expect(onUpdate).not.toHaveBeenCalled();
   });
 
-  it('depliage restaure le contenu masque, aucune donnee perdue', async () => {
+  it('unfolding shows the hidden content again', async () => {
     const { getByLabelText, getByDisplayValue } = render(XmlResponseBuilder, { props: { fields: nestedFields } });
 
     await fireEvent.click(getByLabelText('Collapse unite_legale'));
@@ -52,7 +52,7 @@ describe('XmlResponseBuilder — pliage/depliage des noeuds parents', () => {
     expect(getByDisplayValue('ville')).toBeVisible();
   });
 
-  it('un noeud de type "Contenu" (sans enfants) n\'a pas de chevron de pliage', () => {
+  it('a "Content" node (without children) has no fold chevron', () => {
     const { queryByLabelText } = render(XmlResponseBuilder, { props: { fields: nestedFields } });
     expect(queryByLabelText('Collapse nom')).not.toBeInTheDocument();
     expect(queryByLabelText('Expand nom')).not.toBeInTheDocument();
@@ -62,20 +62,20 @@ describe('XmlResponseBuilder — pliage/depliage des noeuds parents', () => {
 describe('XmlResponseBuilder — source "XPath (XML/SOAP)"', () => {
   const flatValueField = [{ tag: 'siret', nodeType: 'value', source: 'fixed', value: '' }];
 
-  it("propose l'option XPath (XML/SOAP) dans le menu de source", () => {
+  it('offers the XPath (XML/SOAP) option in the source menu', () => {
     const { getByLabelText } = render(XmlResponseBuilder, { props: { fields: flatValueField } });
     const option = getByLabelText('Source').querySelector('option[value="xpath"]');
     expect(option).not.toBeNull();
     expect(option.textContent).toBe('XPath (XML/SOAP)');
   });
 
-  it('choisir la source XPath affiche un champ Valeur avec un placeholder XPath', async () => {
+  it('choosing the XPath source shows a Value input with an XPath placeholder', async () => {
     const { getByLabelText } = render(XmlResponseBuilder, { props: { fields: flatValueField } });
     await fireEvent.change(getByLabelText('Source'), { target: { value: 'xpath' } });
     expect(getByLabelText('Value')).toHaveAttribute('placeholder', 'e.g. Envelope/Body/search/Id');
   });
 
-  it('renseigner le chemin XPath emet un onUpdate avec source xpath et la valeur saisie', async () => {
+  it('typing the XPath path sends onUpdate the xpath source and the typed value', async () => {
     const onUpdate = vi.fn();
     const { getByLabelText } = render(XmlResponseBuilder, { props: { fields: flatValueField, onUpdate } });
     await fireEvent.change(getByLabelText('Source'), { target: { value: 'xpath' } });
@@ -85,20 +85,17 @@ describe('XmlResponseBuilder — source "XPath (XML/SOAP)"', () => {
   });
 });
 
-// Correctif "diagnostic reponse JSON/XML" : `needsValueInput` n'incluait pas
-// 'script', contrairement au mode "par exemple" (XmlPasteBuilder.svelte) --
-// choisir cette source masquait le champ qui permet de preciser QUELLE cle
-// du resultat de script utiliser.
-describe('XmlResponseBuilder — source "Resultat script"', () => {
+// The "Script result" source needs the value input: it names the key of the script result to read.
+describe('XmlResponseBuilder — "Script result" source', () => {
   const flatValueField = [{ tag: 'nom', nodeType: 'value', source: 'fixed', value: '' }];
 
-  it('affiche le champ de saisie de valeur quand la source "script" est choisie', async () => {
+  it('shows the value input when the "script" source is chosen', async () => {
     const { getByLabelText } = render(XmlResponseBuilder, { props: { fields: flatValueField } });
     await fireEvent.change(getByLabelText('Source'), { target: { value: 'script' } });
     expect(getByLabelText('Value')).toBeInTheDocument();
   });
 
-  it('transmet la cle du script saisie via onUpdate', async () => {
+  it('passes the typed script key to onUpdate', async () => {
     const onUpdate = vi.fn();
     const { getByLabelText } = render(XmlResponseBuilder, { props: { fields: flatValueField, onUpdate } });
     await fireEvent.change(getByLabelText('Source'), { target: { value: 'script' } });
