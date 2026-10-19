@@ -18,24 +18,12 @@ Each item has an identifier that never changes, a size (S: a day or less, M: a f
 
 ## Order of work
 
-1. [Ready for an international launch](#1-ready-for-an-international-launch): R10 (with R16, R17, R18), R11, R12, R13, R14, R9.
+1. [Ready for an international launch](#1-ready-for-an-international-launch): R10 (with R16, R17, R18), R12, R13, R14, R9.
 2. [Trust and operations](#2-trust-and-operations): T1 to T11.
 3. [Make it indispensable](#3-make-it-indispensable): U1, U2, then U3 to U16, in the listed order.
 4. [Engineering backlog](#4-engineering-backlog): taken alongside, when they unblock an item above.
 
 ## 1. Ready for an international launch
-
-### R11. Unit tests in English
-
-Size M (what is left: the comments and titles)
-
-**Why.** The comments and test titles of the Vitest suite are mostly French: they are the last French comments of the repository, and contributors who do not read French cannot follow these tests.
-
-**Progress.** The suite runs in English: `src/tests/setup.js` applies English and the assertions name the English texts. `src/tests/french.test.js` shows the screens of the pseudo-locale test (one list, `src/tests/helpers/screens.js`) in French, switched from English the way the language select does it, with the texts that French writes its own way; `setup.js` refuses the French catalogue to every other test file but `l10n.test.js`, which `french-catalogue-guard.test.js` checks. With every French translation altered, 7 tests of `french.test.js` fail and nothing else, against 201 tests in 30 files before: rewording the French catalogue (R9) no longer breaks the suite.
-
-**What.** Rewrite the comments and test titles of `frontend/src/tests/` in English, keeping only why in comments and checking each claim against the code: 141 French comment lines of 263 (137 of 259 in the JavaScript files, 4 of 4 in the Svelte harnesses of `helpers/`) and 392 French titles of 596, counted by `scripts/check-french-comments.mjs`, which already covers the rest of the repository; then add the folder to the paths it covers.
-
-**Done when.** `scripts/check-french-comments.mjs` covers `frontend/src/tests/` with nothing to report.
 
 ### R9. Polish the French catalogues
 
@@ -530,3 +518,13 @@ Size S
 **What.** `retention-days: 7` on each upload of `.github/workflows/release.yml`, a week being enough to rerun a failed job of the same run. Made with the next change of that file: a change of it on `develop` starts a rehearsal, 31.5 job-minutes on 06c595c, which costs more than the storage it would save.
 
 **Done when.** The artifacts of a release run expire a week after it.
+
+### E19. A listen path check in the service form that refuses nothing
+
+Size S
+
+**Why.** `validatePath` in `ServiceForm.svelte` always returns `null`: the form looks as if it checks the listen path, and its four unit tests on the listen path can only show that a form is saved, never that a path is refused. The server already refuses the one invalid case, a pattern that would hit an internal route of Mimicway (`src/server/validation.rs`).
+
+**What.** Remove the stub and its call, or make it refuse what the server refuses, so that the form says it before a round trip; the four tests then say which one it is.
+
+**Done when.** No check in the form returns a constant, and a listen path the server refuses is shown as an error on the form, with a unit test that fails without it.
