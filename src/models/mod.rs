@@ -36,6 +36,11 @@ pub struct Service {
     pub listen_path: String,
     pub real_target_url: String,
     pub is_mocked: bool,
+    // Read by no code: no response is ever rewritten from it (rules suggested from observed traffic are, see
+    // `server::suggestion::links`, and relayed traffic never is). The service form stores its "SOAP" type in it.
+    // Optional when read, so a configuration without it loads; still written, so a file saved now loads in a version
+    // that requires it.
+    #[serde(default)]
     pub rewrite_directory_urls: bool,
     pub group_name: Option<String>,
     pub wsdl_mode: WsdlMode,
@@ -689,5 +694,20 @@ groups: []
         let re_yaml = serde_yaml::to_string(&config).expect("serialize");
         let re_parsed: MockConfig = serde_yaml::from_str(&re_yaml).expect("re-deserialize");
         assert_eq!(re_parsed.services[0].wsdl_mode, WsdlMode::Mock);
+    }
+
+    #[test]
+    fn the_directory_rewriting_flag_may_be_missing_or_set_and_changes_nothing() {
+        let yaml = |flag: &str| {
+            format!(
+                "services:\n  - name: svc\n    listen_path: /svc/*\n    real_target_url: http://svc:80\n    \
+                 is_mocked: false\n{flag}    group_name: ~\n    wsdl_mode: auto\n    rules: []\ngroups: []\n"
+            )
+        };
+        let missing: MockConfig = serde_yaml::from_str(&yaml("")).expect("without the flag");
+        assert!(!missing.services[0].rewrite_directory_urls);
+        let set: MockConfig = serde_yaml::from_str(&yaml("    rewrite_directory_urls: true\n"))
+            .expect("with the flag");
+        assert!(set.services[0].rewrite_directory_urls);
     }
 }

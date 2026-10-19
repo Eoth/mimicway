@@ -179,10 +179,6 @@
               <dd>{t('Purely mocked service (no target)')}</dd>
             </div>
           {/if}
-          <div class="dl-row">
-            <dt>{t('Directory URL rewriting')}</dt>
-            <dd>{service.rewrite_directory_urls ? t('Yes') : t('No')}</dd>
-          </div>
         </dl>
         <div class="detail-actions">
           <button

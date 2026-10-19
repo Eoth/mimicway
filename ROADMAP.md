@@ -425,9 +425,9 @@ Size S
 
 Size S. **Decision needed** (what a REST service does with `?wsdl`).
 
-**Why.** The guide says a SOAP service either relays WSDL requests to the real backend (`Proxy`/`Auto`) or answers them with its rules (`Mock`), but the service form offers no such choice: `Mock` can only be set through the API or the configuration file (saving the form now keeps it instead of resetting it to `auto`). And a REST service, which the guide describes as having "no SOAP-specific handling", still sends `?wsdl` requests to the backend past its rules (`auto`, the default), which on a purely mocked service ends in a 502. `Auto` and `Proxy` behave the same.
+**Why.** The guide says a SOAP service either relays WSDL requests to the real backend (`Proxy`/`Auto`) or answers them with its rules (`Mock`), but the service form offers no such choice: `Mock` can only be set through the API or the configuration file (saving the form now keeps it instead of resetting it to `auto`). And a REST service, which the guide describes as having "no SOAP-specific handling", still sends `?wsdl` requests to the backend past its rules (`auto`, the default), which on a purely mocked service ends in a 502. `Auto` and `Proxy` behave the same. The form's REST/SOAP selector changes none of this: its only trace is the `rewrite_directory_urls` key of the service, which no code reads and which only stores the selector's choice.
 
-**What.** Offer the WSDL mode in the form for a SOAP service; decide what a REST service does with `?wsdl` (its rules, like any request, or the current relay) and make the guide say it in both languages; give `Auto` a meaning of its own or drop one of the two values.
+**What.** Offer the WSDL mode in the form for a SOAP service; decide what a REST service does with `?wsdl` (its rules, like any request, or the current relay) and make the guide say it in both languages; give `Auto` a meaning of its own or drop one of the two values. Store the service type in what it decides (the WSDL mode) or drop the selector, so that the `rewrite_directory_urls` key can stop being written.
 
 **Done when.** A SOAP service's WSDL mode can be set and read back in the form, the guide describes what REST and SOAP services do with `?wsdl`, and end-to-end tests cover each mode.
 
@@ -530,13 +530,3 @@ Size S
 **What.** `retention-days: 7` on each upload of `.github/workflows/release.yml`, a week being enough to rerun a failed job of the same run. Made with the next change of that file: a change of it on `develop` starts a rehearsal, 31.5 job-minutes on 06c595c, which costs more than the storage it would save.
 
 **Done when.** The artifacts of a release run expire a week after it.
-
-### E18. The "directory URL rewriting" flag does nothing
-
-Size S
-
-**Why.** Every service carries `rewrite_directory_urls`, set by the service form when the service type is SOAP, shown on the service page ("Directory URL rewriting: Yes") and listed by the README among the features, but no code reads it: nothing is ever rewritten. A user who relies on it gets the real addresses.
-
-**What.** Decided (2026-10-12): stop showing the flag (service form, service page) and drop it from the README's feature list, in both languages; keep accepting it in imported and stored configurations, ignored, so that no existing file breaks; no longer write it in new ones if the format allows a missing key. Live traffic is never rewritten (U17), so the flag gets no other meaning.
-
-**Done when.** No screen, document or feature list claims a rewriting that does not happen, and configurations that carry the flag still import.

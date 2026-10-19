@@ -135,7 +135,7 @@ The same service can be built in the UI in a minute; on an empty instance, the h
 
 | Area | What you get | Guide |
 |---|---|---|
-| Services and routing | URL namespace per service, REST or SOAP (WSDL requests can bypass the mock), directory URL rewriting | [Services](docs/en/services.md) |
+| Services and routing | URL namespace per service, REST or SOAP (WSDL requests can bypass the mock) | [Services](docs/en/services.md) |
 | Groups | Shared URL prefix, per-group admins and members | [Groups](docs/en/groups.md) |
 | Matching rules | Method, sub-path, conditions on path, query, headers, JSON, XML/XPath, form; AND/OR | [Matching rules](docs/en/matching-rules.md) |
 | Responses | Templates, visual JSON/XML builder, fake data, chaos mode (latency, error rate) | [Responses and templates](docs/en/responses-and-templates.md) |

@@ -135,7 +135,7 @@ Le même service se construit en une minute dans l'interface ; sur une instance 
 
 | Domaine | Ce que vous obtenez | Guide |
 |---|---|---|
-| Services et routage | Espace d'URL par service, REST ou SOAP (les requêtes WSDL peuvent contourner le mock), réécriture des URL de répertoire | [Services](docs/fr/services.md) |
+| Services et routage | Espace d'URL par service, REST ou SOAP (les requêtes WSDL peuvent contourner le mock) | [Services](docs/fr/services.md) |
 | Groupes | Préfixe d'URL commun, administrateurs et membres par groupe | [Groupes](docs/fr/groups.md) |
 | Règles de correspondance | Méthode, sous-chemin, conditions sur le chemin, la query, les en-têtes, le JSON, le XML/XPath, le formulaire ; ET/OU | [Règles de correspondance](docs/fr/matching-rules.md) |
 | Réponses | Templates, constructeur visuel JSON/XML, données factices, mode Chaos (latence, taux d'erreur) | [Réponses et templates](docs/fr/responses-and-templates.md) |
