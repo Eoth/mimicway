@@ -11,7 +11,7 @@ Mimicway se place entre l'application que vous testez et les services qu'elle ap
 - **Mock et proxy côte à côte** : un service entier, ou une seule règle, peut basculer entre une réponse simulée et le vrai backend. Simulez seulement les appels dont vous avez besoin ; laissez passer le reste.
 - **Des règles qui lisent la requête** : conditions sur les paramètres de chemin, la query, les en-têtes, le corps JSON, le corps XML (XPath, SOAP) et les champs de formulaire, combinées en ET/OU.
 - **Des réponses qui ont l'air vraies** : templates avec valeurs de la requête et données factices, constructeur visuel JSON/XML, scripts Rhai optionnels pour des valeurs calculées ou déterministes, mode Chaos pour la latence et les erreurs.
-- **Du trafic réel aux mocks** : observez ce qu'un service relayé renvoie vraiment et acceptez les règles suggérées au lieu de les écrire à la main.
+- **Du trafic réel aux mocks** : observez ce qu'un service relayé renvoie vraiment et acceptez les règles suggérées au lieu de les écrire à la main, puis suivez les services que ses réponses désignent.
 - **Conçu pour être audité** : aucune télémétrie, quatre flux sortants documentés, local uniquement par défaut, aucun code `unsafe`, dépendances vérifiées en CI. Voir [La confiance en bref](#la-confiance-en-bref).
 
 > Mimicway s'appelait lightMock jusqu'à la version 0.1. La mise à jour conserve vos données, vos URL et vos réglages ; [MIGRATING.md](MIGRATING.md) (en anglais) liste les quelques noms à mettre à jour.
@@ -211,6 +211,7 @@ Tout est sous `/api`, en JSON à l'entrée comme à la sortie. Les messages d'er
 | PUT | `…/{name}/rules/reorder` | Réordonner les règles. |
 | POST, DELETE | `…/{name}/observe` | Démarrer, arrêter l'observation de trafic. |
 | GET | `…/{name}/suggestions` | Règles suggérées à partir du trafic observé. |
+| GET | `…/{name}/linked-backends` | Backends que désignent les réponses observées, et qui les sert. |
 | GET | `/api/observation/status` | Services en cours d'observation. |
 | POST | `/api/rule-test` | Tester un brouillon de règle contre une requête capturée. |
 | POST | `/api/rule-conflicts` | Chevauchements entre un brouillon de règle et les autres règles du service. |

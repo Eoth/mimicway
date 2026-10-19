@@ -47,6 +47,22 @@ Un chemin littéral voisin d'un modèle, comme `/users/me` à côté de `/users/
 
 ![Le formulaire de règle rempli à partir d'une suggestion](screenshots/observation-suggestion-prefilled-form.png)
 
+## Suivre les services qu'une réponse désigne
+
+Beaucoup de backends répondent par les adresses d'autres backends : un annuaire de services qui donne l'adresse de chaque service qu'il connaît, des liens entre ressources, une redirection, l'adresse d'un WSDL. L'application appelle ensuite ces adresses **en direct**, sans passer par Mimicway, qui ne peut alors ni les observer ni les simuler.
+
+Après une actualisation, le panneau liste sous **« Backends cités dans les réponses »** chaque backend que les réponses observées désignent, par origine (`http://hôte:port`), avec les routes qui l'ont cité et un exemple d'adresse. Mimicway cherche dans les corps et dans les en-têtes `Location`, `Content-Location` et `Link`, et laisse de côté les adresses d'espace de noms et de schéma XML (`xmlns`, `targetNamespace`, `xsi:schemaLocation`) ainsi que sa propre adresse.
+
+![Les backends cités par un annuaire, chacun avec un bouton pour placer un service proxy devant](screenshots/observation-linked-backends.png)
+
+1. Pour un backend qu'aucun service n'atteint encore, **« Créer un service proxy devant »** ouvre le formulaire de service habituel, rempli avec un nom tiré de l'hôte et l'origine comme cible, dans le groupe du service observé. Rien n'est créé avant que vous l'enregistriez, avec les contrôles habituels.
+2. De retour sur le service observé, **actualisez les suggestions**. Dans les règles suggérées, chaque adresse d'un backend qu'un service de Mimicway atteint (sa cible est le début de l'adresse, et son chemin d'écoute accepte le reste) désigne désormais ce service dans Mimicway ; chaque règle dit vers quels services elle envoie l'application.
+3. Une fois l'annuaire simulé par cette règle, l'application qu'il sert appelle Mimicway, dont le nouveau service proxy peut à son tour être observé, et ainsi de suite le long de la chaîne.
+
+L'adresse de Mimicway s'écrit dans le corps `{{header.x-forwarded-proto | default("http")}}://{{header.host}}`, suivie du chemin du service et du reste de l'adresse observée, tel quel : la règle répond avec l'adresse par laquelle l'application a joint Mimicway, quels que soient son nom d'hôte et son port. Les en-têtes ne sont jamais des modèles : un en-tête `Location` ou `Link` reçoit l'adresse par laquelle Mimicway était joint pendant l'observation.
+
+Seules les **règles suggérées** sont réécrites. Le trafic que Mimicway relaie n'est jamais modifié : tant qu'il est un proxy, l'annuaire répond toujours les adresses réelles.
+
 ## Prérequis et limites
 
 - Seulement pour un service en mode **proxy pur** (`is_mocked` désactivé) : « Observer ce service » est refusé sinon, puisque l'observation n'a de sens que sur du trafic relayé à un vrai backend.

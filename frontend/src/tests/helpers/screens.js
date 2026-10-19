@@ -109,6 +109,15 @@ export function answerApi(api) {
     },
   ]);
   api.getObservationStatus.mockResolvedValue([{ group_name: 'g1', service_name: 'a1' }]);
+  api.getLinkedBackends.mockResolvedValue([
+    {
+      origin: 'http://10.0.0.2',
+      addresses: ['http://10.0.0.2/x6'],
+      routes: ['GET /x3/{hash}'],
+      served_by: [{ name: 'x5', group_name: 'g1' }],
+      draft: { name: 'backend-10-0-0-2', real_target_url: 'http://10.0.0.2', group_name: 'g1' },
+    },
+  ]);
   api.getServiceSuggestions.mockResolvedValue([
     {
       method: 'GET',
@@ -140,6 +149,7 @@ export function answerApi(api) {
         condition: null,
         response: { status: 404, headers: [], body: [] },
         sample_count: 3,
+        redirected_to: [{ name: 'x5', group_name: 'g1' }],
       },
     },
     {

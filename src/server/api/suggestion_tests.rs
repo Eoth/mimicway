@@ -238,3 +238,65 @@ async fn a_directory_called_once_per_name_gives_one_rule_that_answers_any_name()
         )
     );
 }
+
+#[tokio::test]
+async fn a_directory_rule_sends_the_application_to_the_service_in_front_of_the_backend_it_names() {
+    // The directory answers the backend's address. Once a proxy service stands in front of that backend, the suggested
+    // rule answers Mimicway's address of that service instead, and following it reaches the backend through Mimicway.
+    let orders = backend(axum::Router::new().fallback(|| async { "order 1" })).await;
+    let body = format!(r#"{{"orders":"{orders}/orders/1"}}"#);
+    let directory = backend(axum::Router::new().fallback(move || {
+        let body = body.clone();
+        async move { body }
+    }))
+    .await;
+    let app = start(vec![proxied("directory", "", &directory)]).await;
+    app.observe("directory").await;
+    for _ in 0..3 {
+        assert_eq!(app.call("/directory/lookup").await.0, 200);
+    }
+
+    let linked: Vec<Value> = app
+        .client
+        .get(format!(
+            "{}/api/services/directory/linked-backends",
+            app.root
+        ))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(linked.len(), 1, "{linked:?}");
+    assert_eq!(linked[0]["origin"], json!(orders));
+    assert_eq!(linked[0]["served_by"], json!([]));
+    assert_eq!(linked[0]["draft"]["real_target_url"], json!(orders));
+    assert_eq!(linked[0]["draft"]["name"], json!("backend-127-0-0-1"));
+
+    app.api(
+        reqwest::Method::POST,
+        "/services",
+        Some(serde_json::to_value(proxied("backend-127-0-0-1", "", &orders)).unwrap()),
+    )
+    .await;
+    let suggestions = app.suggestions("directory").await;
+    let rule = &suggestions[0]["rule"];
+    assert_eq!(
+        rule["redirected_to"],
+        json!([{ "name": "backend-127-0-0-1", "group_name": null }])
+    );
+
+    app.save_as_mock("directory", &[rule]).await;
+    let (status, answer) = app.call("/directory/lookup").await;
+    assert_eq!(status, 200);
+    let mimicway = app.root.trim_start_matches("http://");
+    assert_eq!(
+        answer,
+        format!(r#"{{"orders":"http://{mimicway}/backend-127-0-0-1/orders/1"}}"#)
+    );
+    assert_eq!(
+        app.call("/backend-127-0-0-1/orders/1").await,
+        (200, "order 1".to_string())
+    );
+}

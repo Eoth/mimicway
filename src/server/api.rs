@@ -74,6 +74,11 @@ pub fn routes() -> Router<AppState> {
             "/groups/{group}/services/{name}/suggestions",
             get(get_service_suggestions_grouped),
         )
+        .route("/services/{name}/linked-backends", get(get_linked_backends))
+        .route(
+            "/groups/{group}/services/{name}/linked-backends",
+            get(get_linked_backends_grouped),
+        )
         .route("/groups", get(list_groups).post(create_group))
         .route(
             "/groups/{name}",
@@ -527,19 +532,24 @@ async fn unobserve_service_grouped(
     observe_service_impl(state, user, Some(group), name, false).await
 }
 
-/// Computed from `ObservationStore` at each call, so there is no suggestion state to keep in sync. Routes with fewer
-/// observations than `suggestion::min_samples()` are left out.
-async fn get_service_suggestions_impl(
-    state: AppState,
-    user: AuthUser,
-    group: Option<String>,
-    name: String,
-) -> Result<Json<Vec<crate::server::suggestion::EndpointSuggestion>>, AppError> {
+/// The exchanges observed for a service, by endpoint.
+type ObservedTraffic = Vec<(
+    crate::server::observation::ObservationKey,
+    Vec<crate::server::observation::ObservedExchange>,
+)>;
+
+/// A service's observed traffic, with the configuration it was read from, once the caller may see the service.
+async fn observed_endpoints(
+    state: &AppState,
+    user: &AuthUser,
+    group: Option<&str>,
+    name: &str,
+) -> Result<(Arc<MockConfig>, ObservedTraffic), AppError> {
     let config = state.store.snapshot().await;
     let svc = config
         .services
         .iter()
-        .find(|s| service_matches(s, group.as_deref(), &name))
+        .find(|s| service_matches(s, group, name))
         .ok_or(AppError::NotFound)?;
 
     if state.auth_config.enabled
@@ -548,19 +558,37 @@ async fn get_service_suggestions_impl(
         return Err(AppError::Forbidden);
     }
 
-    let endpoints: Vec<_> = state
+    let endpoints = state
         .observation
         .store
-        .keys_for_service(group.as_deref(), &name)
+        .keys_for_service(group, name)
         .into_iter()
         .map(|key| {
             let observations = state.observation.store.observations(&key);
             (key, observations)
         })
         .collect();
-    Ok(Json(crate::server::suggestion::suggest_for_service(
-        &endpoints,
-    )))
+    Ok((config, endpoints))
+}
+
+/// Computed from `ObservationStore` at each call, so there is no suggestion state to keep in sync. Routes with fewer
+/// observations than `suggestion::min_samples()` are left out. The addresses of a backend that a service of the
+/// configuration stands in front of are rewritten to that service (`suggestion::links`).
+async fn get_service_suggestions_impl(
+    state: AppState,
+    user: AuthUser,
+    group: Option<String>,
+    name: String,
+) -> Result<Json<Vec<crate::server::suggestion::EndpointSuggestion>>, AppError> {
+    use crate::server::suggestion::links;
+    let (config, endpoints) = observed_endpoints(&state, &user, group.as_deref(), &name).await?;
+    let mut suggestions = crate::server::suggestion::suggest_for_service(&endpoints);
+    links::redirect_suggestions(
+        &mut suggestions,
+        &links::Covers::from_config(&config),
+        links::OwnAddress::latest(&endpoints).as_ref(),
+    );
+    Ok(Json(suggestions))
 }
 
 async fn get_service_suggestions(
@@ -577,6 +605,47 @@ async fn get_service_suggestions_grouped(
     Path((group, name)): Path<(String, String)>,
 ) -> Result<Json<Vec<crate::server::suggestion::EndpointSuggestion>>, AppError> {
     get_service_suggestions_impl(state, user, Some(group), name).await
+}
+
+/// The backends that a service's observed responses point to, computed like the suggestions. A backend that no service
+/// reaches comes with the proxy service a user could create in front of it, in the observed service's group, under a
+/// name no service of that group has.
+async fn get_linked_backends_impl(
+    state: AppState,
+    user: AuthUser,
+    group: Option<String>,
+    name: String,
+) -> Result<Json<Vec<crate::server::suggestion::links::LinkedBackend>>, AppError> {
+    use crate::server::suggestion::links;
+    let (config, endpoints) = observed_endpoints(&state, &user, group.as_deref(), &name).await?;
+    let taken = config
+        .services
+        .iter()
+        .filter(|s| s.group_name == group)
+        .map(|s| s.name.clone())
+        .collect();
+    Ok(Json(links::linked_backends(
+        &endpoints,
+        &links::Covers::from_config(&config),
+        group.as_deref(),
+        &taken,
+    )))
+}
+
+async fn get_linked_backends(
+    State(state): State<AppState>,
+    Extension(user): Extension<AuthUser>,
+    Path(name): Path<String>,
+) -> Result<Json<Vec<crate::server::suggestion::links::LinkedBackend>>, AppError> {
+    get_linked_backends_impl(state, user, None, name).await
+}
+
+async fn get_linked_backends_grouped(
+    State(state): State<AppState>,
+    Extension(user): Extension<AuthUser>,
+    Path((group, name)): Path<(String, String)>,
+) -> Result<Json<Vec<crate::server::suggestion::links::LinkedBackend>>, AppError> {
+    get_linked_backends_impl(state, user, Some(group), name).await
 }
 
 // --------------- Messaging (Kafka) ---------------

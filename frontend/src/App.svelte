@@ -183,6 +183,9 @@
   }
 
   let clonedService = $state(null);
+  // The service whose suggestions proposed the one being created (a proxy in front of a backend its responses name):
+  // saving or cancelling goes back there, where refreshing the suggestions is the next step.
+  let createdFrom = $state(null);
 
   function handleSelect(name, groupName) {
     selectedService = name;
@@ -193,11 +196,26 @@
     selectedService = null;
     selectedServiceGroup = null;
     clonedService = null;
+    createdFrom = null;
     view = 'list';
   }
   function handleCloneService(svc) {
+    createdFrom = null;
     clonedService = { ...JSON.parse(JSON.stringify(svc)), name: t('{0}-copy', svc.name) };
     view = 'add';
+  }
+  function handleCreateFromSuggestions(draft, name, groupName) {
+    clonedService = draft;
+    createdFrom = { name, groupName: groupName ?? null };
+    view = 'add';
+  }
+  function handleAddCancel() {
+    if (!createdFrom) return handleBack();
+    clonedService = null;
+    selectedService = createdFrom.name;
+    selectedServiceGroup = createdFrom.groupName;
+    createdFrom = null;
+    view = 'detail';
   }
   // `previousGroupName` is the group before the change (ServiceDetail and GroupManager read it before calling the
   // API): it finds the entry to replace even when `updated.group_name` changed (a move to another group), which
@@ -219,6 +237,17 @@
       const result = await createService(svc);
       services = [...services, result];
       view = 'detail';
+      clonedService = null;
+      if (createdFrom) {
+        selectedService = createdFrom.name;
+        selectedServiceGroup = createdFrom.groupName;
+        createdFrom = null;
+        showNotification(
+          t('Service "{0}" created: refresh the suggestions to send the application to it', result.name),
+          'success',
+        );
+        return;
+      }
       selectedService = result.name;
       selectedServiceGroup = result.group_name ?? null;
       showNotification(t('Service "{0}" created', result.name), 'success');
@@ -599,7 +628,7 @@
         availableGroups={availableGroupsList}
         authEnabled={auth.enabled}
         onSave={handleAddService}
-        onCancel={handleBack}
+        onCancel={handleAddCancel}
       />
     {:else if view === 'detail' && currentService}
       <ServiceDetail
@@ -609,6 +638,7 @@
         onUpdate={handleServiceUpdate}
         onDelete={handleServiceDelete}
         onNotify={showNotification}
+        onCreateService={handleCreateFromSuggestions}
       />
     {:else}
       <div class="list-header">
@@ -616,7 +646,10 @@
         <button
           type="button"
           class="btn btn-primary"
-          onclick={() => (view = 'add')}
+          onclick={() => {
+            createdFrom = null;
+            view = 'add';
+          }}
           data-testid="app-add-service-button">{t('+ Add a service')}</button
         >
       </div>

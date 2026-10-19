@@ -18,6 +18,7 @@ use crate::models::{
 use crate::server::observation::{ObservationKey, ObservedExchange};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
+pub mod links;
 mod routes;
 
 const DEFAULT_MIN_SAMPLES: usize = 3;
@@ -59,6 +60,9 @@ pub struct SuggestedRule {
     pub echo: Option<ConditionSource>,
     pub sample_count: usize,
     pub response: MockResponse,
+    /// The services of Mimicway this rule's response now sends the application to, instead of the backends they stand
+    /// in front of (`links::redirect_suggestions`).
+    pub redirected_to: Vec<links::ServiceRef>,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -96,12 +100,26 @@ struct Sample<'a> {
     path_params: BTreeMap<String, String>,
 }
 
-/// The suggestions for one service, from the exchanges observed on each of its endpoints (method, literal path):
-/// grouped by method and route pattern, most specific pattern first; a route observed fewer than `min_samples()`
-/// times is left out.
-pub fn suggest_for_service(
+/// One route of a service as observed: its method, its pattern, the literal paths it groups and their samples, oldest
+/// first, so that the last sample of a group is the latest response seen.
+pub(super) struct ObservedRoute<'a> {
+    pub method: &'a str,
+    pub pattern: String,
+    pub literal_paths: Vec<&'a str>,
+    samples: Vec<Sample<'a>>,
+}
+
+impl<'a> ObservedRoute<'a> {
+    pub fn exchanges(&self) -> impl Iterator<Item = &'a ObservedExchange> + '_ {
+        self.samples.iter().map(|s| s.exchange)
+    }
+}
+
+/// The routes of a service, from the exchanges observed on each of its endpoints (method, literal path): grouped by
+/// method and route pattern, most specific pattern first.
+pub(super) fn observed_routes(
     endpoints: &[(ObservationKey, Vec<ObservedExchange>)],
-) -> Vec<EndpointSuggestion> {
+) -> Vec<ObservedRoute<'_>> {
     let mut by_method: BTreeMap<&str, Vec<routes::ObservedPath>> = BTreeMap::new();
     for (key, exchanges) in endpoints {
         by_method
@@ -113,7 +131,7 @@ pub fn suggest_for_service(
             });
     }
 
-    let mut suggestions = Vec::new();
+    let mut observed = Vec::new();
     for (method, paths) in by_method {
         let reserved: BTreeSet<String> = paths
             .iter()
@@ -140,28 +158,43 @@ pub fn suggest_for_service(
                     });
                 }
             }
-            // Oldest first, so that the last sample of a group is the latest response seen.
             samples.sort_by_key(|s| s.exchange.timestamp);
-            let pattern = route.pattern();
-            let Some(outcome) = suggest_route(method, &pattern, &samples) else {
-                continue;
-            };
             literal_paths.sort_unstable();
-            suggestions.push(EndpointSuggestion {
-                method: method.to_string(),
-                path_count: literal_paths.len(),
-                paths: literal_paths
+            observed.push(ObservedRoute {
+                method,
+                pattern: route.pattern(),
+                literal_paths,
+                samples,
+            });
+        }
+    }
+    observed
+}
+
+/// The suggestions for one service, one per route (`observed_routes`); a route observed fewer than `min_samples()`
+/// times is left out.
+pub fn suggest_for_service(
+    endpoints: &[(ObservationKey, Vec<ObservedExchange>)],
+) -> Vec<EndpointSuggestion> {
+    observed_routes(endpoints)
+        .into_iter()
+        .filter_map(|route| {
+            let outcome = suggest_route(route.method, &route.pattern, &route.samples)?;
+            Some(EndpointSuggestion {
+                method: route.method.to_string(),
+                path_count: route.literal_paths.len(),
+                paths: route
+                    .literal_paths
                     .iter()
                     .take(MAX_LISTED_PATHS)
                     .map(|p| p.to_string())
                     .collect(),
-                sub_path: pattern,
-                sample_count: samples.len(),
+                sub_path: route.pattern,
+                sample_count: route.samples.len(),
                 outcome,
-            });
-        }
-    }
-    suggestions
+            })
+        })
+        .collect()
 }
 
 /// What makes two responses equal: status and body, byte for byte. Bodies are already truncated to
@@ -198,6 +231,7 @@ fn suggest_route(method: &str, sub_path: &str, samples: &[Sample]) -> Option<Sug
         echo,
         sample_count,
         response,
+        redirected_to: Vec::new(),
     };
 
     if classes.len() == 1 {

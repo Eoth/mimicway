@@ -348,6 +348,7 @@ impl ProxyClient {
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
         let capture = ProxyCaptureRaw {
+            request_host: (!original_host.is_empty()).then_some(original_host),
             request_query_params,
             request_headers,
             request_body: body_bytes.to_vec(),
@@ -365,6 +366,9 @@ impl ProxyClient {
 /// complete; truncating them for storage (`server::observation::max_body_size`) is the caller's job.
 #[derive(Debug, Clone)]
 pub struct ProxyCaptureRaw {
+    /// The request's `Host`: Mimicway's own address as the caller reached it, which the relayed request does not carry
+    /// (the backend gets its own host, and this one in `X-Forwarded-Host`).
+    pub request_host: Option<String>,
     pub request_query_params: HashMap<String, String>,
     pub request_headers: HashMap<String, String>,
     pub request_body: Vec<u8>,

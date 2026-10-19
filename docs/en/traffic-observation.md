@@ -47,6 +47,22 @@ A literal path next to a pattern, such as `/users/me` next to `/users/{id}`, is 
 
 ![The rule form filled from a suggestion](screenshots/observation-suggestion-prefilled-form.png)
 
+## Following the services a response points to
+
+Many backends answer with the addresses of others: a service directory giving the address of each service it knows, links between resources, a redirect, the address in a WSDL. The application then calls those addresses **directly**, past Mimicway, where they can be neither observed nor mocked.
+
+After a refresh, the panel lists under **"Backends named in the responses"** each backend the observed responses point to, by origin (`http://host:port`), with the routes that named it and an example address. Mimicway looks in the bodies and in the `Location`, `Content-Location` and `Link` headers, and leaves out XML namespace and schema addresses (`xmlns`, `targetNamespace`, `xsi:schemaLocation`) and Mimicway's own address.
+
+![Backends named by a directory, each with a button to put a proxy service in front of it](screenshots/observation-linked-backends.png)
+
+1. For a backend that no service reaches yet, **"Create a proxy service in front of it"** opens the usual service form, filled with a name taken from the host and the origin as target, in the observed service's group. Nothing is created until you save it, through the usual checks.
+2. Back on the observed service, **refresh the suggestions**. In the suggested rules, every address of a backend that a service of Mimicway reaches (its target is the start of the address, and its listen path accepts the rest) now points to that service in Mimicway; each rule says which services it sends the application to.
+3. Once the directory is mocked with that rule, the application it serves calls Mimicway, whose new proxy service can be observed in turn, and so on down the chain.
+
+The address of Mimicway is written in the body as `{{header.x-forwarded-proto | default("http")}}://{{header.host}}`, followed by the service's path and the rest of the observed address as it was: the rule answers with the address the application used to reach Mimicway, whatever its host name and port. Headers are never templates, so a `Location` or `Link` header gets the address Mimicway was reached at while observing.
+
+Only the **suggested rules** are rewritten. The traffic Mimicway relays is never changed: while it is a proxy, the directory still answers the real addresses.
+
 ## Requirements and limits
 
 - Only for a service in **pure proxy** mode (`is_mocked` off): "Observe this service" is refused otherwise, since observation only makes sense on traffic relayed to a real backend.

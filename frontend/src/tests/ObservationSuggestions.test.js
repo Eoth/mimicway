@@ -1,18 +1,26 @@
 import { render, fireEvent, waitFor } from '@testing-library/svelte';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import ObservationSuggestions from '../lib/components/ObservationSuggestions.svelte';
-import { observeService, unobserveService, getObservationStatus, getServiceSuggestions } from '../lib/api.js';
+import {
+  observeService,
+  unobserveService,
+  getObservationStatus,
+  getServiceSuggestions,
+  getLinkedBackends,
+} from '../lib/api.js';
 
 vi.mock('../lib/api.js', () => ({
   observeService: vi.fn(),
   unobserveService: vi.fn(),
   getObservationStatus: vi.fn(),
   getServiceSuggestions: vi.fn(),
+  getLinkedBackends: vi.fn(),
 }));
 
 beforeEach(() => {
   vi.clearAllMocks();
   getObservationStatus.mockResolvedValue([]);
+  getLinkedBackends.mockResolvedValue([]);
 });
 
 describe('ObservationSuggestions', () => {
@@ -321,5 +329,96 @@ describe('ObservationSuggestions', () => {
     await waitFor(() =>
       expect(getByTestId('observation-suggestion-unexplained-svc-a-0')).toHaveTextContent(/^GET \/status Varying/),
     );
+  });
+
+  describe('backends named in the responses', () => {
+    async function refreshed(props) {
+      getObservationStatus.mockResolvedValue([{ service_name: 'directory', group_name: 'team-a' }]);
+      const view = render(ObservationSuggestions, {
+        props: { serviceName: 'directory', groupName: 'team-a', isMocked: false, ...props },
+      });
+      await waitFor(() => expect(view.getByText('Refresh the suggestions')).toBeInTheDocument());
+      await fireEvent.click(view.getByText('Refresh the suggestions'));
+      return view;
+    }
+
+    it('lists each backend with the routes that name it, and who serves it', async () => {
+      getServiceSuggestions.mockResolvedValue([]);
+      getLinkedBackends.mockResolvedValue([
+        {
+          origin: 'http://orders.internal:8080',
+          addresses: ['http://orders.internal:8080/ws/restOrders'],
+          routes: ['GET /service/{name}'],
+          served_by: [{ name: 'orders', group_name: 'team-a' }],
+          draft: null,
+        },
+      ]);
+      const { getByTestId, queryByTestId } = await refreshed();
+
+      await waitFor(() => expect(getByTestId('observation-linked-backend-directory-0')).toBeInTheDocument());
+      const item = getByTestId('observation-linked-backend-directory-0');
+      expect(item).toHaveTextContent('http://orders.internal:8080');
+      expect(item).toHaveTextContent('named by GET /service/{name}, such as http://orders.internal:8080/ws/restOrders');
+      expect(item).toHaveTextContent('Served by the service orders.');
+      expect(queryByTestId('observation-create-service-directory-0')).not.toBeInTheDocument();
+      expect(getLinkedBackends).toHaveBeenCalledWith('directory', 'team-a');
+    });
+
+    it('opens the service form filled with a proxy in front of a backend no service reaches', async () => {
+      getServiceSuggestions.mockResolvedValue([]);
+      getLinkedBackends.mockResolvedValue([
+        {
+          origin: 'http://stock.internal',
+          addresses: ['http://stock.internal/items'],
+          routes: ['GET /'],
+          served_by: [],
+          draft: { name: 'stock', real_target_url: 'http://stock.internal', group_name: 'team-a' },
+        },
+      ]);
+      const onCreateService = vi.fn();
+      const { getByTestId } = await refreshed({ onCreateService });
+
+      await waitFor(() => expect(getByTestId('observation-create-service-directory-0')).toBeInTheDocument());
+      await fireEvent.click(getByTestId('observation-create-service-directory-0'));
+      expect(onCreateService).toHaveBeenCalledWith({
+        name: 'stock',
+        listen_path: '',
+        real_target_url: 'http://stock.internal',
+        is_mocked: false,
+        group_name: 'team-a',
+        wsdl_mode: 'auto',
+        rules: [],
+      });
+    });
+
+    it('says which services a suggested rule sends the application to', async () => {
+      getServiceSuggestions.mockResolvedValue([
+        {
+          method: 'GET',
+          sub_path: '/',
+          paths: ['/'],
+          path_count: 1,
+          sample_count: 3,
+          outcome: 'Unconditional',
+          rule: {
+            method: 'GET',
+            sub_path: '/',
+            condition: null,
+            sample_count: 3,
+            redirected_to: [
+              { name: 'orders', group_name: 'team-a' },
+              { name: 'stock', group_name: 'team-a' },
+            ],
+            response: { status: 200, headers: [], body: [{ type: 'Literal', value: '{}' }] },
+          },
+        },
+      ]);
+      const { getByTestId } = await refreshed();
+
+      await waitFor(() => expect(getByTestId('observation-suggestion-redirect-directory-0-0')).toBeInTheDocument());
+      expect(getByTestId('observation-suggestion-redirect-directory-0-0')).toHaveTextContent(
+        'Sends the application to the services orders, stock in Mimicway, instead of the backends behind them.',
+      );
+    });
   });
 });

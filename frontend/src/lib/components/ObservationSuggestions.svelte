@@ -9,15 +9,33 @@
   //
   // A suggestion stands for a route: the server groups the observed paths under a pattern (`/orders/{id}`), listed with
   // a few of the paths it covers, so the user sees what the pattern was inferred from.
-  import { observeService, unobserveService, getObservationStatus, getServiceSuggestions } from '../api.js';
+  //
+  // The backends named in the responses (a directory's addresses, links, redirects) come with them: the application
+  // calls those directly, past Mimicway. "Create a proxy service in front of it" opens the usual service form filled
+  // (onCreateService, App.svelte), never a one-click creation; once that service exists, the server writes the
+  // suggested rules with its address in Mimicway instead of the backend's.
+  import {
+    observeService,
+    unobserveService,
+    getObservationStatus,
+    getServiceSuggestions,
+    getLinkedBackends,
+  } from '../api.js';
   import { t, tCount } from '../i18n.svelte.js';
 
-  let { serviceName, groupName = null, isMocked = true, onUseSuggestion = () => {} } = $props();
+  let {
+    serviceName,
+    groupName = null,
+    isMocked = true,
+    onUseSuggestion = () => {},
+    onCreateService = () => {},
+  } = $props();
 
   let observing = $state(false);
   let statusLoaded = $state(false);
   let toggling = $state(false);
   let suggestions = $state([]);
+  let linkedBackends = $state([]);
   let loadingSuggestions = $state(false);
   let error = $state('');
 
@@ -44,6 +62,7 @@
         await unobserveService(serviceName, groupName);
         observing = false;
         suggestions = [];
+        linkedBackends = [];
       } else {
         await observeService(serviceName, groupName);
         observing = true;
@@ -59,12 +78,32 @@
     loadingSuggestions = true;
     error = '';
     try {
-      suggestions = await getServiceSuggestions(serviceName, groupName);
+      [suggestions, linkedBackends] = await Promise.all([
+        getServiceSuggestions(serviceName, groupName),
+        getLinkedBackends(serviceName, groupName),
+      ]);
     } catch (e) {
       error = e.message;
     } finally {
       loadingSuggestions = false;
     }
+  }
+
+  // A pure proxy in front of the backend, in the observed service's group: once saved it can be observed in turn.
+  function toServiceDraft(draft) {
+    return {
+      name: draft.name,
+      listen_path: '',
+      real_target_url: draft.real_target_url,
+      is_mocked: false,
+      group_name: draft.group_name ?? null,
+      wsdl_mode: 'auto',
+      rules: [],
+    };
+  }
+
+  function serviceNames(refs) {
+    return (refs ?? []).map((r) => r.name).join(', ');
   }
 
   function sourceLabel(type) {
@@ -213,6 +252,16 @@
                 <span class="suggestion-status">{rule.response.status}</span>
                 <code class="suggestion-body">{bodyPreview(rule)}</code>
               </div>
+              {#if rule.redirected_to?.length}
+                <p class="suggestion-redirect" data-testid="observation-suggestion-redirect-{serviceName}-{i}-{j}">
+                  {tCount(
+                    rule.redirected_to.length,
+                    'Sends the application to the service {1} in Mimicway, instead of the backend behind it.',
+                    'Sends the application to the services {1} in Mimicway, instead of the backends behind them.',
+                    serviceNames(rule.redirected_to),
+                  )}
+                </p>
+              {/if}
               <button
                 type="button"
                 class="btn btn-sm btn-primary"
@@ -225,6 +274,47 @@
           {/each}
         {/if}
       {/each}
+
+      {#if linkedBackends.length > 0}
+        <div class="linked-backends" data-testid="observation-linked-backends-{serviceName}">
+          <h5>{t('Backends named in the responses')}</h5>
+          <p class="panel-hint">
+            {t(
+              'The application calls these addresses directly, past Mimicway. Put a proxy service in front of one, then refresh: the suggested rules send the application to it.',
+            )}
+          </p>
+          <ul>
+            {#each linkedBackends as backend, k (backend.origin)}
+              <li class="linked-backend" data-testid="observation-linked-backend-{serviceName}-{k}">
+                <code>{backend.origin}</code>
+                <span class="linked-backend-detail">
+                  {t('named by {0}, such as {1}', backend.routes.join(', '), backend.addresses[0])}
+                </span>
+                {#if backend.served_by.length}
+                  <span class="linked-backend-detail">
+                    {tCount(
+                      backend.served_by.length,
+                      'Served by the service {1}.',
+                      'Served by the services {1}.',
+                      serviceNames(backend.served_by),
+                    )}
+                  </span>
+                {/if}
+                {#if backend.draft}
+                  <button
+                    type="button"
+                    class="btn btn-sm btn-outline"
+                    onclick={() => onCreateService(toServiceDraft(backend.draft))}
+                    data-testid="observation-create-service-{serviceName}-{k}"
+                  >
+                    {t('Create a proxy service in front of it')}
+                  </button>
+                {/if}
+              </li>
+            {/each}
+          </ul>
+        </div>
+      {/if}
     {/if}
 
     {#if error}
@@ -322,6 +412,43 @@
     padding: var(--space-0-5) var(--space-1-5);
     border-radius: var(--radius-s);
     overflow-wrap: anywhere;
+  }
+
+  .suggestion-redirect {
+    margin: 0;
+    font-size: var(--text-s);
+    color: var(--color-text-muted);
+  }
+
+  .linked-backends {
+    margin-top: var(--space-5);
+  }
+
+  .linked-backends h5 {
+    margin: 0;
+    font-size: var(--text-m);
+  }
+
+  .linked-backends ul {
+    list-style: none;
+    margin: var(--space-3) 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+
+  .linked-backend {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-1);
+    overflow-wrap: anywhere;
+  }
+
+  .linked-backend-detail {
+    font-size: var(--text-s);
+    color: var(--color-text-muted);
   }
 
   code {

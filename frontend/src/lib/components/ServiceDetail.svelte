@@ -16,6 +16,7 @@
     onUpdate = () => {},
     onDelete = () => {},
     onNotify = () => {},
+    onCreateService = () => {},
   } = $props();
 
   // The URL to call, as the service form shows it, where the rules of the service are written.
@@ -257,6 +258,7 @@
         groupName={service.group_name}
         isMocked={service.is_mocked}
         onUseSuggestion={handleUseSuggestion}
+        onCreateService={(draft) => onCreateService(draft, service.name, service.group_name)}
       />
     {/if}
   </div>

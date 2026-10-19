@@ -121,6 +121,10 @@ export function getServiceSuggestions(name, groupName = null) {
   return request('GET', servicePath(name, groupName, '/suggestions'));
 }
 
+export function getLinkedBackends(name, groupName = null) {
+  return request('GET', servicePath(name, groupName, '/linked-backends'));
+}
+
 // Config
 export function getConfig() {
   return request('GET', '/config');

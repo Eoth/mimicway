@@ -115,8 +115,9 @@ pub fn template(data: &[u8]) {
 /// Exchanges as traffic observation keeps them (a path, a query string, a status, a response body and its kind),
 /// through the rule suggestions: paths and bodies are whatever a proxied application and its backend sent. The calls
 /// are cut at the 0xFE bytes, ten at most, so that every route lists all its paths. Checked: each suggested pattern
-/// matches the paths it lists, and the suggested rules, replayed on the calls they come from, answer exactly what the
-/// backend answered.
+/// matches the paths it lists, the suggested rules, replayed on the calls they come from, answer exactly what the
+/// backend answered, and the addresses of a backend that a service stands in front of are all rewritten
+/// (`suggestion::links::check`).
 pub fn suggestions(data: &[u8]) {
     use crate::server::observation::{ObservationKey, ObservedExchange};
     let mut endpoints: Vec<(ObservationKey, Vec<ObservedExchange>)> = Vec::new();
@@ -126,7 +127,7 @@ pub fn suggestions(data: &[u8]) {
         let status = [200, 201, 404, 500][usize::from(selector % 4)];
         let content_type =
             ["application/json", "text/xml", "text/plain"][usize::from(selector / 4 % 3)];
-        let exchange = ObservedExchange::new(
+        let mut exchange = ObservedExchange::new(
             query_params(query),
             HashMap::new(),
             b"",
@@ -136,6 +137,7 @@ pub fn suggestions(data: &[u8]) {
             body,
             Some(content_type.into()),
         );
+        exchange.request_host = Some("mimic.test".into());
         let path = text(path);
         match endpoints.iter_mut().find(|(key, _)| key.sub_path == path) {
             Some((_, exchanges)) => exchanges.push(exchange),
@@ -151,6 +153,9 @@ pub fn suggestions(data: &[u8]) {
         }
     }
     if let Err(failure) = crate::server::suggestion::replay::check(&endpoints) {
+        panic!("{failure}");
+    }
+    if let Err(failure) = crate::server::suggestion::links::check(&endpoints) {
         panic!("{failure}");
     }
 }

@@ -11,7 +11,7 @@ Mimicway sits between the application you test and the services it calls. Each s
 - **Mock and proxy side by side**: a whole service, or a single rule, can switch between a mocked answer and the real backend. Mock only the calls you need; let the rest through.
 - **Rules that read the request**: conditions on path parameters, query, headers, JSON body, XML body (XPath, SOAP) and form fields, combined with AND/OR.
 - **Responses that look real**: templates with request values and fake data, a visual JSON/XML builder, optional Rhai scripts for computed or deterministic values, chaos mode for latency and errors.
-- **From real traffic to mocks**: observe what a proxied service actually returns and accept suggested rules instead of writing them by hand.
+- **From real traffic to mocks**: observe what a proxied service actually returns and accept suggested rules instead of writing them by hand, then follow the services its responses point to.
 - **Built to be audited**: no telemetry, four documented outbound flows, local-only by default, no `unsafe` code, dependencies checked in CI. See [Trust at a glance](#trust-at-a-glance).
 
 > Mimicway was called lightMock until version 0.1. Upgrading keeps your data, URLs and settings; [MIGRATING.md](MIGRATING.md) lists the few names to update.
@@ -211,6 +211,7 @@ All under `/api`, JSON in and out. Error messages follow the request's `Accept-L
 | PUT | `…/{name}/rules/reorder` | Reorder rules. |
 | POST, DELETE | `…/{name}/observe` | Start, stop traffic observation. |
 | GET | `…/{name}/suggestions` | Rules suggested from observed traffic. |
+| GET | `…/{name}/linked-backends` | Backends the observed responses point to, and who serves them. |
 | GET | `/api/observation/status` | Services under observation. |
 | POST | `/api/rule-test` | Test a draft rule against a captured request. |
 | POST | `/api/rule-conflicts` | Overlaps between a draft rule and the service's other rules. |

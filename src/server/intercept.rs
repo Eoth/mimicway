@@ -91,7 +91,11 @@ pub async fn intercept_layer(
     }
 }
 
-fn build_effective_pattern(group_code: Option<&str>, name: &str, listen_path: &str) -> String {
+pub(crate) fn build_effective_pattern(
+    group_code: Option<&str>,
+    name: &str,
+    listen_path: &str,
+) -> String {
     let lp = listen_path.trim().trim_start_matches('/');
     let base = match group_code {
         Some(code) => format!("/{code}/{name}"),
@@ -248,6 +252,7 @@ async fn do_proxy_observed(
                     raw.response_content_type,
                 );
                 exchange.request_path_params = route.path_params;
+                exchange.request_host = raw.request_host;
                 state.observation.store.record(key, exchange);
             }
             resp

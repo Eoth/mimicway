@@ -214,4 +214,93 @@ test.describe('Observed proxy traffic and suggested rules', () => {
       target.close();
     }
   });
+
+  test('a backend named by a directory gets a proxy service, and the directory rule then sends the application there', async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(30000);
+    // Two real backends: a directory that answers, for each name, the address of a service on the second one, which
+    // the application then calls directly. Both send Content-Length, so that Mimicway captures their answers.
+    const listen = (handler) =>
+      new Promise((resolve) => {
+        const server = http.createServer(handler);
+        server.listen(0, '127.0.0.1', () => resolve(server));
+      });
+    const send = (res, type, body) => {
+      res.writeHead(200, { 'content-type': type, 'content-length': Buffer.byteLength(body) });
+      res.end(body);
+    };
+    const backend = await listen((req, res) => send(res, 'application/json', `{"served":"${req.url}"}`));
+    const backendOrigin = `http://localhost:${backend.address().port}`;
+    const directory = await listen((req, res) =>
+      send(res, 'text/xml', `<lookup><url>${backendOrigin}/ws/${req.url.split('/').pop()}</url></lookup>`),
+    );
+
+    try {
+      const created = await request.post(`${API}/services`, {
+        data: proxyService('directory', directory.address().port),
+      });
+      expect(created.ok()).toBe(true);
+      await request.post(`${API}/services/directory/observe`);
+      for (const name of ['restOrders', 'restStock', 'restBilling']) {
+        const r = await request.get(`http://localhost:7342/directory/service/9f86d081884c7d65/${name}`);
+        expect(r.status()).toBe(200);
+      }
+
+      await page.goto('/');
+      await page.waitForLoadState('networkidle');
+      await page.getByText('No group').click();
+      await page.getByTestId('service-card-configure-button-directory').click();
+      await page.getByTestId('observation-refresh-suggestions-button-directory').click();
+
+      const listed = page.getByTestId('observation-linked-backend-directory-0');
+      await expect(listed).toContainText(backendOrigin);
+      await expect(listed).toContainText(`named by GET /service/{hash}/{name}, such as ${backendOrigin}/ws/`);
+      await docsScreenshot(
+        page,
+        'observation-linked-backends.png',
+        '[data-testid="observation-linked-backends-directory"]',
+      );
+
+      // The service form opens filled; saving it goes through the usual checks, then back to the directory.
+      await page.getByTestId('observation-create-service-directory-0').click();
+      await expect(page.getByTestId('service-form-name-input')).toHaveValue('localhost');
+      await expect(page.getByTestId('service-form-target-input')).toHaveValue(backendOrigin);
+      await page.getByTestId('service-form-submit-button').click();
+      await expect(page.getByTestId('observation-panel-directory')).toBeVisible();
+
+      await page.getByTestId('observation-refresh-suggestions-button-directory').click();
+      await expect(page.getByTestId('observation-linked-backend-directory-0')).toContainText(
+        'Served by the service localhost.',
+      );
+      await expect(page.getByTestId('observation-create-service-directory-0')).toHaveCount(0);
+      const card = page.getByTestId('observation-suggestion-directory-0-0');
+      await expect(card).toContainText(
+        '<url>{{header.x-forwarded-proto | default("http")}}://{{header.host}}/localhost/ws/{{path.name}}</url>',
+      );
+      await expect(page.getByTestId('observation-suggestion-redirect-directory-0-0')).toHaveText(
+        'Sends the application to the service localhost in Mimicway, instead of the backend behind it.',
+      );
+
+      await page.getByTestId('observation-use-suggestion-directory-0-0').click();
+      await page.getByTestId('rule-form-name-input').fill('any-service');
+      await page.getByTestId('rule-form-submit-button').click();
+      await expect(page.getByTestId('rule-list-item-any-service')).toBeVisible();
+
+      // Once the directory is mocked, the application it serves is sent to Mimicway, which relays to the backend.
+      const saved = await (await request.get(`${API}/services/directory`)).json();
+      const mocked = await request.put(`${API}/services/directory`, {
+        data: { ...saved, is_mocked: true, real_target_url: '' },
+      });
+      expect(mocked.ok()).toBe(true);
+      const answer = await request.get('http://localhost:7342/directory/service/0123456789abcdef/restInvoices');
+      expect(await answer.text()).toBe('<lookup><url>http://localhost:7342/localhost/ws/restInvoices</url></lookup>');
+      const followed = await request.get('http://localhost:7342/localhost/ws/restInvoices');
+      expect(await followed.json()).toEqual({ served: '/ws/restInvoices' });
+    } finally {
+      backend.close();
+      directory.close();
+    }
+  });
 });

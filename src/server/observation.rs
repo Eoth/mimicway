@@ -104,6 +104,9 @@ pub struct ObservedExchange {
     pub request_content_type: Option<String>,
     /// The parameters the service's listen path captured (`/v1/users/{id}`), empty when it names none.
     pub request_path_params: HashMap<String, String>,
+    /// Mimicway's own address as the caller reached it (the request's `Host`), when it sent one: an address of Mimicway
+    /// in a response is not another backend (`suggestion::links`).
+    pub request_host: Option<String>,
     pub response_status: u16,
     pub response_headers: HashMap<String, String>,
     pub response_body: String,
@@ -134,6 +137,7 @@ impl ObservedExchange {
             request_body_truncated: req_truncated,
             request_content_type,
             request_path_params: HashMap::new(),
+            request_host: None,
             response_status,
             response_headers: crate::server::redaction::redact_headers(&response_headers),
             response_body: resp_body,
