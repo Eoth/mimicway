@@ -225,13 +225,15 @@ function titled(...lines) {
 }
 
 // Files that must be checked, whatever the patterns of COVERED: the end-to-end suite, its scenarios and the tooling
-// configuration of the interface.
+// configuration of the interface, and the unit tests of the interface with their Svelte harnesses.
 const MUST_BE_COVERED = [
   'frontend/e2e/login.spec.js',
   'frontend/e2e/config.spec.mjs',
   'frontend/e2e/scenario-runner.js',
   'frontend/e2e/scenarios/home.scenarios.json',
   'frontend/vite.config.js',
+  'frontend/src/tests/RuleForm.test.js',
+  'frontend/src/tests/helpers/FormFieldHarness.svelte',
 ];
 
 test('the command fails on a French comment or test title in every covered path, and ignores the others', () => {

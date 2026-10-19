@@ -33,6 +33,8 @@ export const COVERED = [
   'frontend/src/lib/components/*.svelte',
   'frontend/src/preview/*.js',
   'frontend/src/preview/*.svelte',
+  'frontend/src/tests/**/*.js',
+  'frontend/src/tests/**/*.svelte',
 ];
 
 // Frequent French words that English comments do not use, with and without their accents (comments are often typed
