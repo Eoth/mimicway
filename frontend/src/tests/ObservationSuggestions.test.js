@@ -24,12 +24,13 @@ beforeEach(() => {
 });
 
 describe('ObservationSuggestions', () => {
-  it('renders nothing for a mocked service', async () => {
+  it('renders nothing and asks the server nothing for a mocked service', async () => {
     const { queryByTestId } = render(ObservationSuggestions, {
       props: { serviceName: 'svc-a', isMocked: true },
     });
-    await waitFor(() => {});
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(queryByTestId('observation-panel-svc-a')).not.toBeInTheDocument();
+    expect(getObservationStatus).not.toHaveBeenCalled();
   });
 
   it('offers to observe a service not observed yet', async () => {

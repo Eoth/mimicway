@@ -1,6 +1,7 @@
 import { render, fireEvent } from '@testing-library/svelte';
 import { describe, it, expect } from 'vitest';
 import RhaiScriptEditorHarness from './helpers/RhaiScriptEditorHarness.svelte';
+import { RHAI_FUNCTIONS } from '../lib/rhai-functions.js';
 
 // Types `text` with the caret at its end, like real typing: on input, the component reads both the value and the
 // `selectionStart` of the textarea, so both are set before the event fires.
@@ -38,7 +39,7 @@ describe('RhaiScriptEditor: completion of the Rhai functions', () => {
     expect(queryByRole('listbox')).not.toBeInTheDocument();
   });
 
-  it('Ctrl+Space opens the list even with nothing typed', async () => {
+  it('Ctrl+Space opens the whole list when nothing is typed', async () => {
     const { container, getByRole, getAllByRole } = render(RhaiScriptEditorHarness, { props: { id: 'sc' } });
     const textarea = container.querySelector('#sc');
     textarea.focus();
@@ -46,7 +47,7 @@ describe('RhaiScriptEditor: completion of the Rhai functions', () => {
     await fireEvent.keyDown(textarea, { key: ' ', code: 'Space', ctrlKey: true });
 
     expect(getByRole('listbox')).toBeInTheDocument();
-    expect(getAllByRole('option').length).toBeGreaterThan(5);
+    expect(getAllByRole('option')).toHaveLength(RHAI_FUNCTIONS.length);
   });
 
   it('Escape closes the list of suggestions', async () => {

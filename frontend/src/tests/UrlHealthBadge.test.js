@@ -1,13 +1,19 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { render, fireEvent, waitFor } from '@testing-library/svelte';
-import { describe, it, expect, vi } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import UrlHealthBadge from '../lib/components/UrlHealthBadge.svelte';
 import { pingService } from '../lib/api.js';
 
 vi.mock('../lib/api.js', () => ({
   pingService: vi.fn(),
 }));
+
+// A failed assertion skips the end of its test: real timers come back here, not there, so that the next tests
+// never run on fake ones.
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 describe('UrlHealthBadge', () => {
   it('shows "Not tested" before any test', () => {
@@ -60,7 +66,6 @@ describe('UrlHealthBadge', () => {
     await vi.advanceTimersByTimeAsync(130_000);
 
     expect(getByText('Expired')).toBeInTheDocument();
-    vi.useRealTimers();
   });
 });
 

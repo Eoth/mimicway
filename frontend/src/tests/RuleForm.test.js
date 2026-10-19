@@ -215,15 +215,16 @@ describe('RuleForm: input help for path and query params', () => {
     await waitFor(() => expect(getByText('Test against a real request')).toBeInTheDocument());
   });
 
-  it('offers the PathParam source when the service path and the sub-path have path params', async () => {
+  it('offers the path params of the service path and of the sub-path together', async () => {
     getLogs.mockResolvedValue([]);
-    const { getByLabelText, getByRole } = render(RuleForm, {
+    const { getByLabelText, getByRole, getByText } = render(RuleForm, {
       props: { serviceName: 'svc-a', listenPath: '/orders/{id}' },
     });
     await setInput(getByLabelText('Sub-path (optional)'), '/items/{itemId}');
     await fireEvent.click(getByRole('button', { name: '+ AND condition' }));
     const sourceSelect = getByLabelText('Source');
     expect(sourceSelect.querySelector('option[value="PathParam"]')).toBeInTheDocument();
+    expect(getByText('2 path parameters available: id, itemId')).toBeInTheDocument();
   });
 });
 
@@ -625,13 +626,17 @@ describe('RuleForm: converting an advanced template to XML', () => {
     expect(container.querySelector('[data-testid="xml-paste-builder-value-input-0"]').value).toBe('ACME');
   });
 
-  it('the conversion shows the root attributes of the advanced template', async () => {
+  it('the conversion keeps the root attributes of the advanced template', async () => {
     const { container, getByLabelText } = render(RuleForm);
     await buildAdvancedXmlTemplate(container, getByLabelText, '<devisResponse ver="1"><nom>ACME</nom></devisResponse>');
 
     await fireEvent.click(container.querySelector('[data-testid="rule-form-mode-button-xml"]'));
 
-    expect(container.querySelector('[data-testid^="xml-paste-builder-attr-source-select-root"]')).toBeInTheDocument();
+    const row = container
+      .querySelector('[data-testid^="xml-paste-builder-attr-source-select-root"]')
+      .closest('.paste-attr-row');
+    expect(row.querySelector('.paste-attr-name')).toHaveTextContent('@ver');
+    expect(row.querySelector('.paste-preview-fixed')).toHaveTextContent('1');
   });
 
   it('an invalid XML advanced template gets a conversion warning', async () => {

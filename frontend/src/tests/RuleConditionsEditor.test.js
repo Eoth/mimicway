@@ -112,11 +112,13 @@ describe('RuleConditionsEditor: in-place edit of an existing condition', () => {
     expect(getByLabelText('Key / path').value).toBe('X-Trace');
   });
 
-  it('OR conditions (`any_of`) support the same in-place edit', async () => {
+  it('OR conditions (`any_of`) support the same in-place edit, leaving the AND conditions alone', async () => {
     const anyOf = [{ source: { type: 'JsonPointer', key: '/a' }, operator: { type: 'Contains', value: 'x' } }];
+    const allOf = [{ source: { type: 'Header', key: 'X-Trace' }, operator: { type: 'Exists' } }];
     const onAnyOfChange = vi.fn();
+    const onAllOfChange = vi.fn();
     const { getByTestId, getByLabelText, container } = render(RuleConditionsEditor, {
-      props: { anyOf, onAnyOfChange },
+      props: { allOf, anyOf, onAllOfChange, onAnyOfChange },
     });
 
     await fireEvent.click(getByTestId('rule-form-edit-condition-anyof-button-0'));
@@ -126,5 +128,6 @@ describe('RuleConditionsEditor: in-place edit of an existing condition', () => {
     expect(onAnyOfChange).toHaveBeenCalledWith([
       { source: { type: 'JsonPointer', key: '/a' }, operator: { type: 'Contains', value: 'y' } },
     ]);
+    expect(onAllOfChange).not.toHaveBeenCalled();
   });
 });

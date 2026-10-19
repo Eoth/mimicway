@@ -102,7 +102,7 @@ describe('RuleTester: API call and result display', () => {
     await fireEvent.click(getByRole('button', { name: /Test against this request/ }));
 
     await waitFor(() => expect(testRule).toHaveBeenCalled());
-    const [payload] = testRule.mock.calls[0];
+    const [payload] = testRule.mock.calls.at(-1);
     expect(payload.method).toBe('GET');
     expect(payload.conditions.all_of[0].source.key).toBe('foo');
     expect(payload.request.query_params).toEqual({ foo: 'bar' });

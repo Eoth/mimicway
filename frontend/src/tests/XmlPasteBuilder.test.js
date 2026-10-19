@@ -165,13 +165,14 @@ describe('XmlPasteBuilder — XML attributes', () => {
 
 // `startParsed`, `rootTag` and `rootAttributes` restore an existing rule, as in JsonPasteBuilder.test.js.
 describe('XmlPasteBuilder — startParsed/rootTag (restoring a saved rule)', () => {
-  it('shows the list of nodes at once when startParsed=true, without the paste area', () => {
+  it('shows the list of nodes and the root tag at once when startParsed=true, without the paste area', () => {
     const fields = [{ tag: 'siret', nodeType: 'value', source: 'path', value: 'siret', pipe: '', attributes: [] }];
     const { getByText, queryByLabelText } = render(XmlPasteBuilder, {
       props: { fields, startParsed: true, rootTag: 'devisResponse', rootAttributes: [] },
     });
 
     expect(getByText('siret')).toBeInTheDocument();
+    expect(getByText('<devisResponse>')).toBeInTheDocument();
     expect(queryByLabelText('Paste an example of the XML response')).not.toBeInTheDocument();
   });
 

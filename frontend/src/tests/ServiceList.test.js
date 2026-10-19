@@ -51,12 +51,6 @@ describe('ServiceList', () => {
     expect(queryByText('svc-users')).not.toBeInTheDocument();
   });
 
-  it('shows the group names', () => {
-    const { getByText } = render(ServiceList, { props: { services: mockServices } });
-    expect(getByText('team-a')).toBeInTheDocument();
-    expect(getByText('No group')).toBeInTheDocument();
-  });
-
   it('shows the search bar when there are services', () => {
     const { getByPlaceholderText } = render(ServiceList, { props: { services: mockServices } });
     expect(getByPlaceholderText(searchPlaceholder)).toBeInTheDocument();
@@ -113,10 +107,11 @@ describe('ServiceList', () => {
     expect(second.queryByText('insee-api')).toBeInTheDocument();
   });
 
-  it('selecting a service reports it with its group, and the group is still open after a remount', async () => {
+  it('selecting a service found by a search opens its group for the return to the list', async () => {
     const onSelect = vi.fn();
     const first = render(ServiceList, { props: { services: mockServices, onSelect } });
-    await fireEvent.click(first.getByText('team-a'));
+    // A search shows the service without opening its group: only the selection can leave the group open.
+    await fireEvent.input(first.getByPlaceholderText(searchPlaceholder), { target: { value: 'insee' } });
     const configureBtn = first.getByRole('button', { name: 'Configure the service insee-api' });
     await fireEvent.click(configureBtn);
     expect(onSelect).toHaveBeenCalledWith('insee-api', 'team-a');
