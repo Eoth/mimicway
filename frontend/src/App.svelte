@@ -122,6 +122,7 @@
 
     try {
       // 200, with a list that may be empty, on a binary built with "tcp-mock"; 404 otherwise, as for messaging above.
+      // With authentication, 403 for a user who is not a super-admin: the page would refuse them everything.
       await getTcpStatus();
       tcpAvailable = true;
     } catch {

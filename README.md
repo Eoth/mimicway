@@ -223,7 +223,7 @@ All under `/api`, JSON in and out. Error messages follow the request's `Accept-L
 | POST | `/api/auth/login`, `/api/auth/validate` | Keycloak login, token check. |
 | GET | `/api/auth/me`, `/api/auth/status` | Current user, whether authentication is on. |
 | GET, POST | `/api/messaging/status`, `/api/messaging/logs`, `/api/messaging/simulate` | Kafka (feature `messaging-kafka`). |
-| GET, POST, PUT, DELETE | `/api/tcp/status`, `/api/tcp/services[/{name}]` | Raw TCP mocks (feature `tcp-mock`). |
+| GET, POST, PUT, DELETE | `/api/tcp/status`, `/api/tcp/services[/{name}]` | Raw TCP mocks (feature `tcp-mock`; super-admin). |
 
 `…/{name}` stands for `/api/services/{name}` or `/api/groups/{group}/services/{name}`. A service of a group is only reachable through the second form.
 
@@ -307,7 +307,7 @@ Restore from the UI (Backups button, super-admins), or by hand: stop Mimicway, c
 Both are compiled out by default: their code and dependencies are not in the standard binary.
 
 - **Kafka** (`cargo build --release --features messaging-kafka`, needs cmake, a C toolchain and, on Linux, the libcurl headers (`libcurl4-openssl-dev`) to build librdkafka): consumes `KAFKA_LISTEN_TOPIC`, matches each message with the same rules and templates as HTTP (scripts excepted), optionally publishes the reply, keeps a message log and offers a simulator in the UI. See [Kafka](docs/en/kafka-messaging.md).
-- **Raw TCP** (`--features tcp-mock`): listens on the ports you declare, on the same interface as HTTP (`BIND_ADDRESS`), and answers each message with fixed bytes, chosen by hexadecimal prefix or regex. No relay mode: a TCP mock never connects anywhere. Configuration lives in `{DATA_PATH}/tcp-config.yaml`.
+- **Raw TCP** (`--features tcp-mock`): listens on the ports you declare, on the same interface as HTTP (`BIND_ADDRESS`), and answers each message with fixed bytes, chosen by hexadecimal prefix or regex. No relay mode: a TCP mock never connects anywhere. Configuration lives in `{DATA_PATH}/tcp-config.yaml`. With authentication on, only super-admins see and change TCP mocks: they belong to no group.
 
 ## Development
 

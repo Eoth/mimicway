@@ -713,21 +713,31 @@ async fn simulate_message(
 }
 
 // --------------- Raw TCP mocks ---------------
-// Only compiled with the "tcp-mock" feature. Reading the services shows their matchers and responses, and changing
-// them opens or closes network ports: with authentication on, reading needs a signed-in user and every change a
-// super-admin. A change is written to disk, then the affected listeners restart, without restarting the process.
+// Only compiled with the "tcp-mock" feature. TCP mocks are configured for the whole instance, not per group: like
+// ungrouped services, with authentication on, they are reserved to super-admins, reading included, since the list shows
+// their matchers and the bytes they answer and the status their ports and address. Changing them opens or closes
+// network ports. A change is written to disk, then the affected listeners restart, without restarting the process.
 
 #[cfg(feature = "tcp-mock")]
-async fn get_tcp_status(State(state): State<AppState>) -> Json<Vec<crate::tcp::TcpServiceStatus>> {
-    Json(state.tcp_runtime.statuses().await)
+async fn get_tcp_status(
+    State(state): State<AppState>,
+    Extension(user): Extension<AuthUser>,
+) -> Result<Json<Vec<crate::tcp::TcpServiceStatus>>, AppError> {
+    if state.auth_config.enabled {
+        require_super_admin(&user)?;
+    }
+    Ok(Json(state.tcp_runtime.statuses().await))
 }
 
 #[cfg(feature = "tcp-mock")]
 async fn list_tcp_services(
     State(state): State<AppState>,
-    Extension(_user): Extension<AuthUser>,
-) -> Json<Vec<crate::tcp::config::TcpService>> {
-    Json(state.tcp_runtime.snapshot_config().await.services)
+    Extension(user): Extension<AuthUser>,
+) -> Result<Json<Vec<crate::tcp::config::TcpService>>, AppError> {
+    if state.auth_config.enabled {
+        require_super_admin(&user)?;
+    }
+    Ok(Json(state.tcp_runtime.snapshot_config().await.services))
 }
 
 #[cfg(feature = "tcp-mock")]
@@ -3026,8 +3036,8 @@ mod tests {
         assert!(status.is_empty());
     }
 
-    // --- Raw TCP mock CRUD ("tcp-mock" feature), authentication off; who may change TCP mocks is covered by the
-    // authorization tests.
+    // --- Raw TCP mock CRUD ("tcp-mock" feature), authentication off; who may read and change TCP mocks is covered by
+    // the authorization tests.
 
     #[cfg(feature = "tcp-mock")]
     #[tokio::test]

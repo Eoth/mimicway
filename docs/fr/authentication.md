@@ -13,7 +13,7 @@ Avec l'authentification activée, Mimicway s'appuie sur **Keycloak** (un serveur
 Les droits d'accès dépendent alors :
 
 - De l'appartenance de l'utilisateur aux [groupes de services](groups.md) : les administrateurs d'un groupe gèrent le groupe et ses services, les membres travaillent sur ses services.
-- D'une liste de **super-admins**, qui peuvent tout faire, y compris les actions sensibles (réinitialisation complète, restauration de sauvegardes, services hors groupe).
+- D'une liste de **super-admins**, qui peuvent tout faire, y compris les actions sensibles (réinitialisation complète, restauration de sauvegardes, services hors groupe, mocks TCP bruts).
 
 Les droits exacts de chaque point d'accès sont listés dans le [guide du relecteur](../../REVIEWING.md#authorization-matrix).
 

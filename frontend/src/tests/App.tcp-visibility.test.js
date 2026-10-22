@@ -36,6 +36,13 @@ describe('App: the raw TCP mock button follows the `tcp-mock` feature', () => {
     expect(queryByTitle('Raw TCP mock')).not.toBeInTheDocument();
   });
 
+  it('hides the button when /api/tcp/status answers 403 (a user who is not a super-admin)', async () => {
+    api.getTcpStatus.mockRejectedValue(new Error('403 Forbidden'));
+    const { queryByTitle } = render(App);
+    await waitFor(() => expect(api.getServices).toHaveBeenCalled());
+    expect(queryByTitle('Raw TCP mock')).not.toBeInTheDocument();
+  });
+
   it('shows the button when /api/tcp/status answers, even with an empty list', async () => {
     api.getTcpStatus.mockResolvedValue([]);
     const { queryByTitle } = render(App);

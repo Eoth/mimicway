@@ -13,7 +13,7 @@ With authentication on, Mimicway relies on **Keycloak** (an identity server your
 Access rights then depend on:
 
 - The user's membership of [service groups](groups.md): group admins manage the group and its services, members work on its services.
-- A list of **super-admins**, who can do everything, including sensitive actions (full reset, restoring backups, ungrouped services).
+- A list of **super-admins**, who can do everything, including sensitive actions (full reset, restoring backups, ungrouped services, raw TCP mocks).
 
 The exact rights of each endpoint are listed in the [reviewer guide](../../REVIEWING.md#authorization-matrix).
 

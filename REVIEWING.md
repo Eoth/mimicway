@@ -45,7 +45,7 @@ With `AUTH_ENABLED=false` every caller is an anonymous super-admin: this mode is
 | `POST /api/groups` | Any authenticated user, who becomes its admin |
 | `GET /api/groups/{name}` | Its members and admins, super-admins |
 | `PUT`, `DELETE /api/groups/{name}`, `PUT /api/groups/{name}/members` | Its admins, super-admins |
-| `/api/tcp/...` (feature `tcp-mock`) | Reading: any authenticated user; changes: super-admins |
+| `/api/tcp/...` (feature `tcp-mock`) | Super-admins |
 | `/api/messaging/...` (feature `messaging-kafka`) | Status: any authenticated user; log and simulation: super-admins |
 
 The tests in `src/server/api/authz_tests.rs` exercise this matrix through the real router with real signed tokens.

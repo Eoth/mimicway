@@ -310,3 +310,64 @@ async fn kafka_log_and_simulation_are_reserved_to_super_admins() {
     let (status, _) = app.post("root", "/messaging/simulate", message).await;
     assert_eq!(status, StatusCode::NO_CONTENT);
 }
+
+#[cfg(feature = "tcp-mock")]
+#[tokio::test]
+async fn raw_tcp_mocks_are_reserved_to_super_admins() {
+    let app = start().await;
+    let tcp_service = |name: &str| {
+        json!({
+            "name": name,
+            "listen_port": 0,
+            "rules": [{"name": "ping", "matcher": {"type": "Any"}, "response_hex": "706f6e67"}],
+        })
+    };
+    let (status, _) = app
+        .post("root", "/tcp/services", tcp_service("heartbeat"))
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    for user in ["alice", "bob"] {
+        assert_eq!(
+            app.get(user, "/tcp/services").await.0,
+            StatusCode::FORBIDDEN,
+            "{user}"
+        );
+        assert_eq!(
+            app.get(user, "/tcp/status").await.0,
+            StatusCode::FORBIDDEN,
+            "{user}"
+        );
+        let (status, _) = app.post(user, "/tcp/services", tcp_service("beacon")).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{user}");
+        let (status, _) = app
+            .put(user, "/tcp/services/heartbeat", tcp_service("heartbeat"))
+            .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{user}");
+        let (status, _) = app
+            .call(
+                user,
+                reqwest::Method::DELETE,
+                "/tcp/services/heartbeat",
+                None,
+            )
+            .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{user}");
+    }
+    let (status, services) = app.get("root", "/tcp/services").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(services[0]["name"], "heartbeat");
+    assert_eq!(app.get("root", "/tcp/status").await.0, StatusCode::OK);
+    let (status, _) = app
+        .put("root", "/tcp/services/heartbeat", tcp_service("heartbeat"))
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, _) = app
+        .call(
+            "root",
+            reqwest::Method::DELETE,
+            "/tcp/services/heartbeat",
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+}

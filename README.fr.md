@@ -223,7 +223,7 @@ Tout est sous `/api`, en JSON à l'entrée comme à la sortie. Les messages d'er
 | POST | `/api/auth/login`, `/api/auth/validate` | Connexion Keycloak, vérification de jeton. |
 | GET | `/api/auth/me`, `/api/auth/status` | Utilisateur courant, authentification activée ou non. |
 | GET, POST | `/api/messaging/status`, `/api/messaging/logs`, `/api/messaging/simulate` | Kafka (fonctionnalité `messaging-kafka`). |
-| GET, POST, PUT, DELETE | `/api/tcp/status`, `/api/tcp/services[/{name}]` | Mocks TCP bruts (fonctionnalité `tcp-mock`). |
+| GET, POST, PUT, DELETE | `/api/tcp/status`, `/api/tcp/services[/{name}]` | Mocks TCP bruts (fonctionnalité `tcp-mock` ; super-admin). |
 
 `…/{name}` désigne `/api/services/{name}` ou `/api/groups/{group}/services/{name}`. Un service d'un groupe n'est joignable que par la seconde forme.
 
@@ -307,7 +307,7 @@ Restaurez depuis l'interface (bouton Sauvegardes, super-admins), ou à la main :
 Les deux sont exclues de la compilation par défaut : leur code et leurs dépendances ne sont pas dans le binaire standard.
 
 - **Kafka** (`cargo build --release --features messaging-kafka`, nécessite cmake, une chaîne de compilation C et, sous Linux, les en-têtes de libcurl (`libcurl4-openssl-dev`) pour construire librdkafka) : consomme `KAFKA_LISTEN_TOPIC`, compare chaque message aux mêmes règles et templates que le HTTP (scripts exceptés), publie éventuellement la réponse, tient un journal des messages et propose un simulateur dans l'interface. Voir [Kafka](docs/fr/kafka-messaging.md).
-- **TCP brut** (`--features tcp-mock`) : écoute sur les ports que vous déclarez, sur la même interface que le HTTP (`BIND_ADDRESS`), et répond à chaque message par des octets fixes, choisis par préfixe hexadécimal ou par expression régulière. Pas de mode relais : un mock TCP ne se connecte jamais nulle part. La configuration vit dans `{DATA_PATH}/tcp-config.yaml`.
+- **TCP brut** (`--features tcp-mock`) : écoute sur les ports que vous déclarez, sur la même interface que le HTTP (`BIND_ADDRESS`), et répond à chaque message par des octets fixes, choisis par préfixe hexadécimal ou par expression régulière. Pas de mode relais : un mock TCP ne se connecte jamais nulle part. La configuration vit dans `{DATA_PATH}/tcp-config.yaml`. Avec l'authentification, seuls les super-admins voient et modifient les mocks TCP : ils n'appartiennent à aucun groupe.
 
 ## Développement
 

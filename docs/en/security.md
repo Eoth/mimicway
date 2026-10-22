@@ -34,7 +34,7 @@ There is no other one: no telemetry, no update check, no hard-coded host. Outbou
 
 **The operator** (environment variables, container, network) is fully trusted.
 
-**Configuration editors** (UI and API users) define responses, proxy targets and scripts. Without authentication, anyone who can reach the management API is an editor with every right: that is the intended mode for a developer's machine, which is why the binary only listens on loopback by default. With `AUTH_ENABLED=true`, editors are Keycloak users and rights follow groups: a group admin manages the group's services and members, a member edits its services, and only super-admins (`SUPER_ADMINS`) manage ungrouped services, reset the configuration or restore backups. These boundaries are checked on every endpoint, including moves between groups, the full configuration export and the request log (`src/server/api.rs`, tests in `src/server/api/authz_tests.rs`).
+**Configuration editors** (UI and API users) define responses, proxy targets and scripts. Without authentication, anyone who can reach the management API is an editor with every right: that is the intended mode for a developer's machine, which is why the binary only listens on loopback by default. With `AUTH_ENABLED=true`, editors are Keycloak users and rights follow groups: a group admin manages the group's services and members, a member edits its services, and only super-admins (`SUPER_ADMINS`) manage ungrouped services and the raw TCP mocks, reset the configuration or restore backups. These boundaries are checked on every endpoint, including moves between groups, the full configuration export and the request log (`src/server/api.rs`, tests in `src/server/api/authz_tests.rs`).
 
 Because an editor chooses proxy targets, Mimicway will send HTTP requests to any host an editor configures: that is what a proxy is. Decide who may edit (authentication) and restrict where the process may connect (network policy) accordingly.
 
@@ -134,7 +134,7 @@ The operator (environment, container, network) is trusted. Editors are trusted t
 | Fail-safe defaults | Loopback only, no CORS origin, redirects not followed. With `AUTH_ENABLED=true` but its Keycloak settings missing, Mimicway refuses to start; when Keycloak cannot be reached, protected routes refuse the request. |
 | Complete mediation | Every management endpoint but the four public ones checks the caller's right on each request, moves between groups and the full configuration export included. |
 | Open design | The code and this model are public; protection rests on Keycloak's keys and on the network policy, not on secrecy. |
-| Separation of privilege | Resetting, restoring backups and managing ungrouped services need the super-admin role; a group admin manages their own group only. |
+| Separation of privilege | Resetting, restoring backups and managing ungrouped services or raw TCP mocks need the super-admin role; a group admin manages their own group only. |
 | Least privilege | The image runs as a non-root user, on a read-only root filesystem, without Linux capabilities; CI jobs get read-only tokens, and write access only where a job needs it. |
 | Least common mechanism | State kept per service (sequence counters, observations), and shared views (configuration, request log) filtered per user. |
 | Psychological acceptability | The safe setup needs no configuration on a workstation; refusals say why, in the user's language. |
