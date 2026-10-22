@@ -529,16 +529,6 @@ Size S
 
 **Done when.** No check in the form returns a constant, and a listen path the server refuses is shown as an error on the form, with a unit test that fails without it.
 
-### E20. Who may read the raw TCP mocks
-
-Size S. **Decision needed** (reserve reading to super-admins, or keep it open to every signed-in user and say so in the security model).
-
-**Why.** With authentication on, `GET /api/tcp/services` (`list_tcp_services`, `src/server/api.rs`) gives every signed-in user all the raw TCP mocks of the instance, matchers and response bytes included, and `GET /api/tcp/status` their ports, the address listened on and the system's error when a port could not be bound. Creating, changing and deleting them is reserved to super-admins, because they are configured for the whole instance, not per group. Ungrouped HTTP services, the other configuration that belongs to no group, are hidden from everyone but super-admins (`can_access_service`, `src/auth/mod.rs`): the TCP mocks are the only instance-wide configuration a group member can read. The reviewer guide states this rule, the security model does not, and its third requirement promises that a user reaches only what their roles allow, on every endpoint. The interface offers the TCP page and its create, edit and delete buttons to every user; for all but super-admins, each of them ends in a 403. And no test holds any of it: `src/server/api/authz_tests.rs` has no TCP test, although the comment above the TCP tests of `src/server/api.rs` says that who may change TCP mocks is covered there.
-
-**What.** Recommended: with authentication on, reserve both reads to super-admins, like the changes and like ungrouped HTTP services; the interface then hides the TCP button from the users the status refuses, as it does when the binary lacks the feature. It rules out keeping reading open and writing it in the security model: the ports can be found on the network, but not the matchers and the bytes answered, and nothing else of the instance-wide configuration is open to group members. A member who needs a TCP mock asks a super-admin, as for an ungrouped service. It would be wrong if every team of a shared instance had to find the TCP mocks on its own; giving them a group, like HTTP services, would then answer it, not opening the list.
-
-**Done when.** A test of `src/server/api/authz_tests.rs`, run with `tcp-mock`, refuses a group admin and a member on every TCP route, reads and changes, and lets a super-admin through; the reviewer guide's matrix and the security model, in both languages, say who may read and change them.
-
 ### E21. Feature buttons that follow the signed-in user
 
 Size S
