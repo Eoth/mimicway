@@ -198,3 +198,58 @@ test.describe('Security: browser policy of the UI', () => {
     expect(violations).toEqual([]);
   });
 });
+
+test.describe('A page answered by a service cannot act as the interface', () => {
+  // Rendered by the browser, the page reports what it could do as the interface: read its storage, read the
+  // management API, reset the configuration.
+  const probe = `<!doctype html><title>pending</title><script>
+(async () => {
+  const report = { origin: self.origin };
+  try { localStorage.getItem('mimicway-auth'); report.storage = 'readable'; } catch { report.storage = 'denied'; }
+  try { report.read = (await fetch('/api/services')).status; } catch { report.read = 'blocked'; }
+  try { report.reset = (await fetch('/api/config/reset', { method: 'DELETE' })).status; } catch { report.reset = 'blocked'; }
+  document.title = JSON.stringify(report);
+})();
+</script>`;
+
+  test.beforeEach(async ({ request }) => {
+    await request.delete(`${API}/config/reset`);
+  });
+
+  test('its scripts run in an opaque origin, without the storage or the API of the interface', async ({
+    page,
+    request,
+  }) => {
+    const created = await request.post(`${API}/services`, {
+      data: validService('probe', {
+        listen_path: '',
+        rules: [
+          {
+            name: 'page',
+            method: 'GET',
+            sub_path: null,
+            action: 'mock',
+            pre_script: null,
+            script: null,
+            post_script: null,
+            conditions: { all_of: [], any_of: [] },
+            response: {
+              status: 200,
+              headers: [{ name: 'Content-Type', value: 'text/html' }],
+              body: [{ type: 'Literal', value: probe }],
+            },
+          },
+        ],
+      }),
+    });
+    expect(created.status()).toBe(201);
+
+    await page.goto('/probe/x');
+    await expect(page).not.toHaveTitle('pending');
+    const report = JSON.parse(await page.title());
+    expect(report).toEqual({ origin: 'null', storage: 'denied', read: 'blocked', reset: 'blocked' });
+
+    const services = await (await request.get(`${API}/services`)).json();
+    expect(services.map((s) => s.name)).toEqual(['probe']);
+  });
+});

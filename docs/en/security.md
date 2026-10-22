@@ -48,7 +48,7 @@ Because an editor chooses proxy targets, Mimicway will send HTTP requests to any
 - the management API answers cross-origin calls only for the origins listed in `CORS_ALLOWED_ORIGINS` (none by default);
 - state-changing API requests that the browser marks as cross-site are refused unless their origin is listed;
 - without authentication, on any interface, the API answers only requests addressed to `localhost`, `*.localhost`, an IP address or a name listed in `ALLOWED_HOSTS` (and the host of `API_BASE_URL`), which defeats DNS rebinding: a page can make its own domain name resolve to Mimicway's address, but not change the name the browser sends. With authentication on and listening beyond loopback, any name is answered unless `ALLOWED_HOSTS` lists them: a rebound page cannot obtain a user's token. HTTP/2's `:authority` is checked like `Host`, and a request naming no host is refused;
-- the UI and the API are served with a content security policy (no inline script, no framing), `X-Content-Type-Options: nosniff` and `Referrer-Policy: no-referrer`. Responses of mocked and proxied services are left untouched.
+- the UI and the API are served with a content security policy (no inline script, no framing), `X-Content-Type-Options: nosniff` and `Referrer-Policy: no-referrer`. Responses of mocked and proxied services keep their headers and body, plus `Content-Security-Policy: sandbox …` without `allow-same-origin`: opened in a browser, such a page runs in an opaque origin of its own, so that a script written by an editor, sent by a backend or reflected from a request value by a template can neither read the interface's token nor call the management API as the interface ([decision 1](../../decisions/0001-service-responses-in-an-opaque-origin.md)).
 
 ## Authentication
 
@@ -147,7 +147,7 @@ The operator (environment, container, network) is trusted. Editors are trusted t
 |---|---|
 | Broken access control (A01, CWE-862, CWE-863) | The authorization matrix, enforced in each handler and tested with real tokens (`src/server/api/authz_tests.rs`). |
 | Cryptographic failures (A02) | No cryptography of its own; asymmetric token signatures only, never HMAC or `none`; outbound TLS by rustls, certificates verified. |
-| Injection and cross-site scripting (A03, CWE-79, CWE-94) | No SQL and no shell; templates insert request values without evaluating them; scripts run in the sandbox without `eval`; the interface escapes every value (no raw HTML) under a content security policy that forbids inline scripts. |
+| Injection and cross-site scripting (A03, CWE-79, CWE-94) | No SQL and no shell; templates insert request values without evaluating them; scripts run in the sandbox without `eval`; the interface escapes every value (no raw HTML) under a content security policy that forbids inline scripts; service responses, which share the interface's origin, are rendered in an opaque origin (`sandbox`). |
 | Insecure design (A04) | This model, the [reviewer guide](../../REVIEWING.md) and the fuzzed parsers. |
 | Security misconfiguration (A05) | Safe defaults, the hardening checklist and manifests that apply it. |
 | Vulnerable and outdated components (A06, CWE-1104) | Lock files, advisories checked on every change of a manifest and weekly, Dependabot updates. |

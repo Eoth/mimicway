@@ -16,8 +16,9 @@
 //!   listens beyond loopback with authentication on: there the operator chose the names, and a page cannot obtain
 //!   a user's token.
 //! - Response headers: Mimicway's own pages and API answers carry a content security policy (no inline script,
-//!   no framing), `nosniff` and `no-referrer`. Responses of the mocked and proxied services are left exactly as
-//!   configured or as the backend sent them: they are what the applications under test expect.
+//!   no framing), `nosniff` and `no-referrer`. Responses of the mocked and proxied services keep the headers and body
+//!   configured or sent by the backend, which the applications under test expect, plus one policy: rendered as a
+//!   page, they run in an opaque origin (`SERVICE_RESPONSE_POLICY`).
 use crate::i18n::tr;
 use crate::server::validation::is_management_api_route;
 use axum::body::Body;
@@ -205,6 +206,15 @@ impl BrowserGuard {
     }
 }
 
+/// Added to every service response. Such a page shares the interface's origin, and an editor, a proxied backend or a
+/// request value reflected by a template writes it: without this, its scripts would read the interface's token and
+/// call the management API as same-origin. The `sandbox` directive renders it in an opaque origin instead, where its
+/// calls to the API leave from origin `null`, marked cross-site. Everything a page may need stays allowed except
+/// `allow-same-origin` and `allow-popups-to-escape-sandbox`, which would give that origin back. Clients that do not
+/// render the response as a page ignore it.
+pub const SERVICE_RESPONSE_POLICY: &str =
+    "sandbox allow-downloads allow-forms allow-modals allow-popups allow-scripts";
+
 pub async fn security_headers(
     State(guard): State<BrowserGuard>,
     req: Request<Body>,
@@ -212,6 +222,11 @@ pub async fn security_headers(
 ) -> Response {
     let mut response = next.run(req).await;
     if response.extensions().get::<ServiceResponse>().is_some() {
+        // Appended: a policy set by the rule or the backend still applies, browsers enforcing every policy received.
+        response.headers_mut().append(
+            "content-security-policy",
+            HeaderValue::from_static(SERVICE_RESPONSE_POLICY),
+        );
         return response;
     }
     let headers = response.headers_mut();

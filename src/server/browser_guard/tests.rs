@@ -337,7 +337,7 @@ async fn a_rebound_name_cannot_read_the_configuration_of_a_server_open_to_the_ne
 }
 
 #[tokio::test]
-async fn mimicway_pages_carry_security_headers_but_mock_responses_stay_untouched() {
+async fn mimicway_pages_carry_security_headers_and_service_responses_only_the_sandbox() {
     let root = spawn_app().await;
     let client = reqwest::Client::new();
     for path in ["/api/health", "/runtime-config.json", "/index.html"] {
@@ -346,6 +346,7 @@ async fn mimicway_pages_carry_security_headers_but_mock_responses_stay_untouched
         let csp = headers["content-security-policy"].to_str().unwrap();
         assert!(csp.contains("frame-ancestors 'none'"), "{path}: {csp}");
         assert!(csp.contains("script-src 'self'"), "{path}: {csp}");
+        assert!(!csp.contains("sandbox"), "{path}: {csp}");
         assert_eq!(headers["x-content-type-options"], "nosniff", "{path}");
         assert_eq!(headers["x-frame-options"], "DENY", "{path}");
     }
@@ -354,15 +355,91 @@ async fn mimicway_pages_carry_security_headers_but_mock_responses_stay_untouched
         .send()
         .await
         .unwrap();
+    assert_eq!(policies(mocked.headers()), [SERVICE_RESPONSE_POLICY]);
     for name in [
-        "content-security-policy",
         "x-frame-options",
         "x-content-type-options",
+        "referrer-policy",
     ] {
         assert!(
             mocked.headers().get(name).is_none(),
             "{name} added to a mock response"
         );
+    }
+    assert_eq!(mocked.text().await.unwrap(), "mocked");
+}
+
+fn policies(headers: &HeaderMap) -> Vec<&str> {
+    headers
+        .get_all("content-security-policy")
+        .iter()
+        .map(|v| v.to_str().unwrap())
+        .collect()
+}
+
+#[test]
+fn the_service_sandbox_never_gives_the_interface_origin_back() {
+    let flags: Vec<&str> = SERVICE_RESPONSE_POLICY.split_whitespace().collect();
+    assert_eq!(flags[0], "sandbox");
+    assert!(flags.contains(&"allow-scripts"));
+    for flag in [
+        "allow-same-origin",
+        "allow-popups-to-escape-sandbox",
+        "allow-top-navigation",
+    ] {
+        assert!(!flags.contains(&flag), "{flag}");
+    }
+}
+
+/// A backend that answers every request with an HTML page and a policy of its own.
+async fn spawn_html_backend() -> String {
+    serve(axum::Router::new().fallback(|| async {
+        (
+            [
+                ("content-type", "text/html"),
+                ("content-security-policy", "img-src 'none'"),
+            ],
+            "<script>parent</script>",
+        )
+    }))
+    .await
+}
+
+#[tokio::test]
+async fn mocked_and_proxied_pages_keep_their_own_policy_next_to_the_sandbox() {
+    let backend = spawn_html_backend().await;
+    let mut page = mock_service("page", "<script>x</script>");
+    page.rules[0].response.headers = serde_json::from_value(serde_json::json!([
+        {"name": "Content-Type", "value": "text/html"},
+        {"name": "Content-Security-Policy", "value": "img-src 'none'"}
+    ]))
+    .unwrap();
+    let proxied: crate::models::Service = serde_json::from_value(serde_json::json!({
+        "name": "web", "listen_path": "", "real_target_url": backend, "is_mocked": false,
+        "rewrite_directory_urls": false, "group_name": null, "wsdl_mode": "auto", "rules": []
+    }))
+    .unwrap();
+    let data_dir = temp_data_dir("browser-guard-sandbox");
+    let config = MockConfig {
+        services: vec![page, proxied],
+        groups: vec![],
+    };
+    let state = test_state(&data_dir, config, auth_disabled()).await;
+    let root = serve(crate::server::build_router_with(
+        state,
+        crate::server::ui_files::UiSource::Directory(data_dir.clone()),
+        BrowserGuard::new(""),
+    ))
+    .await;
+    for path in ["/page/x", "/web/x"] {
+        let resp = reqwest::get(format!("{root}{path}")).await.unwrap();
+        assert_eq!(resp.status().as_u16(), 200, "{path}");
+        assert_eq!(
+            policies(resp.headers()),
+            ["img-src 'none'", SERVICE_RESPONSE_POLICY],
+            "{path}"
+        );
+        assert!(resp.text().await.unwrap().starts_with("<script>"), "{path}");
     }
 }
 
