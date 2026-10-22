@@ -35,6 +35,8 @@ COPY --from=backend --chown=1000:1000 /build/data /data
 COPY --from=backend /build/target/release/mimicway /app/mimicway
 WORKDIR /app
 USER 1000:1000
+# Every interface of the container: its network is the boundary. Publish the port on the host's loopback
+# (-p 127.0.0.1:7342:7342) unless authentication is on.
 ENV DATA_PATH=/data PORT=7342 BIND_ADDRESS=0.0.0.0
 EXPOSE 7342
 ENTRYPOINT ["/app/mimicway"]

@@ -29,7 +29,7 @@ Mimicway est pensé pour les réseaux d'entreprise où chaque flux sortant doit 
 | Contacte-t-il un serveur de l'éditeur ? | Non. Il n'y a ni télémétrie, ni vérification de mise à jour, ni serveur d'éditeur. |
 | À quoi se connecte-t-il ? | Seulement à ce que vous configurez : le backend d'un service relayé, le test TCP de ce backend quand vous cliquez sur « Tester », votre Keycloak si l'authentification est activée, vos brokers Kafka si cette fonctionnalité est compilée et activée. |
 | Qui peut l'atteindre ? | Par défaut, il n'écoute que sur `127.0.0.1`. Les conteneurs choisissent d'écouter sur toutes les interfaces avec `BIND_ADDRESS=0.0.0.0`. |
-| Une page web peut-elle le piloter ? | Non. L'API de gestion refuse les écritures intersites, les origines CORS étrangères et, en mode local, les requêtes adressées à un nom qui n'est pas la boucle locale (DNS rebinding). |
+| Une page web peut-elle le piloter ? | Non. L'API de gestion refuse les écritures intersites, les origines CORS étrangères et, sans authentification, les requêtes adressées à un autre nom que `localhost`, une adresse IP ou les noms d'`ALLOWED_HOSTS` (DNS rebinding). |
 | Garde-t-il des secrets issus du trafic ? | Non. `Authorization`, les cookies et les en-têtes de clé d'API sont remplacés par `[redacted]` dans les journaux, l'observation et les suggestions ; les URL perdent leurs identifiants. |
 | Un script peut-il s'échapper ? | Les scripts Rhai n'ont accès ni aux fichiers, ni au réseau, ni à `eval`, et sont bornés en opérations, en taille de chaîne et en profondeur. |
 | Du code non sûr ? | `#![forbid(unsafe_code)]`, tests compris. |
@@ -42,8 +42,10 @@ Le détail, avec le code qui appuie chaque affirmation : [modèle de sécurité]
 ### Avec Docker
 
 ```bash
-docker run --rm -p 7342:7342 -v mimicway-data:/data ghcr.io/eoth/mimicway
+docker run --rm -p 127.0.0.1:7342:7342 -v mimicway-data:/data ghcr.io/eoth/mimicway
 ```
+
+Le port n'est publié que sur cette machine : sans [authentification](docs/fr/authentication.md), quiconque l'atteint peut modifier tous les mocks et faire appeler par Mimicway n'importe quel hôte que son réseau atteint. Ne le publiez sur toutes les interfaces (`-p 7342:7342`) que sur un réseau de confiance, ou avec l'authentification activée.
 
 L'image est publiée pour amd64 et arm64 à chaque version, signée et accompagnée de sa provenance de compilation ([vérifier une version](SECURITY.md#verifying-a-release)). Pour la construire vous-même : `docker build -t mimicway .`.
 
@@ -160,6 +162,7 @@ Tout se règle par des variables d'environnement ; aucune n'est obligatoire.
 |---|---|---|
 | `PORT` | `7342` | Port HTTP. |
 | `BIND_ADDRESS` | `127.0.0.1` | Interface d'écoute. `0.0.0.0` (ou `::`) accepte les connexions distantes ; l'image de conteneur la fixe. |
+| `ALLOWED_HOSTS` | *(vide)* | Noms d'hôte, séparés par des virgules, auxquels l'API de gestion répond, en plus de `localhost` et des adresses IP, auxquels elle répond toujours ; `*` pour tout nom. Vide, elle ne répond à aucun autre nom, sauf en écoute au-delà de la boucle locale avec l'authentification activée, où elle répond à tous. C'est ce qui empêche une page web d'atteindre l'API par un nom à elle (DNS rebinding). L'hôte d'`API_BASE_URL` est toujours accepté. |
 | `DATA_PATH` | `./data` | Répertoire de `mock-config.yaml` et de ses `backups/`. |
 | `STATIC_DIR` | *(l'interface intégrée au binaire)* | Un répertoire d'où servir l'interface à la place, pour développer l'interface ou en servir une version personnalisée. Un binaire construit sans l'interface lit `./frontend/dist`. |
 | `RUST_LOG` | `mimicway=info` | Filtre des journaux, par exemple `mimicway=debug`. |
@@ -355,9 +358,9 @@ L'anglais est la langue source : chaque message est écrit une fois, en anglais,
 | Une méthode ou un sous-chemin n'est pas simulé | Les méthodes appartiennent aux règles : ajoutez une règle pour cette méthode et ce sous-chemin. |
 | L'interface affiche une page blanche | Le binaire a été construit avant l'interface : construisez l'interface, puis à nouveau le binaire, ou pointez `STATIC_DIR` sur `frontend/dist` (un chemin absolu sous Windows). Le journal de démarrage indique d'où vient l'interface. |
 | Le port 7342 est déjà utilisé | Fixez `PORT`, ou arrêtez l'autre processus. |
-| D'autres machines n'atteignent pas Mimicway | Il écoute sur `127.0.0.1` par défaut : fixez `BIND_ADDRESS=0.0.0.0`. |
+| D'autres machines n'atteignent pas Mimicway | Il écoute sur `127.0.0.1` par défaut : fixez `BIND_ADDRESS=0.0.0.0` (et activez l'authentification, sauf sur un réseau de confiance). |
 | 403 « Requête inter-sites refusée » | L'interface est servie depuis une autre origine : ajoutez-la à `CORS_ALLOWED_ORIGINS`. |
-| 403 « ce Mimicway n'écoute que sur la machine locale » | Appelez-le via `localhost` ou `127.0.0.1`, ou écoutez sur une autre interface. |
+| 403 « ce Mimicway ne répond pas au nom … » | Appelez-le via `localhost` ou une adresse IP, ou ajoutez ce nom à `ALLOWED_HOSTS`. |
 | Connexion refusée alors que le mot de passe est bon | Keycloak émet les jetons sous une autre URL que `KEYCLOAK_URL`, ou pour un autre client : fixez `KEYCLOAK_ISSUER`, vérifiez `KEYCLOAK_CLIENT_ID` (le journal du serveur nomme la cause). |
 | `link.exe not found` sous Windows | Installez les Visual Studio Build Tools avec la charge de travail C++. |
 | La compilation Kafka échoue sous Windows avec une erreur de longueur de chemin | Fixez `CARGO_TARGET_DIR` à un chemin court comme `C:\lm-target`. |

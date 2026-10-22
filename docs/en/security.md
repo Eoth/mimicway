@@ -17,7 +17,7 @@ Mimicway is a single process with no database, no telemetry and no outbound traf
 | Service traffic | `/{service}/...`, `/{group code}/{service}/...` | The applications under test. Never requires a Mimicway token: it carries the applications' own credentials. |
 | Raw TCP mocks | ports you configure, on the `BIND_ADDRESS` interface (`tcp-mock` feature, off by default) | Clients of binary protocols. |
 
-By default the binary listens on `127.0.0.1` only (`BIND_ADDRESS`). The container image sets `0.0.0.0`, the container network being the boundary there.
+By default the binary listens on `127.0.0.1` only (`BIND_ADDRESS`). The container image sets `0.0.0.0`, the container network being the boundary there; the documented `docker run` publishes the port on the host's loopback only (`-p 127.0.0.1:7342:7342`).
 
 ## Every outbound network flow
 
@@ -47,7 +47,7 @@ Because an editor chooses proxy targets, Mimicway will send HTTP requests to any
 **Other websites open in a browser** must not be able to drive a Mimicway reachable from that browser (`src/server/browser_guard.rs`):
 - the management API answers cross-origin calls only for the origins listed in `CORS_ALLOWED_ORIGINS` (none by default);
 - state-changing API requests that the browser marks as cross-site are refused unless their origin is listed;
-- when listening on loopback only, the API answers only requests addressed to `localhost`, `*.localhost`, `127.0.0.0/8` or `::1`, which defeats DNS rebinding;
+- without authentication, on any interface, the API answers only requests addressed to `localhost`, `*.localhost`, an IP address or a name listed in `ALLOWED_HOSTS` (and the host of `API_BASE_URL`), which defeats DNS rebinding: a page can make its own domain name resolve to Mimicway's address, but not change the name the browser sends. With authentication on and listening beyond loopback, any name is answered unless `ALLOWED_HOSTS` lists them: a rebound page cannot obtain a user's token. HTTP/2's `:authority` is checked like `Host`, and a request naming no host is refused;
 - the UI and the API are served with a content security policy (no inline script, no framing), `X-Content-Type-Options: nosniff` and `Referrer-Policy: no-referrer`. Responses of mocked and proxied services are left untouched.
 
 ## Authentication
@@ -108,7 +108,7 @@ The sections above state the facts. This one ties them into an argument, the pro
 
 | Who | What they could try | What stops them |
 |---|---|---|
-| A website that a developer visits while Mimicway runs on their machine | Cross-site requests to the management API, DNS rebinding | The browser guard: CORS allow-list, refusal of cross-site writes, host check when listening on loopback |
+| A website that a developer visits while Mimicway runs on their machine | Cross-site requests to the management API, DNS rebinding | The browser guard: CORS allow-list, refusal of cross-site writes, host name check without authentication |
 | Anyone on a network the port is exposed to | Reading or changing the mocks | Loopback by default; authentication with Keycloak; TLS at the ingress |
 | An authenticated user | Reaching another group's services, or administration | Authorization on every endpoint, tested through the real router with signed tokens |
 | An editor, trusted to configure | Escaping from a rule script | The Rhai sandbox: no file, network, `import` or `eval`, bounded operations, sizes and depth |

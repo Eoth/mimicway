@@ -29,7 +29,7 @@ Mimicway is meant for corporate networks where every outbound flow has to be jus
 | Does it phone home? | No. There is no telemetry, no update check and no vendor server. |
 | What does it connect to? | Only what you configure: the backend of a proxied service, the TCP check of that backend when you click "Test", your Keycloak if authentication is on, your Kafka brokers if that feature is compiled in and enabled. |
 | Who can reach it? | By default it listens on `127.0.0.1` only. Containers opt in to every interface with `BIND_ADDRESS=0.0.0.0`. |
-| Can a web page drive it? | No. The management API refuses cross-site writes, foreign CORS origins and, when local-only, requests addressed to a non-loopback name (DNS rebinding). |
+| Can a web page drive it? | No. The management API refuses cross-site writes, foreign CORS origins and, without authentication, requests addressed to a name other than `localhost`, an IP address or the names of `ALLOWED_HOSTS` (DNS rebinding). |
 | Does it keep secrets from the traffic? | No. `Authorization`, cookies and API-key headers are replaced by `[redacted]` in logs, observation and suggestions; URLs lose their credentials. |
 | Can a script escape? | Rhai scripts have no file, network or `eval` access and are bounded in operations, string size and depth. |
 | Unsafe code? | `#![forbid(unsafe_code)]`, tests included. |
@@ -42,8 +42,10 @@ Details, with the code that backs each claim: [security model](docs/en/security.
 ### With Docker
 
 ```bash
-docker run --rm -p 7342:7342 -v mimicway-data:/data ghcr.io/eoth/mimicway
+docker run --rm -p 127.0.0.1:7342:7342 -v mimicway-data:/data ghcr.io/eoth/mimicway
 ```
+
+The port is published on this machine only: without [authentication](docs/en/authentication.md), anyone who reaches it can change every mock and make Mimicway call any host its network reaches. Publish it on every interface (`-p 7342:7342`) only on a network you trust, or with authentication on.
 
 The image is published for amd64 and arm64 with each release, signed and with its build provenance ([verifying a release](SECURITY.md#verifying-a-release)). To build it yourself instead: `docker build -t mimicway .`.
 
@@ -160,6 +162,7 @@ Everything is set through environment variables; none is required.
 |---|---|---|
 | `PORT` | `7342` | HTTP port. |
 | `BIND_ADDRESS` | `127.0.0.1` | Interface to listen on. `0.0.0.0` (or `::`) accepts remote connections; the container image sets it. |
+| `ALLOWED_HOSTS` | *(empty)* | Comma-separated host names the management API answers to, besides `localhost` and IP addresses, which it always answers; `*` for any name. Empty, it answers no other name, except when listening beyond loopback with authentication on, where it answers any. This is what stops a web page from reaching the API through a name of its own (DNS rebinding). The host of `API_BASE_URL` is always answered. |
 | `DATA_PATH` | `./data` | Directory of `mock-config.yaml` and its `backups/`. |
 | `STATIC_DIR` | *(the UI embedded in the binary)* | A directory to serve the UI from instead, for UI development or a customized UI. A binary built without the UI reads `./frontend/dist`. |
 | `RUST_LOG` | `mimicway=info` | Log filter, for example `mimicway=debug`. |
@@ -355,9 +358,9 @@ English is the source language: every message is written once, in English, in th
 | A method or sub-path is not mocked | Methods belong to rules: add a rule for that method and sub-path. |
 | The UI shows a blank page | The binary was built before the UI: build the UI, then the binary again, or point `STATIC_DIR` to `frontend/dist` (an absolute path on Windows). The startup log says where the UI comes from. |
 | Port 7342 already in use | Set `PORT`, or stop the other process. |
-| Other machines cannot reach Mimicway | It listens on `127.0.0.1` by default: set `BIND_ADDRESS=0.0.0.0`. |
+| Other machines cannot reach Mimicway | It listens on `127.0.0.1` by default: set `BIND_ADDRESS=0.0.0.0` (and turn authentication on, unless the network is trusted). |
 | 403 "Cross-site request refused" | The UI is served from another origin: add it to `CORS_ALLOWED_ORIGINS`. |
-| 403 "this Mimicway only listens on the local machine" | Call it through `localhost` or `127.0.0.1`, or listen on another interface. |
+| 403 "this Mimicway does not answer to the name …" | Call it through `localhost` or an IP address, or add that name to `ALLOWED_HOSTS`. |
 | Login refused although the password is right | Keycloak issues tokens under another URL than `KEYCLOAK_URL`, or for another client: set `KEYCLOAK_ISSUER`, check `KEYCLOAK_CLIENT_ID` (the server log names the cause). |
 | `link.exe not found` on Windows | Install the Visual Studio Build Tools with the C++ workload. |
 | Kafka build fails on Windows with a path length error | Set `CARGO_TARGET_DIR` to a short path such as `C:\lm-target`. |

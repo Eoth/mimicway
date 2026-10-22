@@ -25,7 +25,7 @@ Replace `light-mock` (or `light-mock.exe`) with `mimicway` (`mimicway.exe`) wher
 Keep the named volume that holds your data; only the image name changes:
 
 ```bash
-docker run --rm -p 7342:7342 -v lightmock-data:/data ghcr.io/eoth/mimicway
+docker run --rm -p 127.0.0.1:7342:7342 -v lightmock-data:/data ghcr.io/eoth/mimicway
 ```
 
 With Compose, change the `image:` (or the `build:` tag) and leave the `volumes:` entry as it is.

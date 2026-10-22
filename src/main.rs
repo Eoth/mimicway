@@ -113,7 +113,13 @@ async fn main() {
     };
 
     let store_for_shutdown = state.store.clone();
-    let guard = BrowserGuard::from_env().with_loopback_hosts_only(bind_ip.is_loopback());
+    let auth_enabled = state.auth_config.enabled;
+    let guard = BrowserGuard::from_env().with_host_check(
+        std::env::var("ALLOWED_HOSTS").ok().as_deref(),
+        bind_ip.is_loopback(),
+        auth_enabled,
+    );
+    log_host_check(guard.host_names(), bind_ip.is_loopback(), auth_enabled);
     tracing::info!(ui = %ui.describe(), "serving the UI");
     let app = build_router_with(state, ui, guard);
     let addr = std::net::SocketAddr::new(bind_ip, port);
@@ -166,6 +172,23 @@ fn log_filter(rust_log: Option<&str>) -> (String, bool) {
 fn exit_with(message: &str) -> ! {
     eprintln!("Mimicway cannot start: {message}");
     std::process::exit(2)
+}
+
+// Beyond loopback without authentication, the host names the management API answers to are what stands between a web
+// page and the configuration (DNS rebinding): say which ones, and warn when it answers any.
+fn log_host_check(names: Option<&[String]>, loopback_only: bool, auth_enabled: bool) {
+    match names {
+        None if !auth_enabled => tracing::warn!(
+            "ALLOWED_HOSTS=* without authentication: a web page opened by anyone who reaches this Mimicway can drive \
+             its management API through DNS rebinding"
+        ),
+        Some(names) if !loopback_only => tracing::info!(
+            other_names = ?names,
+            "the management API answers requests addressed to localhost or to an IP address, and to the names of \
+             ALLOWED_HOSTS"
+        ),
+        _ => {}
+    }
 }
 
 // Loopback by default: without authentication (the default), a server reachable from the network lets anyone on it

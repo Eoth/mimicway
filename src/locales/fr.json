@@ -19,7 +19,7 @@
   "Invalid credentials.": "Identifiants invalides.",
   "Invalid or expired token.": "Token invalide ou expiré.",
   "Missing token.": "Token manquant.",
-  "Request refused: this Mimicway only listens on the local machine; call it through localhost.": "Requête refusée : ce Mimicway n'écoute que sur la machine locale ; appelez-le via localhost.",
+  "Request refused: this Mimicway does not answer to the name \"{0}\"; call it through localhost or an IP address, or add the name to ALLOWED_HOSTS.": "Requête refusée : ce Mimicway ne répond pas au nom \"{0}\" ; appelez-le via localhost ou une adresse IP, ou ajoutez ce nom à ALLOWED_HOSTS.",
   "Rule \"{0}\": invalid regex pattern.": "Regle \"{0}\" : pattern regex invalide.",
   "Rule \"{0}\": invalid regular expression \"{1}\": {2}": "Regle \"{0}\" : expression reguliere \"{1}\" invalide : {2}",
   "Rule \"{0}\": the prefix is not valid hexadecimal.": "Regle \"{0}\" : le prefixe n'est pas de l'hexadecimal valide.",

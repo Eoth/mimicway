@@ -17,7 +17,7 @@ Mimicway est un processus unique, sans base de données, sans télémétrie et s
 | Trafic des services | `/{service}/...`, `/{code du groupe}/{service}/...` | Les applications testées. N'exige jamais de jeton Mimicway : il transporte les identifiants propres aux applications. |
 | Mocks TCP bruts | les ports que vous configurez, sur l'interface `BIND_ADDRESS` (fonctionnalité `tcp-mock`, désactivée par défaut) | Les clients de protocoles binaires. |
 
-Par défaut, le binaire n'écoute que sur `127.0.0.1` (`BIND_ADDRESS`). L'image de conteneur fixe `0.0.0.0`, le réseau du conteneur faisant alors office de frontière.
+Par défaut, le binaire n'écoute que sur `127.0.0.1` (`BIND_ADDRESS`). L'image de conteneur fixe `0.0.0.0`, le réseau du conteneur faisant alors office de frontière ; le `docker run` documenté ne publie le port que sur la boucle locale de l'hôte (`-p 127.0.0.1:7342:7342`).
 
 ## Chaque flux réseau sortant
 
@@ -47,7 +47,7 @@ Comme un éditeur choisit les cibles de proxy, Mimicway enverra des requêtes HT
 **Les autres sites ouverts dans un navigateur** ne doivent pas pouvoir piloter un Mimicway joignable depuis ce navigateur (`src/server/browser_guard.rs`) :
 - l'API de gestion ne répond aux appels d'une autre origine que pour les origines listées dans `CORS_ALLOWED_ORIGINS` (aucune par défaut) ;
 - les requêtes d'API qui modifient l'état et que le navigateur marque comme intersites sont refusées, sauf si leur origine est listée ;
-- en écoute sur la boucle locale seulement, l'API ne répond qu'aux requêtes adressées à `localhost`, `*.localhost`, `127.0.0.0/8` ou `::1`, ce qui déjoue le DNS rebinding ;
+- sans authentification, sur toute interface, l'API ne répond qu'aux requêtes adressées à `localhost`, `*.localhost`, une adresse IP ou un nom listé dans `ALLOWED_HOSTS` (et à l'hôte d'`API_BASE_URL`), ce qui déjoue le DNS rebinding : une page peut faire résoudre son propre nom de domaine vers l'adresse de Mimicway, mais pas changer le nom que le navigateur envoie. Avec l'authentification activée et en écoute au-delà de la boucle locale, tout nom est accepté, sauf si `ALLOWED_HOSTS` les liste : une page rebondie ne peut pas obtenir le jeton d'un utilisateur. Le `:authority` de HTTP/2 est contrôlé comme `Host`, et une requête qui ne nomme aucun hôte est refusée ;
 - l'interface et l'API sont servies avec une politique de sécurité du contenu (aucun script en ligne, aucun cadrage), `X-Content-Type-Options: nosniff` et `Referrer-Policy: no-referrer`. Les réponses des services simulés et relayés ne sont pas modifiées.
 
 ## Authentification
@@ -108,7 +108,7 @@ Les sections précédentes donnent les faits. Celle-ci les relie en un raisonnem
 
 | Qui | Ce qu'il pourrait tenter | Ce qui l'arrête |
 |---|---|---|
-| Un site web visité par un développeur pendant que Mimicway tourne sur sa machine | Des requêtes inter-sites vers l'API de gestion, du DNS rebinding | Le garde navigateur : liste CORS, refus des écritures inter-sites, contrôle de l'hôte en écoute locale |
+| Un site web visité par un développeur pendant que Mimicway tourne sur sa machine | Des requêtes inter-sites vers l'API de gestion, du DNS rebinding | Le garde navigateur : liste CORS, refus des écritures inter-sites, contrôle du nom d'hôte sans authentification |
 | Quiconque sur un réseau où le port est exposé | Lire ou modifier les mocks | L'écoute locale par défaut ; l'authentification par Keycloak ; TLS à l'ingress |
 | Un utilisateur authentifié | Atteindre les services d'un autre groupe, ou l'administration | L'autorisation sur chaque point d'accès, testée à travers le vrai routeur avec des jetons signés |
 | Un éditeur, à qui l'on confie la configuration | Sortir d'un script de règle | Le bac à sable Rhai : ni fichier, ni réseau, ni `import`, ni `eval`, des opérations, tailles et profondeurs bornées |
