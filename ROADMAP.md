@@ -155,16 +155,6 @@ Size S
 
 **Done when.** A target outside the list is refused at save time and at forwarding time, with tests for DNS names that resolve to a forbidden address.
 
-### T5. Host allow-list on every interface
-
-Size S
-
-**Why.** The DNS-rebinding guard only applies when Mimicway listens on loopback. Listening on `0.0.0.0` without authentication leaves that door open.
-
-**What.** `ALLOWED_HOSTS`: the host names the management API answers to, required (or derived from `API_BASE_URL`) when listening beyond loopback without authentication.
-
-**Done when.** A request with an unlisted `Host` is refused on any interface, and startup warns when the configuration leaves the API reachable by any name.
-
 ### T6. Rate limits
 
 Size S
