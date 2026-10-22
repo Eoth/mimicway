@@ -222,7 +222,7 @@ Tout est sous `/api`, en JSON à l'entrée comme à la sortie. Les messages d'er
 | PUT | `/api/groups/{name}/members` | Fixer les administrateurs et les membres d'un groupe. |
 | POST | `/api/auth/login`, `/api/auth/validate` | Connexion Keycloak, vérification de jeton. |
 | GET | `/api/auth/me`, `/api/auth/status` | Utilisateur courant, authentification activée ou non. |
-| GET, POST | `/api/messaging/status`, `/api/messaging/logs`, `/api/messaging/simulate` | Kafka (fonctionnalité `messaging-kafka`). |
+| GET, POST | `/api/messaging/status`, `/api/messaging/logs`, `/api/messaging/simulate` | Kafka (fonctionnalité `messaging-kafka` ; journal et simulation : super-admin). |
 | GET, POST, PUT, DELETE | `/api/tcp/status`, `/api/tcp/services[/{name}]` | Mocks TCP bruts (fonctionnalité `tcp-mock` ; super-admin). |
 
 `…/{name}` désigne `/api/services/{name}` ou `/api/groups/{group}/services/{name}`. Un service d'un groupe n'est joignable que par la seconde forme.

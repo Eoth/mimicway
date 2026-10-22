@@ -222,7 +222,7 @@ All under `/api`, JSON in and out. Error messages follow the request's `Accept-L
 | PUT | `/api/groups/{name}/members` | Set a group's admins and members. |
 | POST | `/api/auth/login`, `/api/auth/validate` | Keycloak login, token check. |
 | GET | `/api/auth/me`, `/api/auth/status` | Current user, whether authentication is on. |
-| GET, POST | `/api/messaging/status`, `/api/messaging/logs`, `/api/messaging/simulate` | Kafka (feature `messaging-kafka`). |
+| GET, POST | `/api/messaging/status`, `/api/messaging/logs`, `/api/messaging/simulate` | Kafka (feature `messaging-kafka`; log and simulation: super-admin). |
 | GET, POST, PUT, DELETE | `/api/tcp/status`, `/api/tcp/services[/{name}]` | Raw TCP mocks (feature `tcp-mock`; super-admin). |
 
 `…/{name}` stands for `/api/services/{name}` or `/api/groups/{group}/services/{name}`. A service of a group is only reachable through the second form.
