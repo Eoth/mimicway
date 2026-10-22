@@ -14,7 +14,7 @@
     getMessagingStatus,
     getTcpStatus,
   } from './lib/api.js';
-  import { auth, isLoggedIn, setAuth, logout, restoreAuth } from './lib/auth.svelte.js';
+  import { auth, isLoggedIn, setAuth, logout } from './lib/auth.svelte.js';
   import ServiceList from './lib/components/ServiceList.svelte';
   import ServiceDetail from './lib/components/ServiceDetail.svelte';
   import ServiceForm from './lib/components/ServiceForm.svelte';
@@ -101,8 +101,6 @@
   };
 
   async function init() {
-    restoreAuth();
-
     try {
       const status = await getAuthStatus();
       auth.enabled = status.enabled;

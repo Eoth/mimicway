@@ -2,6 +2,7 @@ import { render, waitFor } from '@testing-library/svelte';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import App from '../App.svelte';
 import * as api from '../lib/api.js';
+import { setAuth, logout } from '../lib/auth.svelte.js';
 
 vi.mock('../lib/api.js', () => ({
   getServices: vi.fn().mockResolvedValue([]),
@@ -46,14 +47,14 @@ describe('App: the backups view is offered to whoever may restore one', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    localStorage.clear();
+    logout();
     api.getServices.mockResolvedValue([]);
     api.getGroups.mockResolvedValue([]);
     window.matchMedia = window.matchMedia || vi.fn().mockReturnValue({ matches: false });
   });
 
   async function renderSignedIn(isSuperAdmin) {
-    localStorage.setItem('mimicway-auth', JSON.stringify({ token: 't', username: 'u', isSuperAdmin }));
+    setAuth({ access_token: 't', username: 'u', is_super_admin: isSuperAdmin });
     api.getAuthStatus.mockResolvedValue({ enabled: true, show_reset_button: false });
     const view = render(App);
     await waitFor(() => expect(api.getServices).toHaveBeenCalled());

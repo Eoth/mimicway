@@ -147,7 +147,7 @@ The operator (environment, container, network) is trusted. Editors are trusted t
 |---|---|
 | Broken access control (A01, CWE-862, CWE-863) | The authorization matrix, enforced in each handler and tested with real tokens (`src/server/api/authz_tests.rs`). |
 | Cryptographic failures (A02) | No cryptography of its own; asymmetric token signatures only, never HMAC or `none`; outbound TLS by rustls, certificates verified. |
-| Injection and cross-site scripting (A03, CWE-79, CWE-94) | No SQL and no shell; templates insert request values without evaluating them; scripts run in the sandbox without `eval`; the interface escapes every value (no raw HTML) under a content security policy that forbids inline scripts; service responses, which share the interface's origin, are rendered in an opaque origin (`sandbox`). |
+| Injection and cross-site scripting (A03, CWE-79, CWE-94) | No SQL and no shell; templates insert request values without evaluating them; scripts run in the sandbox without `eval`; the interface escapes every value (no raw HTML) under a content security policy that forbids inline scripts; service responses, which share the interface's origin, are rendered in an opaque origin (`sandbox`), and the interface keeps its token in memory only. |
 | Insecure design (A04) | This model, the [reviewer guide](../../REVIEWING.md) and the fuzzed parsers. |
 | Security misconfiguration (A05) | Safe defaults, the hardening checklist and manifests that apply it. |
 | Vulnerable and outdated components (A06, CWE-1104) | Lock files, advisories checked on every change of a manifest and weekly, Dependabot updates. |

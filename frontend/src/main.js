@@ -11,7 +11,7 @@ import './app.css';
 // calls the mount makes (GET /api/auth/status...) need the right target. An async function rather than a top-level
 // await, which Vite's default build target (Chrome 87, Firefox 78, Safari 14) does not support: the build would fail.
 (async () => {
-  // Before anything reads the saved language, theme or session.
+  // Before anything reads the saved language or theme.
   migrateLegacyStorage();
   // The theme first, so that the page does not show light while the configuration and the language load.
   applyTheme(initialTheme());
