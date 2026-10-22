@@ -63,6 +63,12 @@ Mimicway is one Rust program (`src/`, built with Cargo) that also serves its web
 - **No `unsafe` Rust**, tests included, and no code generation besides the table of embedded interface files that `build.rs` writes.
 - **One source of truth per message**: an English sentence written where it is used, translated by catalogues that tests keep complete.
 
+## Decisions
+
+Choices that shape the design, with the options weighed and what would make them wrong, are recorded in [`decisions/`](decisions/):
+
+1. [Service responses run in an opaque origin; tokens stay in memory](decisions/0001-service-responses-in-an-opaque-origin.md).
+
 ## Tests
 
 | Kind | Where | Run with |

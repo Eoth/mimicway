@@ -215,6 +215,16 @@ Size M
 
 **Done when.** An end-to-end run with `BASE_PATH=/mimicway` behind a prefix-stripping proxy passes, and a Kubernetes overlay shows it.
 
+### T12. Services on their own port
+
+Size L, to split (the second listener first, then the interface's URLs, then the overlays)
+
+**Why.** Service responses render in an opaque origin, so that a page written by an editor, a backend or a reflected request value cannot act as the interface ([decision 1](decisions/0001-service-responses-in-an-opaque-origin.md)). A proxied web application that needs its own origin (cookies, storage, same-origin calls) therefore no longer works when browsed through Mimicway.
+
+**What.** A `SERVICES_PORT` setting: the mocked and proxied services answer on that port, the interface and the management API on `PORT`; their responses then keep their own origin, without the sandbox. The interface shows service URLs with the right port, and the overlays route a second host to it.
+
+**Done when.** With `SERVICES_PORT` set, an end-to-end test browses a proxied page that uses its own storage, and finds the interface unreachable from it; without it, nothing changes.
+
 ## 3. Make it indispensable
 
 ### U1. Import an API description
