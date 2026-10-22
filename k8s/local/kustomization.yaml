@@ -1,0 +1,16 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# The base without authentication and without routing, for a cluster of one's own (kind, minikube, k3d): reach it with
+# kubectl port-forward, which calls it as localhost. Anything that reaches the Service can change every mock: never on
+# a cluster shared with others.
+namespace: mimicway
+resources:
+  - ../base
+patches:
+  - target:
+      kind: ConfigMap
+      name: mimicway-config
+    patch: |-
+      - op: replace
+        path: /data/AUTH_ENABLED
+        value: "false"

@@ -360,9 +360,11 @@ jobs:
       - name: Render and validate every overlay
         # Custom resources (Gloo Edge) have no published schema: they are rendered, not validated.
         run: |
-          for overlay in k8s/ingress k8s/gloo-edge; do
+          for overlay in k8s/*/; do
             kubectl kustomize "$overlay" | ./kubeconform -strict -summary -ignore-missing-schemas -
           done
+      - name: Every overlay keeps Mimicway closed by default
+        run: node scripts/check-k8s-defaults.mjs
 
   workflows:
     name: Workflows (actionlint, shellcheck)

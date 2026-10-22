@@ -7,9 +7,10 @@ metadata:
     app.kubernetes.io/component: routing
 spec:
   # ingressClassName: nginx   # when your cluster has no default ingress class
-  # tls:
-  #   - hosts: [mimicway.example.com]
-  #     secretName: mimicway-tls
+  # Tokens and passwords cross this route: HTTPS only. The secret holds the host's certificate (k8s/README.md).
+  tls:
+    - hosts: [mimicway.example.com]
+      secretName: mimicway-tls
   rules:
     # Mimicway is served from the root of its host: its UI calls /api, /assets and /runtime-config.json.
     - host: mimicway.example.com

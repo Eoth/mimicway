@@ -79,7 +79,7 @@ Le formulaire de connexion utilise l'octroi par mot de passe de Keycloak. Le rem
 
 1. Instance partagée : fixez `AUTH_ENABLED=true` avec Keycloak et listez les `SUPER_ADMINS`.
 2. Gardez l'écoute par défaut sur la boucle locale sur les postes de travail ; dans un cluster, exposez Mimicway via votre ingress avec TLS (Mimicway lui-même sert du HTTP simple).
-3. Restreignez les sorties réseau (`NetworkPolicy` Kubernetes, pare-feu) aux backends que vous relayez réellement et à Keycloak.
+3. Restreignez les sorties réseau (`NetworkPolicy` Kubernetes, pare-feu) aux backends que vous relayez réellement et à Keycloak. La base Kubernetes refuse tout sauf la résolution de noms : ajoutez-y une politique à vous pour ceux-là ([k8s/README.md](../../k8s/README.md#network-policy), en anglais).
 4. Ne fixez `CORS_ALLOWED_ORIGINS` que si l'interface est servie depuis une autre origine que l'API.
 5. Ajoutez vos propres noms d'en-têtes d'identification à `REDACT_HEADERS`.
 6. Utilisez l'image et les manifestes fournis, ou reproduisez leurs restrictions (non root, système de fichiers racine en lecture seule, aucune capacité).

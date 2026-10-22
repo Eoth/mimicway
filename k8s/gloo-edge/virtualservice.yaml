@@ -6,6 +6,11 @@ metadata:
     app.kubernetes.io/name: mimicway
     app.kubernetes.io/component: routing
 spec:
+  # Tokens and passwords cross this route: HTTPS only. The secret holds the host's certificate (k8s/README.md).
+  sslConfig:
+    secretRef:
+      name: mimicway-tls
+      namespace: mimicway
   virtualHost:
     domains:
       - mimicway.example.com

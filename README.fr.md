@@ -268,12 +268,13 @@ volumes:
 
 ### Kubernetes
 
-[k8s/](k8s/) contient une base Kustomize (un Deployment à une seule réplique avec un système de fichiers racine en lecture seule, sans élévation de privilèges et sans aucune capacité, un PersistentVolumeClaim, un Service) et deux overlays pour y router le trafic : un `Ingress` standard, ou Gloo Edge. Voir [k8s/README.md](k8s/README.md) (en anglais).
+[k8s/](k8s/) contient une base Kustomize (un Deployment à une seule réplique avec un système de fichiers racine en lecture seule, sans élévation de privilèges, sans aucune capacité ni jeton de compte de service, un PersistentVolumeClaim, un Service, une NetworkPolicy qui refuse les sorties réseau hors résolution de noms) et trois overlays : un `Ingress` standard ou Gloo Edge, tous deux en TLS, et `local`, sans routage ni authentification, pour un cluster à soi. La base active l'authentification : renseignez d'abord les réglages Keycloak, sinon Mimicway refuse de démarrer. Voir [k8s/README.md](k8s/README.md) (en anglais).
 
 ```bash
 cd k8s/ingress
 kustomize edit set image mimicway=<registry>/mimicway:<version>
 kubectl create namespace mimicway
+kubectl -n mimicway create secret tls mimicway-tls --cert=tls.crt --key=tls.key
 kubectl apply -k .
 ```
 

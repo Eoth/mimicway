@@ -79,7 +79,7 @@ The login form uses Keycloak's password grant. Replacing it with the authorizati
 
 1. Shared instance: set `AUTH_ENABLED=true` with Keycloak and list `SUPER_ADMINS`.
 2. Keep the default loopback binding on workstations; in a cluster, expose Mimicway through your ingress with TLS (Mimicway itself serves plain HTTP).
-3. Restrict egress (Kubernetes `NetworkPolicy`, firewall) to the backends you actually proxy and to Keycloak.
+3. Restrict egress (Kubernetes `NetworkPolicy`, firewall) to the backends you actually proxy and to Keycloak. The Kubernetes base refuses everything but name resolution: add a policy of your own for those ([k8s/README.md](../../k8s/README.md#network-policy)).
 4. Set `CORS_ALLOWED_ORIGINS` only if the UI is served from another origin than the API.
 5. Add your own credential header names to `REDACT_HEADERS`.
 6. Use the provided image and manifests, or reproduce their restrictions (non-root, read-only root filesystem, no capabilities).

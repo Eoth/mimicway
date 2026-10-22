@@ -1,0 +1,24 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: mimicway-egress
+  labels:
+    app.kubernetes.io/name: mimicway
+    app.kubernetes.io/component: network
+spec:
+  # Editors choose where the proxy connects: without this policy, any host the pod reaches, the cluster's internal
+  # services and the cloud's metadata endpoint included. Outbound traffic is refused but name resolution; allow
+  # Keycloak and the backends you proxy with a policy of your own next to this one (k8s/README.md), since policies add
+  # up. Inbound traffic is left to the routing in front of the Service.
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: mimicway
+  policyTypes:
+    - Egress
+  egress:
+    # DNS, wherever the cluster serves it (kube-dns, or a node-local cache outside any namespace).
+    - ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP

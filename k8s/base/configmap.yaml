@@ -11,10 +11,13 @@ data:
   # Every interface: the pod network is the boundary (the binary alone listens on 127.0.0.1 only).
   BIND_ADDRESS: "0.0.0.0"
   RUST_LOG: mimicway=info
-  AUTH_ENABLED: "false"
-  # KEYCLOAK_URL: "https://keycloak.example.com"
-  # KEYCLOAK_REALM: "my-realm"
-  # KEYCLOAK_CLIENT_ID: "mimicway"
+  # On by default: whoever reaches the Service could otherwise change every mock and use the proxy towards any host
+  # the pod reaches. Mimicway refuses to start until the three Keycloak settings below are set; the local overlay
+  # (../local) turns authentication off for a cluster of one's own.
+  AUTH_ENABLED: "true"
+  # KEYCLOAK_URL: "https://keycloak.example.com"   # required
+  # KEYCLOAK_REALM: "my-realm"                     # required
+  # KEYCLOAK_CLIENT_ID: "mimicway"                 # required
   # KEYCLOAK_ISSUER: "https://login.example.com/realms/my-realm"   # only when tokens carry another URL
   # SUPER_ADMINS: "alice,bob"
   # Only when the UI and the API are exposed on different hosts (see README.md, "Split UI and API"):

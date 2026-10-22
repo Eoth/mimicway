@@ -4,9 +4,12 @@ A [Kustomize](https://kustomize.io) base with everything Mimicway needs, and two
 
 | Directory | Content |
 |---|---|
-| `base/` | ConfigMap (environment), PersistentVolumeClaim (64 MiB for the configuration and its backups), Deployment (one pod, probes, strict security context), Service (port 80 to 7342). No namespace, no routing. |
-| `ingress/` | The base in the `mimicway` namespace, exposed by a standard `Ingress` on `mimicway.example.com`. |
-| `gloo-edge/` | The base in the `mimicway` namespace, exposed through Gloo Edge (`Upstream`, `RouteTable`, `VirtualService`). |
+| `base/` | ConfigMap (environment, authentication on), PersistentVolumeClaim (64 MiB for the configuration and its backups), Deployment (one pod, probes, strict security context), Service (port 80 to 7342), NetworkPolicy (no outbound traffic but name resolution). No namespace, no routing. |
+| `ingress/` | The base in the `mimicway` namespace, exposed by a standard `Ingress` on `mimicway.example.com`, over TLS. |
+| `gloo-edge/` | The base in the `mimicway` namespace, exposed through Gloo Edge (`Upstream`, `RouteTable`, `VirtualService`), over TLS. |
+| `local/` | The base in the `mimicway` namespace, without routing and without authentication, for a cluster of your own (kind, minikube, k3d), reached with `kubectl port-forward`. Never on a cluster shared with others: anything that reaches the Service could change every mock. |
+
+The CI renders every overlay and refuses one that would route traffic to Mimicway without authentication or without TLS, let it connect beyond name resolution, or give the pod a service account token (`scripts/check-k8s-defaults.mjs`).
 
 ## Deploy
 
@@ -15,17 +18,26 @@ A [Kustomize](https://kustomize.io) base with everything Mimicway needs, and two
 docker build -t <registry>/mimicway:<version> .
 docker push <registry>/mimicway:<version>
 
-# Point the overlay at it, then apply.
+# Point the overlay at it, give it the certificate of its host, then apply.
 cd k8s/ingress
 kustomize edit set image mimicway=<registry>/mimicway:<version>
 kubectl create namespace mimicway
+kubectl -n mimicway create secret tls mimicway-tls --cert=tls.crt --key=tls.key
 kubectl apply -k .
 
 kubectl -n mimicway get pods -l app.kubernetes.io/name=mimicway
 kubectl -n mimicway logs -l app.kubernetes.io/name=mimicway
 ```
 
-Edit the host name in `ingress/ingress.yaml` (or `gloo-edge/virtualservice.yaml`), and the settings in `base/configmap.yaml` (see the configuration table of the [README](../README.md#configuration)). To use another namespace, change it in the overlay's `kustomization.yaml`; for Gloo Edge, also in the three Gloo resources, which refer to it in their specification.
+Edit the host name in `ingress/ingress.yaml` (or `gloo-edge/virtualservice.yaml`), and the settings in `base/configmap.yaml` (see the configuration table of the [README](../README.md#configuration)). Authentication is on: set `KEYCLOAK_URL`, `KEYCLOAK_REALM` and `KEYCLOAK_CLIENT_ID` there (and `SUPER_ADMINS`), or the pod stops at startup with a message naming what is missing, and allow the pod to reach Keycloak (see [Network policy](#network-policy)). The `mimicway-tls` secret may also come from cert-manager or any tool that writes a `kubernetes.io/tls` secret.
+
+On a cluster of your own, the `local` overlay needs neither Keycloak nor certificate:
+
+```bash
+kubectl create namespace mimicway
+kubectl apply -k k8s/local
+kubectl -n mimicway port-forward svc/mimicway 7342:80   # then open http://localhost:7342
+``` To use another namespace, change it in the overlay's `kustomization.yaml`; for Gloo Edge, also in the three Gloo resources, which refer to it in their specification.
 
 ## What any routing must provide
 
@@ -46,8 +58,40 @@ The configuration is one file on one volume, written by one process. A second re
 - `runAsNonRoot`, user 1000, no privilege escalation, every Linux capability dropped; `fsGroup: 1000` makes the data volume writable whatever owner the storage class gives it.
 - Read-only root file system: only `/data` (the volume) is writable.
 - Memory limit 256 MiB: idle, Mimicway uses a few MiB, but request bodies up to 10 MiB are buffered to evaluate rules.
-- Mimicway serves plain HTTP: terminate TLS in your ingress (commented example in `ingress/ingress.yaml`).
-- To restrict where proxied services may connect, add a `NetworkPolicy` for the pod's egress (see the hardening checklist of the [security model](../docs/en/security.md#hardening-checklist)).
+- No service account token (`automountServiceAccountToken: false`): Mimicway never calls the Kubernetes API. The runtime's default seccomp profile filters its system calls.
+- Mimicway serves plain HTTP: both routing overlays terminate TLS in front of it, with the `mimicway-tls` secret.
+
+## Network policy
+
+Editors choose where the proxy connects, so the base's `mimicway-egress` policy refuses every outbound connection of the pod but name resolution (port 53). Allow Keycloak and the backends you proxy with a policy of your own, applied next to it: network policies add up. For instance, Keycloak in the `keycloak` namespace and one backend outside the cluster:
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: mimicway-egress-allowed
+  namespace: mimicway
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: mimicway
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: keycloak
+      ports:
+        - port: 8443
+    - to:
+        - ipBlock:
+            cidr: 203.0.113.10/32
+      ports:
+        - port: 443
+```
+
+Network policies need a network plugin that enforces them (Calico, Cilium, and most managed clusters); without one, they are accepted and ignored. Inbound traffic is left to the routing in front of the Service.
 
 ## Persistence
 

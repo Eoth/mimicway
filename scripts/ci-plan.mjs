@@ -94,7 +94,7 @@ const RULES = {
     /^scripts\/release-archive\.sh$/,
     /^\.github\/workflows\/release\.yml$/,
   ],
-  kubernetes: [/^k8s\//],
+  kubernetes: [/^k8s\//, /^scripts\/check-k8s-defaults\.mjs$/],
   workflows: [/^\.github\/workflows\//, /^\.github\/actions\//],
   fuzz: [...RUST, ...FUZZING],
 };

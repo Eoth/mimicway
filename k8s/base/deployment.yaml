@@ -26,6 +26,10 @@ spec:
       securityContext:
         fsGroup: 1000
         fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      # Mimicway never calls the Kubernetes API: no token in the pod.
+      automountServiceAccountToken: false
       containers:
         - name: mimicway
           # Set your registry and version: kustomize edit set image mimicway=<registry>/mimicway:<version>
