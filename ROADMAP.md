@@ -19,9 +19,11 @@ Each item has an identifier that never changes, a size (S: a day or less, M: a f
 ## Order of work
 
 1. [Ready for an international launch](#1-ready-for-an-international-launch): R10 (with R16, R17, R18), R12, R13, R14, R9.
-2. [Trust and operations](#2-trust-and-operations): T1 to T11.
+2. [Trust and operations](#2-trust-and-operations): T1 to T15.
 3. [Make it indispensable](#3-make-it-indispensable): U1, U2, then U3 to U16, in the listed order.
 4. [Engineering backlog](#4-engineering-backlog): taken alongside, when they unblock an item above.
+
+Hardening comes before all of these: T13, T14, E22 and E26, then E23, E24, E25 and T15.
 
 ## 1. Ready for an international launch
 
@@ -224,6 +226,36 @@ Size L, to split (the second listener first, then the interface's URLs, then the
 **What.** A `SERVICES_PORT` setting: the mocked and proxied services answer on that port, the interface and the management API on `PORT`; their responses then keep their own origin, without the sandbox. The interface shows service URLs with the right port, and the overlays route a second host to it.
 
 **Done when.** With `SERVICES_PORT` set, an end-to-end test browses a proxied page that uses its own storage, and finds the interface unreachable from it; without it, nothing changes.
+
+### T13. Bounded connections
+
+Size M
+
+**Why.** Nothing bounds how long a client may take or how many requests run at once. `axum::serve` in `src/main.rs` runs hyper without a timer, so hyper's 30-second limit on reading request headers never applies: a client that sends its headers one byte at a time holds a connection forever (slowloris), and a body sent drop by drop has no deadline either. Each service request buffers its body up to 10 MiB to evaluate conditions (`to_bytes` in `src/server/intercept.rs`): about 25 of them at once exceed the 256 MiB the Kubernetes manifests give the pod, which is then killed, while the security model promises that untrusted input cannot exhaust its memory.
+
+**What.** Serve through hyper-util with a timer and a header read timeout; a deadline on reading request bodies; a global limit of requests in flight (and of buffered body bytes), past which Mimicway answers 503 at once rather than queue.
+
+**Done when.** Tests show a connection that trickles its headers closed after the timeout, a trickled body cut off, and the request over the limit refused with 503 while those in flight complete; a load test of large bodies keeps the process under the manifests' memory limit.
+
+### T14. A memory and time budget for scripts
+
+Size M
+
+**Why.** The Rhai sandbox bounds operations (10,000) and the size of each value (strings 1 MiB, arrays 1,000, maps 500, in `src/engine/script.rs`), but not the memory of a run as a whole nor its duration: a script within those limits can keep many 1 MiB strings in distinct variables, so one run may reach gigabytes in theory. Any signed-in user may run a script through `/api/script/validate` and the rule tester.
+
+**What.** Measure what a hostile script within today's limits allocates; then bound the variables of a run (`set_max_variables`), the total size of its values, and its wall-clock time (`on_progress` with a deadline), with an error that says which limit was reached.
+
+**Done when.** A regression test runs the worst script found and stays under a stated memory and time budget, with the limit named in its error.
+
+### T15. Limits on what users create and keep
+
+Size S
+
+**Why.** With authentication on, any signed-in user may create groups, and their admins services, without limit (`create_group`, `create_service` in `src/server/api.rs`); every change rewrites the whole configuration file and a backup. A full reset keeps a protected copy for 30 days whatever the number of resets. One user can grow the configuration, the disk and the time of every write.
+
+**What.** Configurable caps: groups per user, services and rules per group, size of the configuration, protected backups kept; a write over a cap is refused with a message that names it.
+
+**Done when.** Each cap has a test that is refused one past it, and the defaults are documented with the reason for their value.
 
 ## 3. Make it indispensable
 
@@ -538,3 +570,53 @@ Size S
 **What.** Check again what the signed-in user may open after signing in and after signing out, and show each button only to the users the server lets use its page.
 
 **Done when.** A unit test of the application signs in on an instance with authentication and finds, without reloading, the buttons the server allows to that user, and none after signing out.
+
+### E22. A missing user is refused, not taken for a super-admin
+
+Size S
+
+**Why.** `extract_user` in `src/auth/middleware.rs` falls back on `AuthUser::anonymous()`, a super-admin, when a request carries no user. Today the authentication middleware always puts one there, so nothing reaches that fallback; a route mounted outside the middleware one day would give every caller every right, without any test failing.
+
+**What.** Without authentication, the middleware puts the anonymous user in explicitly; `extract_user` returns an error (500, logged) when no user is present, instead of a default.
+
+**Done when.** A test calls a handler without the middleware and gets a refusal, and the authorization tests pass unchanged.
+
+### E23. Release jobs without stored credentials
+
+Size S
+
+**Why.** In `.github/workflows/release.yml`, six checkouts keep the job's token in the cloned repository's Git configuration (`persist-credentials` left on), among them those of the `release` job, which may write the repository's contents, and of the `image` job, which may publish packages: any step of those jobs can read it from disk. The publishing jobs run without a protected environment, so a pushed tag publishes without anyone's approval.
+
+**What.** `persist-credentials: false` on every checkout, and the `release` and `image` jobs in an environment that the maintainers protect with a required reviewer.
+
+**Done when.** actionlint and a check of the workflow show no checkout that keeps its credentials, and a test tag waits for an approval before publishing.
+
+### E24. Vulnerability gates that see every high and age their exceptions
+
+Size S
+
+**Why.** The CI audits the interface's development tools with `npm audit --audit-level=critical`: a high advisory of vite went through that step, caught only by osv-scanner. The two advisories ignored by `deny.toml` and `osv-scanner.toml` (unmaintained `smartstring` and `unsafe-libyaml`) carry no date: nothing makes anyone look at them again.
+
+**What.** `--audit-level=high` for the development tools too; an expiry on each exception (`ignoreUntil` in `osv-scanner.toml`, a review date next to the entry of `deny.toml`), with a check that fails past it.
+
+**Done when.** A high advisory of a development tool fails the CI, and so does an exception past its date, each shown by a test.
+
+### E25. No install scripts on a contributor's machine
+
+Size S
+
+**Why.** The CI and the Dockerfile install the interface's packages with `--ignore-scripts`, but the README, `CONTRIBUTING.md` and `frontend/README.md` tell contributors to run `npm ci` as is: the install scripts of the dependency tree run on their machine (one package of the lock file declares one today, `fsevents`, on macOS).
+
+**What.** A `frontend/.npmrc` with `ignore-scripts=true`, and a check that the build, the tests and Playwright's browser download work without them.
+
+**Done when.** `npm ci` in `frontend/` runs no install script, and the documented steps pass from a clean clone.
+
+### E26. Cross-site writes refused without Sec-Fetch-Site
+
+Size S
+
+**Why.** The browser guard (`src/server/browser_guard.rs`) recognizes a cross-site write by the `Sec-Fetch-Site` header alone. A browser that does not send it (Safari before 16.4, older Firefox) lets a cross-site form or a body-less `POST` through, with no preflight: `POST /api/config/restore/{filename}` replaces the configuration, `POST /api/services/{name}/ping` makes Mimicway connect.
+
+**What.** When `Sec-Fetch-Site` is missing, refuse a state-changing API request whose `Origin` is present and is neither the request's own origin nor listed in `CORS_ALLOWED_ORIGINS`.
+
+**Done when.** Unit tests refuse such a request with a foreign `Origin` and accept it without `Origin` (non-browser clients) or with the request's own.
