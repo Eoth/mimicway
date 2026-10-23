@@ -173,6 +173,71 @@ async fn a_cross_site_page_cannot_change_the_configuration() {
     assert_eq!(mocked.text().await.unwrap(), "mocked");
 }
 
+// Browsers that predate Fetch Metadata (Safari before 16.4, older Firefox) send no Sec-Fetch-Site, but they do send
+// Origin on a cross-origin form POST or fetch: the write is judged by it.
+#[test]
+fn without_sec_fetch_site_a_write_from_a_foreign_origin_is_refused() {
+    let guard = BrowserGuard::new(UI);
+    let from = |origin: &str, host: &str| headers(&[("origin", origin), ("host", host)]);
+    for (origin, host) in [
+        (EVIL, "localhost:7342"),
+        ("http://localhost:3000", "localhost:7342"),
+        ("https://localhost:7342", "localhost:7342:1"),
+        ("null", "localhost:7342"),
+        ("http://127.0.0.1:7342", "localhost:7342"),
+    ] {
+        assert!(
+            refuses(
+                &guard,
+                &Method::POST,
+                "/api/config/restore/x.yaml",
+                &from(origin, host)
+            ),
+            "{origin} writing to {host}"
+        );
+    }
+    for (origin, host) in [
+        ("http://localhost:7342", "localhost:7342"),
+        ("http://LOCALHOST:7342", "localhost:7342"),
+        ("https://mimicway.example.com", "mimicway.example.com"),
+        ("https://mimicway.example.com", "mimicway.example.com:443"),
+        ("http://mimicway.example.com", "mimicway.example.com:80"),
+        (UI, "api.example.com"),
+    ] {
+        assert!(
+            !refuses(&guard, &Method::POST, "/api/services", &from(origin, host)),
+            "{origin} writing to {host}"
+        );
+    }
+    assert!(
+        !refuses(
+            &guard,
+            &Method::POST,
+            "/api/services",
+            &headers(&[("host", "localhost:7342")])
+        ),
+        "a client without Origin is not a browser"
+    );
+    assert!(
+        !refuses(
+            &guard,
+            &Method::GET,
+            "/api/config",
+            &from(EVIL, "localhost:7342")
+        ),
+        "reads are CORS's business"
+    );
+    assert!(
+        !refuses(
+            &guard,
+            &Method::POST,
+            "/orders/42",
+            &from(EVIL, "localhost:7342")
+        ),
+        "service traffic stays open"
+    );
+}
+
 #[test]
 fn reads_host_names_as_browsers_send_them() {
     for (host, name) in [

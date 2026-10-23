@@ -7,7 +7,8 @@
 //!   (none by default; only needed when the UI is served from another origin, see `API_BASE_URL`).
 //! - Cross-site writes: a state-changing API request that the browser itself marks as coming from another site
 //!   (`Sec-Fetch-Site`) is refused unless its `Origin` is listed. This also covers the requests that a browser
-//!   sends without a CORS preflight (a form `POST`, for instance).
+//!   sends without a CORS preflight (a form `POST`, for instance). A browser that sends no `Sec-Fetch-Site` is judged
+//!   by its `Origin`: refused unless it is the address called or a listed origin.
 //! - DNS rebinding: a page can reach a Mimicway that only its visitor's machine or network reaches by making its own
 //!   domain name resolve to that address; the browser then treats the calls as same-origin, and they carry the
 //!   attacker's name in `Host`. The management API therefore answers only requests addressed to a loopback name
@@ -134,13 +135,13 @@ impl BrowserGuard {
         if !is_management_api_route(uri.path()) {
             return None;
         }
+        // HTTP/2 carries the host in the `:authority` pseudo-header, which lands in the URI, not in `Host`.
+        let host = match uri.authority() {
+            Some(authority) => Some(authority.as_str().rsplit('@').next().unwrap_or_default()),
+            None => headers.get("host").and_then(|h| h.to_str().ok()),
+        };
         if let Some(names) = &self.host_names {
-            // HTTP/2 carries the host in the `:authority` pseudo-header, which lands in the URI, not in `Host`; a
-            // request that names no host at all is refused rather than waved through.
-            let host = match uri.authority() {
-                Some(authority) => Some(authority.as_str().rsplit('@').next().unwrap_or_default()),
-                None => headers.get("host").and_then(|h| h.to_str().ok()),
-            };
+            // A request that names no host at all is refused rather than waved through.
             let answered = host.map(host_name).is_some_and(|name| {
                 is_loopback_name(&name)
                     || name.parse::<std::net::IpAddr>().is_ok()
@@ -153,14 +154,15 @@ impl BrowserGuard {
                 ));
             }
         }
-        let cross_site = matches!(
-            headers.get("sec-fetch-site").and_then(|v| v.to_str().ok()),
-            Some("cross-site") | Some("same-site")
-        );
-        if !is_safe_method(method)
-            && cross_site
-            && !headers.get("origin").is_some_and(|o| self.allows(o))
-        {
+        let origin = headers.get("origin");
+        let cross_site = match headers.get("sec-fetch-site").and_then(|v| v.to_str().ok()) {
+            Some(site) => matches!(site, "cross-site" | "same-site"),
+            // Browsers that predate Fetch Metadata (Safari before 16.4, older Firefox) still send `Origin` on a
+            // cross-origin write, form or fetch: judge by it. `null` (a sandboxed page, a service response among them)
+            // is never the request's own. A client without `Origin` is not a browser.
+            None => origin.is_some_and(|o| !is_own_origin(o, host)),
+        };
+        if !is_safe_method(method) && cross_site && !origin.is_some_and(|o| self.allows(o)) {
             return Some(tr(
                 "Cross-site request refused: add this origin to CORS_ALLOWED_ORIGINS to allow it.",
                 &[],
@@ -168,6 +170,27 @@ impl BrowserGuard {
         }
         None
     }
+}
+
+/// Whether `origin` (`scheme://host[:port]`) names the authority the request was sent to, `host`, its default port
+/// written or not. The scheme is not compared: behind a proxy that ends TLS, the request arrives in plain HTTP.
+fn is_own_origin(origin: &HeaderValue, host: Option<&str>) -> bool {
+    let (Ok(origin), Some(host)) = (origin.to_str(), host) else {
+        return false;
+    };
+    let Some((scheme, authority)) = origin.split_once("://") else {
+        return false;
+    };
+    let default_port = match scheme.to_ascii_lowercase().as_str() {
+        "http" => ":80",
+        "https" => ":443",
+        _ => return false,
+    };
+    let host = host.trim();
+    authority.eq_ignore_ascii_case(host)
+        || host
+            .strip_suffix(default_port)
+            .is_some_and(|bare| authority.eq_ignore_ascii_case(bare))
 }
 
 fn is_safe_method(method: &Method) -> bool {
