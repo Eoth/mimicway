@@ -23,7 +23,7 @@ Each item has an identifier that never changes, a size (S: a day or less, M: a f
 3. [Make it indispensable](#3-make-it-indispensable): U1, U2, then U3 to U16, in the listed order.
 4. [Engineering backlog](#4-engineering-backlog): taken alongside, when they unblock an item above.
 
-Hardening comes before all of these: T14, then E23, E24, E25, E27 and T15.
+Hardening comes before all of these: T14, then E23, E24, E25 and T15.
 
 ## 1. Ready for an international launch
 
@@ -596,13 +596,3 @@ Size S
 **What.** A `frontend/.npmrc` with `ignore-scripts=true`, and a check that the build, the tests and Playwright's browser download work without them.
 
 **Done when.** `npm ci` in `frontend/` runs no install script, and the documented steps pass from a clean clone.
-
-### E27. Raw TCP mocks changed under one lock, with trimmed names
-
-Size S
-
-**Why.** `create_tcp_service`, `update_tcp_service` and `delete_tcp_service` (`src/server/api.rs`) read a snapshot of the TCP configuration, check the change against it, then replace the whole configuration: two changes at the same time are both checked against the old snapshot, and the second replaces the first, which is lost without an error. `validate_tcp_service` (`src/tcp/validation.rs`) also checks the trimmed name but the name is stored as sent, so `svc ` sits next to `svc`. The HTTP services had both defects and no longer do.
-
-**What.** A `try_update` on the TCP runtime that checks and applies a change under one lock, as the HTTP store does; names trimmed before they are checked and stored.
-
-**Done when.** A test sends two creations at once and finds both, or one refused with its reason; a test refuses `svc ` next to `svc`.
