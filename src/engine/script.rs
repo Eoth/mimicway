@@ -191,10 +191,16 @@ impl ScriptEngine {
 
         scope.push("request", rhai::Dynamic::from_map(request));
 
+        // Compiled before the budget starts: the syntax tree is bounded by the length of the script, and the budget is
+        // about what the run holds.
+        let ast = self
+            .engine
+            .compile(script)
+            .map_err(|e| super::script_budget::describe_parse(&e))?;
         let result = {
             let _clock = super::script_budget::RunClock::start();
             self.engine
-                .eval_with_scope::<rhai::Dynamic>(&mut scope, script)
+                .eval_ast_with_scope::<rhai::Dynamic>(&mut scope, &ast)
         }
         .map_err(|e| super::script_budget::describe(&e))?;
 

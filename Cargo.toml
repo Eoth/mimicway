@@ -6,7 +6,15 @@ description = "Mock or proxy any HTTP API, rule by rule, from a web UI: one self
 license = "MIT"
 repository = "https://github.com/Eoth/mimicway"
 
+[workspace]
+# The global allocator lives in a crate of its own: the only `unsafe` code of the project (alloc/README.md).
+members = ["alloc"]
+
 [dependencies]
+# Counts the bytes each thread holds, for the memory budget of a script run (src/engine/script_budget.rs). Ours, in
+# alloc/, without dependencies.
+mimicway-alloc = { path = "alloc", version = "0.1.0" }
+
 # Web framework async
 axum = { version = "0.8", features = ["macros"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "net", "time"] }

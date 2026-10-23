@@ -13,6 +13,8 @@ WORKDIR /build
 # Cargo.lock did not change reuses it. The placeholder's outputs are deleted, or Cargo could take the real sources, older
 # than them, for already built.
 COPY Cargo.toml Cargo.lock ./
+# The counting allocator is a crate of the workspace, a dependency like the others.
+COPY alloc/ alloc/
 RUN mkdir src && echo 'fn main() {}' > src/main.rs && cargo build --release --locked \
     && rm -rf src target/release/mimicway target/release/deps/mimicway-* target/release/.fingerprint/mimicway-*
 COPY build.rs ./

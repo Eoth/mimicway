@@ -1,14 +1,17 @@
 //! Runs the real binary and sends it the scripts that cost the most for their size: one operation that would build a
-//! huge result, a native function given a 10 MiB request body, a loop of slow operations. Each must stop at the
-//! limits of a script run (time, size of a value) with the memory peak of the process (VmHWM, Linux) no more than
-//! 16 MiB above that of the same request with a trivial script, and the time limit must end the slow one.
+//! huge result, a native function given a 10 MiB request body, values held outside the variables of a run, a loop
+//! of slow operations. Each must stop at the limits of a script run (time, memory, size of a value) with the memory
+//! peak of the process (VmHWM, Linux) no more than the memory budget of a run (16 MiB) and what one operation may add
+//! before the check above that of the same request with a trivial script, and the time limit must end the slow one.
 #![cfg(target_os = "linux")]
 
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
 const BODY: usize = 10 * 1024 * 1024;
-const BUDGET_MIB: u64 = 16;
+// The memory budget of a run, plus one operation past it (a text of 1 MiB built from another) and the rounding of
+// the system allocator.
+const BUDGET_MIB: u64 = 16 + 4;
 
 struct Server {
     child: Child,
@@ -116,14 +119,15 @@ async fn post(server: &Server, path: &str, body: String) -> Duration {
     started.elapsed()
 }
 
+const BIG: &str = "let s = \"x\"; s.pad(1048570, \"x\");";
+
 #[tokio::test]
-async fn a_hostile_script_stays_within_the_memory_and_time_budget_of_a_run() {
-    let big = "let s = \"x\"; s.pad(1048570, \"x\");";
+async fn one_operation_on_a_large_body_stays_within_the_budget_of_a_run() {
     let server = start(&[
         ("reference", "1"),
         (
             "replace",
-            &format!("{big} let a = s; a.replace(\"x\", s); a"),
+            &format!("{BIG} let a = s; a.replace(\"x\", s); a"),
         ),
         (
             "tag",
@@ -164,4 +168,65 @@ async fn a_hostile_script_stays_within_the_memory_and_time_budget_of_a_run() {
         took < Duration::from_secs(10),
         "the slow script ran {took:?}"
     );
+}
+
+// A server of its own, without request bodies: the 10 MiB requests above would hide a peak below theirs.
+#[tokio::test]
+async fn values_held_outside_the_variables_stay_within_the_memory_budget_of_a_run() {
+    let server = start(&[
+        ("reference", "1"),
+        (
+            "arguments",
+            &format!(
+                "{BIG} nope({})",
+                (0..60).map(|i| format!("s + \"{i}\"")).collect::<Vec<_>>().join(", ")
+            ),
+        ),
+        ("keys", &format!("{BIG} let m = #{{}}; for i in 0..60 {{ m[s + i] = 0; }} m.len()")),
+        (
+            "gathered",
+            &format!("{BIG} let a = []; for i in 0..60 {{ a.push(i); }} a.map(|x| s + x).len()"),
+        ),
+        (
+            "curried",
+            &format!(
+                "fn f(x) {{ x }}\n{BIG} let a = []; for i in 0..60 {{ a.push(Fn(\"f\").curry(s + i)); }} a.len()"
+            ),
+        ),
+        (
+            "nested",
+            &format!(
+                "fn h(a, b) {{ 0 }}\nfn g(n, s) {{ if n > 0 {{ h(s + \"1\", g(n - 1, s)) }} else {{ 0 }} }}\n{BIG} g(30, s)"
+            ),
+        ),
+        (
+            "variables",
+            &format!(
+                "{BIG} {}0",
+                (0..60).map(|i| format!("let v{i} = s + \"{i}\";\n")).collect::<String>()
+            ),
+        ),
+    ])
+    .await;
+
+    post(&server, "reference", String::new()).await;
+    let reference = peak_mib(&server);
+    // Before the memory budget, measured on a release build: 1.7 GB of arguments (stopped by the deadline), 330 MiB
+    // of map keys, 1 GB gathered by map(), 850 MiB of curried pointers, 265 MiB held by nested calls, 75 MiB of
+    // variables.
+    for path in [
+        "arguments",
+        "keys",
+        "gathered",
+        "curried",
+        "nested",
+        "variables",
+    ] {
+        post(&server, path, String::new()).await;
+        let peak = peak_mib(&server);
+        assert!(
+            peak <= reference + BUDGET_MIB,
+            "{path}: memory peak {peak} MiB, {reference} MiB for a trivial script"
+        );
+    }
 }

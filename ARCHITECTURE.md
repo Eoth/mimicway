@@ -60,7 +60,7 @@ Mimicway is one Rust program (`src/`, built with Cargo) that also serves its web
 - **No request waits on disk.** Reads use the current snapshot, writes go through a bounded queue (64 jobs) to one writer task.
 - **Memory is bounded.** Request log, observation, message log and queues all have fixed or configurable limits; bodies kept for display are truncated.
 - **Three places open a connection.** `engine/proxy.rs` (proxy and availability check), `auth/keycloak.rs` and `messaging/`; `tcp/` only listens.
-- **No `unsafe` Rust**, tests included, and no code generation besides the table of embedded interface files that `build.rs` writes.
+- **No `unsafe` Rust** in the application, tests included (the global allocator of `alloc/` is the one exception, checked under Miri), and no code generation besides the table of embedded interface files that `build.rs` writes.
 - **One source of truth per message**: an English sentence written where it is used, translated by catalogues that tests keep complete.
 
 ## Decisions

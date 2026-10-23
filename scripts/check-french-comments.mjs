@@ -18,6 +18,7 @@ import { fileURLToPath } from 'node:url';
 // crosses them). A path joins the list once it is translated, so that it cannot slip back.
 export const COVERED = [
   'src/**/*.rs',
+  'alloc/**/*.rs',
   'tests/**/*.rs',
   'build.rs',
   'fuzz/**/*.rs',

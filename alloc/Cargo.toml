@@ -1,0 +1,11 @@
+[package]
+name = "mimicway-alloc"
+version = "0.1.0"
+edition = "2024"
+description = "The global allocator of Mimicway: the system allocator, counting the bytes each thread holds"
+license = "MIT"
+repository = "https://github.com/Eoth/mimicway"
+publish = false
+
+# No dependency: the standard library's allocator and a thread-local counter are all it needs.
+[dependencies]

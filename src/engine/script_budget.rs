@@ -2,6 +2,10 @@
 // array and map sizes); this module sets those limits and adds what they leave open:
 // - a deadline: one operation on a large request body can take tens of milliseconds (parsing, hashing, scanning),
 //   so ten thousand of them could keep a worker thread busy for over a minute;
+// - a memory budget: values held outside the variables (the arguments of one call, the keys of a map, what `map`
+//   gathers, curried function pointers, nested calls) escape Rhai's limits on each value, and reached gigabytes. The
+//   global allocator counts what each thread holds (alloc/), and a run is synchronous on its thread, so what the
+//   thread holds more than when the run started is what the run holds, however it holds it;
 // - a number of variables alive at once;
 // - `replace` and the `split` family, checked before they build their result: Rhai's own versions build it whole and
 //   check it afterwards, so a single `replace` of a 1 MiB text by a 1 MiB substitute asked for a terabyte at once and
@@ -28,6 +32,10 @@ pub(crate) const MAX_VARIABLES: usize = 64;
 // A script that builds a response from a large request runs in a few milliseconds; a hundred times that still leaves
 // room for a slow machine, a debug build or a busy one.
 pub(crate) const TIME_BUDGET: Duration = Duration::from_millis(500);
+// A run holding every value at its limit (a parsed request of 1 MiB of text, 1,000 items and 500 entries, and a
+// response built from it) stays under a few MiB; 16 MiB leaves room for that, while the worker threads of a small
+// machine running scripts at once stay within the memory a container is usually given.
+pub(crate) const MEMORY_BUDGET_MIB: i64 = 16;
 
 // Rhai's names for the values too large (`ErrorDataTooLarge`), which the functions below reuse so that `describe`
 // reads both the same way.
@@ -35,24 +43,30 @@ pub(crate) const TEXT_TOO_LARGE: &str = "Length of string";
 pub(crate) const ARRAY_TOO_LARGE: &str = "Size of array/BLOB";
 pub(crate) const MAP_TOO_LARGE: &str = "Size of object map";
 
+// Why on_progress stopped a run: the value it returns becomes the token of Rhai's `ErrorTerminated`.
+const OUT_OF_TIME: &str = "time";
+const OUT_OF_MEMORY: &str = "memory";
+
 thread_local! {
-    // The deadline of the run on this thread. A run is synchronous: it never leaves its thread before it ends.
-    static DEADLINE: Cell<Option<Instant>> = const { Cell::new(None) };
+    // The deadline of the run on this thread, and the bytes the thread held when it started. A run is synchronous: it
+    // never leaves its thread before it ends.
+    static RUN: Cell<Option<(Instant, i64)>> = const { Cell::new(None) };
 }
 
-/// The deadline of one run, set on its thread for as long as the value lives.
+/// The deadline and the memory budget of one run, set on its thread for as long as the value lives.
 pub(crate) struct RunClock;
 
 impl RunClock {
     pub(crate) fn start() -> Self {
-        DEADLINE.with(|deadline| deadline.set(Some(Instant::now() + TIME_BUDGET)));
+        let started = (Instant::now() + TIME_BUDGET, mimicway_alloc::live_bytes());
+        RUN.with(|run| run.set(Some(started)));
         RunClock
     }
 }
 
 impl Drop for RunClock {
     fn drop(&mut self) {
-        DEADLINE.with(|deadline| deadline.set(None));
+        RUN.with(|run| run.set(None));
     }
 }
 
@@ -69,13 +83,14 @@ pub(crate) fn apply(engine: &mut rhai::Engine) {
     engine.set_max_expr_depths(MAX_EXPR_DEPTH, MAX_FUNCTION_EXPR_DEPTH);
     engine.set_max_variables(MAX_VARIABLES);
     engine.on_progress(|operations| {
-        // Reading the clock every 16 operations is enough: no single operation lasts long (the native functions stop at
-        // the limits), and it keeps the cost of the check out of the way.
-        if operations % 16 != 0 {
-            return None;
+        let (deadline, held_at_start) = RUN.with(Cell::get)?;
+        // The memory at every operation: a thread-local read, and one operation adds at most a value at its limits.
+        if mimicway_alloc::live_bytes() - held_at_start > MEMORY_BUDGET_MIB * 1024 * 1024 {
+            return Some(OUT_OF_MEMORY.into());
         }
-        let deadline = DEADLINE.with(Cell::get)?;
-        (Instant::now() >= deadline).then_some(Dynamic::UNIT)
+        // The clock every 16 operations: no single operation lasts long (the native functions stop at the limits), and
+        // reading it costs as much as a few of them.
+        (operations % 16 == 0 && Instant::now() >= deadline).then(|| OUT_OF_TIME.into())
     });
     register_replace(engine);
     register_split(engine);
@@ -265,6 +280,12 @@ pub(crate) fn describe(error: &EvalAltResult) -> String {
             "Script stopped: it ran more than {0} operations, the limit of a run{1}",
             &[&MAX_OPERATIONS, &at(*position)],
         ),
+        EvalAltResult::ErrorTerminated(reason, position) if reason.to_string() == OUT_OF_MEMORY => {
+            crate::i18n::tr(
+                "Script stopped: it held more than {0} MiB of memory, the memory limit of a run{1}",
+                &[&MEMORY_BUDGET_MIB, &at(*position)],
+            )
+        }
         EvalAltResult::ErrorTerminated(_, position) => crate::i18n::tr(
             "Script stopped: it ran longer than {0} ms, the time limit of a run{1}",
             &[&TIME_BUDGET.as_millis(), &at(*position)],

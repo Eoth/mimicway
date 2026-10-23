@@ -97,11 +97,29 @@ jobs:
         with:
           # Pull requests restore the cache of develop and save none: their entries would push it out of the quota.
           save-if: ${{ github.ref == 'refs/heads/develop' }}
-      - run: cargo fmt --check
+      - run: cargo fmt --all --check
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo clippy --features tcp-mock --all-targets -- -D warnings
+      - run: cargo clippy -p mimicway-alloc --all-targets -- -D warnings
       - run: cargo test
       - run: cargo test --features tcp-mock
+      - run: cargo test -p mimicway-alloc
+
+  miri:
+    name: Allocator under Miri
+    needs: changes
+    if: contains(fromJSON(needs.changes.outputs.jobs), 'miri')
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Miri ships with nightlies only: a dated one, so that a verdict does not change with the day.
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable branch
+        with:
+          toolchain: nightly-2026-09-01
+          components: miri, rust-src
+      - run: cargo +nightly-2026-09-01 miri test -p mimicway-alloc
 
   kafka:
     name: Rust with the Kafka feature
@@ -462,6 +480,7 @@ jobs:
       - checks
       - secrets
       - rust
+      - miri
       - kafka
       - supply-chain
       - ui

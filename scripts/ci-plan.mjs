@@ -25,6 +25,7 @@ export const JOBS = [
   'checks',
   'secrets',
   'rust',
+  'miri',
   'kafka',
   'supply-chain',
   'ui',
@@ -50,6 +51,7 @@ const DOCUMENTATION = [/\.md$/, /^docs\//, /^LICENSE$/, /^\.github\/ISSUE_TEMPLA
 
 const RUST = [
   /^src\//,
+  /^alloc\//,
   /^tests\//,
   /^examples\//,
   /^build\.rs$/,
@@ -67,6 +69,8 @@ export const READ_BY_UI_TESTS = ['src/server/ping.rs'];
 // For each job, the paths it checks. A path may belong to several jobs.
 const RULES = {
   rust: RUST,
+  // The allocator's tests under Miri, which checks every unsafe operation they reach: only its crate has any.
+  miri: [/^alloc\//],
   // Builds the UI too: the Kafka specs of the end-to-end suite run against this job's binary.
   kafka: [...RUST, /^frontend\//],
   'supply-chain': [...MANIFESTS, /^deny\.toml$/, /^osv-scanner\.toml$/],
@@ -80,13 +84,23 @@ const RULES = {
   ],
   e2e: [...RUST, /^frontend\//],
   // What the Dockerfile copies: the UI (its end-to-end suite aside) and the server.
-  docker: [/^Dockerfile$/, /^\.dockerignore$/, /^Cargo\.(toml|lock)$/, /^build\.rs$/, /^src\//, /^frontend\/(?!e2e\/)/],
+  docker: [
+    /^Dockerfile$/,
+    /^\.dockerignore$/,
+    /^Cargo\.(toml|lock)$/,
+    /^build\.rs$/,
+    /^src\//,
+    /^alloc\//,
+    /^frontend\/(?!e2e\/)/,
+  ],
   // What decides how the release's Linux binary and its archive are built, not the code they are built from: two builds
   // without cache cost twice the image's slowest build, too much for every change of code, which the weekly run covers.
   reproducible: [
     /^Dockerfile$/,
     /^\.dockerignore$/,
     /^Cargo\.(toml|lock)$/,
+    // The allocator decides how every allocation of the binary is made.
+    /^alloc\//,
     /^build\.rs$/,
     /^\.cargo\//,
     /^frontend\/package(-lock)?\.json$/,
@@ -102,7 +116,14 @@ const RULES = {
 const CODEQL_RULES = {
   actions: [/^\.github\/workflows\//, /^\.github\/actions\//],
   'javascript-typescript': [/^frontend\/.*\.(js|mjs|cjs|ts|svelte|html)$/, /^scripts\/.*\.(js|mjs)$/],
-  rust: [/^src\/.*\.rs$/, /^tests\/.*\.rs$/, /^build\.rs$/, /^fuzz\/.*\.rs$/, /^Cargo\.(toml|lock)$/],
+  rust: [
+    /^src\/.*\.rs$/,
+    /^alloc\/.*\.rs$/,
+    /^tests\/.*\.rs$/,
+    /^build\.rs$/,
+    /^fuzz\/.*\.rs$/,
+    /^Cargo\.(toml|lock)$/,
+  ],
 };
 // Checked by the always-on jobs, or by no job at all: claimed so that changing them does not run everything.
 // Dockerfile.release is built by the release workflow only, on a tag; the bootstrap scripts are run by people;

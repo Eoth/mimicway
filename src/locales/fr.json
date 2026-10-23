@@ -28,6 +28,7 @@
   "Script stopped: a map of more than {0} entries, the limit of a value{1}": "Script arrêté : un objet de plus de {0} entrées, la limite d'une valeur{1}",
   "Script stopped: a text longer than {0} bytes, the limit of a value{1}": "Script arrêté : un texte de plus de {0} octets, la limite d'une valeur{1}",
   "Script stopped: an array of more than {0} items, the limit of a value{1}": "Script arrêté : un tableau de plus de {0} éléments, la limite d'une valeur{1}",
+  "Script stopped: it held more than {0} MiB of memory, the memory limit of a run{1}": "Script arrêté : plus de {0} Mio de mémoire, la limite de mémoire d'une exécution{1}",
   "Script stopped: it ran longer than {0} ms, the time limit of a run{1}": "Script arrêté : plus de {0} ms, la durée limite d'une exécution{1}",
   "Script stopped: it ran more than {0} operations, the limit of a run{1}": "Script arrêté : plus de {0} opérations, la limite d'une exécution{1}",
   "Script stopped: more than {0} nested function calls, the limit of a run{1}": "Script arrêté : plus de {0} appels de fonction imbriqués, la limite d'une exécution{1}",

@@ -5,6 +5,11 @@
 // the tests running beside it, which is why settings are read through a lookup (settings.rs).
 #![forbid(unsafe_code)]
 
+// The library's tests count memory as the binary does (main.rs), so that the script budget is tested as it runs.
+#[cfg(test)]
+#[global_allocator]
+static ALLOCATOR: mimicway_alloc::Counting = mimicway_alloc::Counting;
+
 //   auth/      Keycloak token validation, group permissions
 //   models/    configuration schema (Service, Rule, Group...)
 //   engine/    matching, HTTP proxy, templates, Rhai scripts

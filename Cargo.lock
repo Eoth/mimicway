@@ -785,6 +785,7 @@ dependencies = [
  "http-body-util",
  "hyper-util",
  "jsonwebtoken",
+ "mimicway-alloc",
  "proptest",
  "quick-xml",
  "rdkafka",
@@ -802,6 +803,10 @@ dependencies = [
  "url",
  "uuid",
 ]
+
+[[package]]
+name = "mimicway-alloc"
+version = "0.1.0"
 
 [[package]]
 name = "mio"

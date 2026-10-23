@@ -10,7 +10,7 @@ Every item below is weighed against these promises; an idea that breaks one of t
 - **Quiet by default.** No telemetry, no update check. Every outbound connection is one the user configured, and the [security model](docs/en/security.md) lists them all.
 - **Safe on a laptop.** Local-only until told otherwise; a web page cannot drive it.
 - **Light for the person using it.** A mock should take a minute to write and zero minutes to maintain: import what exists, suggest what can be guessed, explain what went wrong.
-- **Easy to approve.** Every feature keeps the [reviewer guide](REVIEWING.md) true: small dependency set, no `unsafe`, documented flows and permissions.
+- **Easy to approve.** Every feature keeps the [reviewer guide](REVIEWING.md) true: small dependency set, no `unsafe` outside the allocator that counts what scripts hold (`alloc/`), documented flows and permissions.
 
 ## How to read an item
 

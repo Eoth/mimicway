@@ -10,6 +10,11 @@ use mimicway::server::browser_guard::BrowserGuard;
 use mimicway::server::ping::PingCache;
 use mimicway::server::request_log::RequestLog;
 use mimicway::server::{AppState, build_router_with};
+
+// Counts the bytes each thread holds, which a script run reads to stop at its memory budget
+// (engine/script_budget.rs). The system allocator underneath, unchanged.
+#[global_allocator]
+static ALLOCATOR: mimicway_alloc::Counting = mimicway_alloc::Counting;
 use mimicway::store::MockStore;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};

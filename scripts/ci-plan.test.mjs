@@ -18,6 +18,15 @@ test('a change of server code runs the Rust, Kafka, end-to-end and image jobs, a
   const plan = planFor('push', ['src/engine/matcher.rs']);
   for (const job of ['rust', 'kafka', 'e2e', 'docker', 'codeql']) assert.ok(plan.jobs.includes(job), job);
   assert.ok(!plan.jobs.includes('ui'));
+  assert.ok(!plan.jobs.includes('miri'));
+  assert.deepEqual(plan.codeql, ['rust']);
+});
+
+test('a change of the allocator runs Miri, the Rust jobs, the image and the release builds', () => {
+  const plan = planFor('push', ['alloc/src/lib.rs']);
+  for (const job of ['miri', 'rust', 'kafka', 'e2e', 'docker', 'reproducible', 'codeql']) {
+    assert.ok(plan.jobs.includes(job), job);
+  }
   assert.deepEqual(plan.codeql, ['rust']);
 });
 

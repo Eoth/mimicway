@@ -317,3 +317,66 @@ fn a_result_longer_than_a_text_is_refused() {
         "{error}"
     );
 }
+
+// Every way found to hold values outside the limits of each value: 30 texts of 1 MiB each time, about twice the
+// memory budget of a run, which Rhai's own limits let through.
+#[test]
+fn values_held_outside_the_variables_stop_at_the_memory_budget() {
+    let thirty = |each: &dyn Fn(usize) -> String| (0..30).map(each).collect::<Vec<_>>().join(", ");
+    for script in [
+        // The arguments of one call, all evaluated before the call fails.
+        format!("{}nope({})", big(8), thirty(&|i| format!("s + \"{i}\""))),
+        // Map keys: Rhai's map limit counts entries, not the length of their keys.
+        format!(
+            "{}let m = #{{}}; for i in 0..30 {{ m[s + i] = 0; }} m.len()",
+            big(8)
+        ),
+        // What `map` gathers before the result is checked.
+        format!(
+            "{}let a = []; for i in 0..30 {{ a.push(i); }} a.map(|x| s + x).len()",
+            big(8)
+        ),
+        // Arguments curried into function pointers, which Rhai's limits do not count.
+        format!(
+            "fn f(x) {{ x }}\n{}let a = []; for i in 0..30 {{ a.push(Fn(\"f\").curry(s + i)); }} a.len()",
+            big(8)
+        ),
+        // Values held by nested calls, one per level of a recursion (the text itself is shared, not copied).
+        format!(
+            "fn h(a, b) {{ 0 }}\nfn g(n, s) {{ if n > 0 {{ h(s + \"1\", g(n - 1, s)) }} else {{ 0 }} }}\n{}g(30, s)",
+            big(8)
+        ),
+        // Variables, each within its limits.
+        format!(
+            "{}{}0",
+            big(8),
+            (0..30)
+                .map(|i| format!("let v{i} = s + \"{i}\";\n"))
+                .collect::<String>()
+        ),
+    ] {
+        refused(&script, "more than 16 MiB of memory");
+    }
+}
+
+#[test]
+fn a_run_within_its_memory_budget_is_not_stopped() {
+    // A response built from a large request: 200 objects (400 entries, near the 500 Rhai allows across a value) and
+    // close to 1 MiB of text, parsed then written back.
+    let body = format!(
+        "[{}]",
+        (0..200)
+            .map(|i| format!("{{\"id\": {i}, \"name\": \"{}\"}}", "n".repeat(5000)))
+            .collect::<Vec<_>>()
+            .join(",")
+    );
+    let script = "let items = parse_json(request.body); let out = []; \
+        for item in items { out.push(#{ id: item.id, size: item.name.len() }); } to_json(out).len()";
+    assert!(
+        run_with_body(script, &body)
+            .unwrap()
+            .parse::<usize>()
+            .unwrap()
+            > 200
+    );
+}
