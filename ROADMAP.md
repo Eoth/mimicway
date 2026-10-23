@@ -23,7 +23,7 @@ Each item has an identifier that never changes, a size (S: a day or less, M: a f
 3. [Make it indispensable](#3-make-it-indispensable): U1, U2, then U3 to U16, in the listed order.
 4. [Engineering backlog](#4-engineering-backlog): taken alongside, when they unblock an item above.
 
-Hardening comes before all of these: T14, E22 and E26, then E23, E24, E25, E27 and T15.
+Hardening comes before all of these: T14, then E23, E24, E25, E27 and T15.
 
 ## 1. Ready for an international launch
 
@@ -561,16 +561,6 @@ Size S
 
 **Done when.** A unit test of the application signs in on an instance with authentication and finds, without reloading, the buttons the server allows to that user, and none after signing out.
 
-### E22. A missing user is refused, not taken for a super-admin
-
-Size S
-
-**Why.** `extract_user` in `src/auth/middleware.rs` falls back on `AuthUser::anonymous()`, a super-admin, when a request carries no user. Today the authentication middleware always puts one there, so nothing reaches that fallback; a route mounted outside the middleware one day would give every caller every right, without any test failing.
-
-**What.** Without authentication, the middleware puts the anonymous user in explicitly; `extract_user` returns an error (500, logged) when no user is present, instead of a default.
-
-**Done when.** A test calls a handler without the middleware and gets a refusal, and the authorization tests pass unchanged.
-
 ### E23. Release jobs without stored credentials
 
 Size S
@@ -600,16 +590,6 @@ Size S
 **What.** A `frontend/.npmrc` with `ignore-scripts=true`, and a check that the build, the tests and Playwright's browser download work without them.
 
 **Done when.** `npm ci` in `frontend/` runs no install script, and the documented steps pass from a clean clone.
-
-### E26. Cross-site writes refused without Sec-Fetch-Site
-
-Size S
-
-**Why.** The browser guard (`src/server/browser_guard.rs`) recognizes a cross-site write by the `Sec-Fetch-Site` header alone. A browser that does not send it (Safari before 16.4, older Firefox) lets a cross-site form or a body-less `POST` through, with no preflight: `POST /api/config/restore/{filename}` replaces the configuration, `POST /api/services/{name}/ping` makes Mimicway connect.
-
-**What.** When `Sec-Fetch-Site` is missing, refuse a state-changing API request whose `Origin` is present and is neither the request's own origin nor listed in `CORS_ALLOWED_ORIGINS`.
-
-**Done when.** Unit tests refuse such a request with a foreign `Origin` and accept it without `Origin` (non-browser clients) or with the request's own.
 
 ### E27. Raw TCP mocks changed under one lock, with trimmed names
 
