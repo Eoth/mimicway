@@ -371,3 +371,62 @@ async fn raw_tcp_mocks_are_reserved_to_super_admins() {
         .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
 }
+
+// Every handler reads its user from the request's extensions, which only the authentication middleware fills. A route
+// mounted outside it must refuse every call rather than run as some default user: the anonymous user of a server
+// without authentication is a super-admin.
+#[tokio::test]
+async fn a_route_mounted_without_the_authentication_middleware_refuses_every_call() {
+    let data_dir = temp_data_dir("no-auth-layer");
+    let config = MockConfig {
+        services: vec![mock_service("billing", "x")],
+        groups: vec![],
+    };
+    let state = test_state(
+        &data_dir,
+        config,
+        crate::server::test_support::auth_disabled(),
+    )
+    .await;
+    let root = serve(
+        axum::Router::new()
+            .nest("/api", super::routes())
+            .with_state(state),
+    )
+    .await;
+    let client = reqwest::Client::new();
+    let calls = [
+        client.get(format!("{root}/api/config")),
+        client
+            .put(format!("{root}/api/config"))
+            .json(&MockConfig::empty()),
+        client.delete(format!("{root}/api/config/reset")),
+        client.delete(format!("{root}/api/services/billing")),
+        client.get(format!("{root}/api/logs")),
+    ];
+    for call in calls {
+        let response = call.send().await.unwrap();
+        assert_eq!(
+            response.status(),
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "{}",
+            response.url()
+        );
+    }
+    let services = client
+        .get(format!("{root}/api/services"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(services.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(
+        client
+            .get(format!("{root}/api/services/billing"))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "the service is still there, and was never deleted"
+    );
+}

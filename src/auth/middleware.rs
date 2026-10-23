@@ -104,13 +104,6 @@ pub async fn auth_middleware(
     }
 }
 
-pub fn extract_user(extensions: &axum::http::Extensions) -> AuthUser {
-    extensions
-        .get::<AuthUser>()
-        .cloned()
-        .unwrap_or_else(AuthUser::anonymous)
-}
-
 // Each branch of the middleware, through the real router on a real port, as it runs in production.
 // Valid tokens are real JWTs signed by the fake realm of `auth::test_realm`, which publishes its keys like
 // Keycloak does.
