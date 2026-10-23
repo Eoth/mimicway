@@ -14,7 +14,7 @@ Quelques fonctionnalités qui portent sur l'ensemble, depuis la barre de navigat
 
 **« Import »** charge un fichier exporté auparavant (ou un exemple comme [examples/devops-toolchain.json](../../examples/devops-toolchain.json)). Deux modes sont proposés :
 
-- **Remplacer tout** : la configuration importée remplace entièrement la configuration actuelle.
+- **Remplacer tout** : la configuration importée remplace entièrement la configuration actuelle. Le fichier doit suivre les règles qu'imposerait la création de ses groupes et services un par un : si deux de ses services portent le même nom dans un groupe, par exemple, l'import est refusé avec ce conflit et rien ne change.
 - **Fusionner (ajouter les manquants)** : les services et groupes importés s'ajoutent à ceux qui existent, sans rien supprimer ; un groupe qui existe déjà sous le même nom, ou un service qui existe déjà sous le même nom dans le même groupe, reste tel quel.
 
 Avant tout changement, la fenêtre indique combien de services et de groupes contient le fichier ; « Annuler » laisse la configuration intacte.

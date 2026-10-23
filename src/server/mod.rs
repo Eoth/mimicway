@@ -5,6 +5,8 @@
 //   validation.rs    names, reserved routes and paths, before anything is stored or forwarded
 //   request_log.rs   the last 200 requests, in memory, credentials redacted (redaction.rs)
 mod api;
+#[cfg(fuzzing)]
+pub(crate) use api::accepted_import;
 pub mod browser_guard;
 pub(crate) mod codegen;
 mod intercept;

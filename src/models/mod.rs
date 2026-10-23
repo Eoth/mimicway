@@ -220,6 +220,34 @@ impl MockConfig {
             })
             .collect()
     }
+
+    /// Gives every service after the first of its (group, name) slot a free name, `name-2`, `name-3`..., and returns
+    /// `(group, old name, new name)` for each. Versions before 0.2.0 could save two services in one slot: routing only
+    /// ever reached the first (so no served URL changes), and the interface, which lists services by name within their
+    /// group, failed to render. The suffix keeps the name valid: same characters, and a dash no group code has.
+    pub fn rename_duplicate_services(&mut self) -> Vec<(Option<String>, String, String)> {
+        let mut taken: std::collections::HashSet<(Option<String>, String)> = self
+            .services
+            .iter()
+            .map(|s| (s.group_name.clone(), s.name.clone()))
+            .collect();
+        let mut seen = std::collections::HashSet::new();
+        let mut renamed = Vec::new();
+        for service in &mut self.services {
+            if seen.insert((service.group_name.clone(), service.name.clone())) {
+                continue;
+            }
+            let free = (2u64..)
+                .map(|n| format!("{}-{n}", service.name))
+                .find(|candidate| !taken.contains(&(service.group_name.clone(), candidate.clone())))
+                .unwrap_or_default();
+            taken.insert((service.group_name.clone(), free.clone()));
+            seen.insert((service.group_name.clone(), free.clone()));
+            let old = std::mem::replace(&mut service.name, free.clone());
+            renamed.push((service.group_name.clone(), old, free));
+        }
+        renamed
+    }
 }
 
 #[cfg(test)]
@@ -301,6 +329,68 @@ mod tests {
             }],
             groups: vec![],
         }
+    }
+
+    fn named(name: &str, group: Option<&str>) -> Service {
+        let mut service = sample_config().services.remove(0);
+        service.name = name.into();
+        service.group_name = group.map(str::to_string);
+        service
+    }
+
+    fn slots(config: &MockConfig) -> Vec<(Option<&str>, &str)> {
+        config
+            .services
+            .iter()
+            .map(|s| (s.group_name.as_deref(), s.name.as_str()))
+            .collect()
+    }
+
+    #[test]
+    fn duplicate_services_get_a_free_name_and_the_first_keeps_its_own() {
+        let mut config = MockConfig {
+            services: vec![
+                named("users", None),
+                named("users", None),
+                named("users-2", None),
+                named("users", Some("team-a")),
+                named("users", None),
+            ],
+            groups: vec![],
+        };
+        let renamed = config.rename_duplicate_services();
+        assert_eq!(
+            slots(&config),
+            vec![
+                (None, "users"),
+                (None, "users-3"),
+                (None, "users-2"),
+                (Some("team-a"), "users"),
+                (None, "users-4"),
+            ],
+            "a suffix never takes the name of a later service, and namesakes of other groups stay as they are"
+        );
+        assert_eq!(
+            renamed,
+            vec![
+                (None, "users".to_string(), "users-3".to_string()),
+                (None, "users".to_string(), "users-4".to_string())
+            ]
+        );
+        for service in &config.services {
+            assert!(crate::server::validation::validate_service(service).is_ok());
+        }
+    }
+
+    #[test]
+    fn a_configuration_without_duplicates_is_left_alone() {
+        let mut config = MockConfig {
+            services: vec![named("users", None), named("users", Some("team-a"))],
+            groups: vec![],
+        };
+        let before = config.clone();
+        assert!(config.rename_duplicate_services().is_empty());
+        assert_eq!(config, before);
     }
 
     #[test]

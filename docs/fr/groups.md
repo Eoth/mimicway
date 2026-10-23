@@ -45,4 +45,5 @@ Quand vous dépliez un groupe puis allez modifier un de ses services, le groupe 
 
 - Aucun prérequis : disponible dans toutes les installations.
 - Un nom de groupe doit être unique, sans tenir compte des majuscules.
+- Supprimer un groupe laisse ses services sans groupe. C'est refusé tant que l'un d'eux porte le nom d'un service sans groupe ou d'un code de groupe : renommez ou supprimez d'abord l'un des deux.
 - Les droits fins (qui voit quoi) ne s'appliquent que si l'[authentification](authentication.md) est activée ; sans elle, tout le monde a un accès complet.

@@ -307,11 +307,22 @@ async fn get_config(
 async fn put_config(
     State(state): State<AppState>,
     Extension(user): Extension<AuthUser>,
-    Json(mut config): Json<MockConfig>,
+    Json(config): Json<MockConfig>,
 ) -> Result<Json<Arc<MockConfig>>, AppError> {
     require_super_admin(&user)?;
+    let config = check_imported_config(config)?;
+    state.store.replace(config).await.map_err(AppError::Store)?;
+    Ok(Json(state.store.snapshot().await))
+}
 
-    for service in &config.services {
+/// `config` as the API would hold it after creating its groups, then its services, one at a time: every rule of
+/// `create_group` and `create_service` applies, so an import cannot bring in what they refuse (two services in one
+/// slot, two groups with one name or URL code, an ungrouped service named like a group code). Without this, two
+/// services of one name in one group were accepted: routing only ever reached the first, and the interface, which
+/// lists services by name within their group, failed to render.
+fn check_imported_config(mut config: MockConfig) -> Result<MockConfig, AppError> {
+    for service in &mut config.services {
+        trim_service_name(service);
         if let Err(e) = validate_service(service) {
             tracing::warn!(service = %service.name, field = %e.field, reason = %e.message, "config rejected: invalid service");
             return Err(AppError::Validation(e.message));
@@ -325,10 +336,24 @@ async fn put_config(
         )));
     }
 
+    // Codes generated before the checks, as before: a generated code then avoids every code the import sets itself.
     ensure_group_codes(&mut config.groups);
+    let mut checked = MockConfig::empty();
+    for group in config.groups {
+        let group = check_group_identity(&checked, group, None)?;
+        checked.groups.push(group);
+    }
+    for service in config.services {
+        check_service_slot(&checked, &service, None)?;
+        checked.services.push(service);
+    }
+    Ok(checked)
+}
 
-    state.store.replace(config).await.map_err(AppError::Store)?;
-    Ok(Json(state.store.snapshot().await))
+/// What the configuration fuzz target accepts: the import of `PUT /api/config`, without the server around it.
+#[cfg(fuzzing)]
+pub(crate) fn accepted_import(config: MockConfig) -> Option<MockConfig> {
+    check_imported_config(config).ok()
 }
 
 async fn reset_config(
@@ -916,6 +941,15 @@ fn unknown_group(group: &str) -> AppError {
     AppError::Validation(tr("The group \"{0}\" does not exist.", &[&group]))
 }
 
+/// The name a service is stored and routed under. Validation reads the name trimmed, so a name kept with its spaces
+/// was accepted next to its namesake: a second service that looks like the first, at another URL.
+fn trim_service_name(service: &mut Service) {
+    let trimmed = service.name.trim();
+    if trimmed.len() != service.name.len() {
+        service.name = trimmed.to_string();
+    }
+}
+
 /// Whether `service` can take its (group, name) slot in `cfg`, the service currently at `replacing` excepted:
 /// the group must exist, the name must be free in that group, and an ungrouped service cannot be named like a
 /// group code, since `/{code}/...` would then route to two places.
@@ -957,8 +991,9 @@ fn check_service_slot(
 async fn create_service(
     State(state): State<AppState>,
     Extension(user): Extension<AuthUser>,
-    Json(service): Json<Service>,
+    Json(mut service): Json<Service>,
 ) -> Result<(StatusCode, Json<Service>), AppError> {
+    trim_service_name(&mut service);
     if let Err(e) = validate_service(&service) {
         tracing::warn!(service = %service.name, field = %e.field, reason = %e.message, "service rejected");
         return Err(AppError::Validation(e.message));
@@ -989,8 +1024,9 @@ async fn update_service_impl(
     user: AuthUser,
     group: Option<String>,
     name: String,
-    service: Service,
+    mut service: Service,
 ) -> Result<Json<Service>, AppError> {
+    trim_service_name(&mut service);
     if let Err(e) = validate_service(&service) {
         tracing::warn!(service = %name, field = %e.field, reason = %e.message, "service rejected");
         return Err(AppError::Validation(e.message));
@@ -1482,32 +1518,48 @@ async fn delete_group(
     Extension(user): Extension<AuthUser>,
     Path(name): Path<String>,
 ) -> Result<StatusCode, AppError> {
-    {
-        let config = state.store.snapshot().await;
-        let existing = config
-            .groups
-            .iter()
-            .find(|g| g.name == name)
-            .ok_or(AppError::NotFound)?;
-        if state.auth_config.enabled
-            && !can_manage_group(&user.username, user.is_super_admin, existing)
-        {
-            return Err(AppError::Forbidden);
-        }
-    }
-
     state
         .store
-        .update(|cfg| {
-            for svc in cfg.services.iter_mut() {
-                if svc.group_name.as_deref() == Some(&name) {
-                    svc.group_name = None;
-                }
+        .try_update(|cfg| {
+            let existing = cfg
+                .groups
+                .iter()
+                .find(|g| g.name == name)
+                .ok_or(AppError::NotFound)?;
+            if state.auth_config.enabled
+                && !can_manage_group(&user.username, user.is_super_admin, existing)
+            {
+                return Err(AppError::Forbidden);
             }
             cfg.groups.retain(|g| g.name != name);
+            // The services of the group become ungrouped: each has to fit there as if created ungrouped, or the
+            // deletion would leave two services in one slot, or one named like the URL code of a group.
+            let ungrouped: Vec<Service> = cfg
+                .services
+                .iter()
+                .filter(|s| s.group_name.as_deref() == Some(name.as_str()))
+                .map(|s| Service {
+                    group_name: None,
+                    ..s.clone()
+                })
+                .collect();
+            for service in &ungrouped {
+                if check_service_slot(cfg, service, Some((Some(name.as_str()), &service.name))).is_err() {
+                    return Err(AppError::Conflict(tr(
+                        "The group \"{0}\" cannot be deleted: its service \"{1}\" would lose its group, and an ungrouped service or a group code already has that name. Rename or delete one of them first.",
+                        &[&name, &service.name],
+                    )));
+                }
+            }
+            for service in cfg.services.iter_mut() {
+                if service.group_name.as_deref() == Some(name.as_str()) {
+                    service.group_name = None;
+                }
+            }
+            Ok(())
         })
         .await
-        .map_err(AppError::Store)?;
+        .map_err(AppError::Store)??;
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -1884,6 +1936,9 @@ mod authz_tests;
 
 #[cfg(test)]
 mod suggestion_tests;
+
+#[cfg(test)]
+mod uniqueness_tests;
 
 #[cfg(test)]
 mod tests {

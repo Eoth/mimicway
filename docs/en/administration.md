@@ -14,7 +14,7 @@ A few features that apply to everything, from the navigation bar at the top of t
 
 **"Import"** loads a file exported earlier (or an example such as [examples/devops-toolchain.json](../../examples/devops-toolchain.json)). Two modes are offered:
 
-- **Replace everything**: the imported configuration replaces the current one entirely.
+- **Replace everything**: the imported configuration replaces the current one entirely. The file has to follow the rules that creating its groups and services one by one would: if two of its services share a name in one group, for instance, the import is refused with that conflict and nothing changes.
 - **Merge (add what is missing)**: the imported services and groups are added to the existing ones, without removing anything; a group that already exists under the same name, or a service that already exists under the same name in the same group, is left as it is.
 
 Before anything changes, the dialog says how many services and groups the file holds; "Cancel" leaves the configuration untouched.

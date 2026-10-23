@@ -28,6 +28,7 @@
   "The backup file name is required.": "Le nom du fichier de sauvegarde est requis.",
   "The code \"{0}\" is already used by another group.": "Le code \"{0}\" est deja utilise par un autre groupe.",
   "The code \"{0}\" is the name of the ungrouped service \"{1}\": choose another code.": "Le code \"{0}\" est le nom du service sans groupe \"{1}\" : choisissez un autre code.",
+  "The group \"{0}\" cannot be deleted: its service \"{1}\" would lose its group, and an ungrouped service or a group code already has that name. Rename or delete one of them first.": "Le groupe \"{0}\" ne peut pas être supprimé : son service \"{1}\" perdrait son groupe, et un service sans groupe ou un code de groupe porte déjà ce nom. Renommez ou supprimez l'un des deux d'abord.",
   "The group \"{0}\" does not exist.": "Le groupe \"{0}\" n'existe pas.",
   "The group name is required.": "Le nom du groupe est requis.",
   "The name \"{0}\" is reserved by Mimicway (forbidden names: {1}).": "Le nom \"{0}\" est reserve par Mimicway (noms interdits : {1}).",

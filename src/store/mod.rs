@@ -223,7 +223,7 @@ impl MockStore {
         let config = if file.exists() {
             let content =
                 std::fs::read_to_string(&file).map_err(|e| StoreError::Io(e.to_string()))?;
-            serde_yaml::from_str(&content).map_err(|e| StoreError::Yaml(e.to_string()))?
+            Self::parse(&content)?
         } else {
             let empty = MockConfig::empty();
             let yaml =
@@ -241,6 +241,18 @@ impl MockStore {
             root,
             writer: WriterHandle::spawn(),
         })
+    }
+
+    /// A configuration read from a file of the store (the configuration itself or a backup). Such a file may come from a
+    /// version that saved two services in one slot: the extra ones get a free name, logged, rather than a refusal to
+    /// start or to restore over a configuration nobody can then fix from the interface.
+    fn parse(content: &str) -> Result<MockConfig, StoreError> {
+        let mut config: MockConfig =
+            serde_yaml::from_str(content).map_err(|e| StoreError::Yaml(e.to_string()))?;
+        for (group, old, new) in config.rename_duplicate_services() {
+            tracing::warn!(group = group.as_deref().unwrap_or(""), service = %old, renamed_to = %new, "two services had the same name in the same group: the second one is renamed");
+        }
+        Ok(config)
     }
 
     pub async fn snapshot(&self) -> Arc<MockConfig> {
@@ -399,8 +411,7 @@ impl MockStore {
 
         let content =
             std::fs::read_to_string(&source).map_err(|e| StoreError::Io(e.to_string()))?;
-        let config: MockConfig =
-            serde_yaml::from_str(&content).map_err(|e| StoreError::Yaml(e.to_string()))?;
+        let config = Self::parse(&content)?;
 
         tracing::info!(path = %source.display(), "config restore from backup");
         self.replace(config).await
@@ -1078,6 +1089,53 @@ mod tests {
 
         let restored = store.snapshot().await;
         assert_eq!(restored.services[0].name, "svc-a");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    fn duplicated_config_yaml() -> String {
+        let mut config = sample_config();
+        config.services.push(config.services[0].clone());
+        serde_yaml::to_string(&config).unwrap()
+    }
+
+    #[tokio::test]
+    async fn a_file_with_two_services_in_one_slot_loads_with_the_second_renamed() {
+        let dir = temp_dir();
+        std::fs::write(MockStore::config_file(&dir), duplicated_config_yaml()).unwrap();
+        let store = MockStore::load_or_init(&dir).await.unwrap();
+        let names: Vec<_> = store
+            .snapshot()
+            .await
+            .services
+            .iter()
+            .map(|s| s.name.clone())
+            .collect();
+        assert_eq!(names, vec!["svc-a", "svc-a-2"]);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[tokio::test]
+    async fn a_backup_with_two_services_in_one_slot_restores_with_the_second_renamed() {
+        let dir = temp_dir();
+        let store = MockStore::load_or_init(&dir).await.unwrap();
+        std::fs::create_dir_all(dir.join("backups")).unwrap();
+        std::fs::write(
+            dir.join("backups").join("mock-config-1-0.yaml"),
+            duplicated_config_yaml(),
+        )
+        .unwrap();
+        store
+            .restore_from_backup("mock-config-1-0.yaml")
+            .await
+            .unwrap();
+        let names: Vec<_> = store
+            .snapshot()
+            .await
+            .services
+            .iter()
+            .map(|s| s.name.clone())
+            .collect();
+        assert_eq!(names, vec!["svc-a", "svc-a-2"]);
         std::fs::remove_dir_all(&dir).ok();
     }
 

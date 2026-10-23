@@ -177,13 +177,9 @@ pub fn config_import(data: &[u8]) {
     let Ok(config) = serde_json::from_slice::<MockConfig>(data) else {
         return;
     };
-    let valid = config
-        .services
-        .iter()
-        .all(|service| crate::server::validation::validate_service(service).is_ok());
-    if !valid || !config.unknown_group_references().is_empty() {
+    let Some(config) = crate::server::accepted_import(config) else {
         return;
-    }
+    };
     let yaml = serde_yaml::to_string(&config).expect("an accepted configuration serializes");
     let stored: MockConfig =
         serde_yaml::from_str(&yaml).expect("the store reads back what it wrote");

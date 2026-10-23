@@ -45,4 +45,5 @@ When you expand a group and go edit one of its services, the group is still expa
 
 - No requirement: available in every installation.
 - A group name must be unique, ignoring case.
+- Deleting a group leaves its services without a group. It is refused while one of them has the name of an ungrouped service or of a group code: rename or delete one of the two first.
 - Fine-grained rights (who sees what) only take effect when [authentication](authentication.md) is on; without it, everyone has full access.
