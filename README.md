@@ -2,7 +2,7 @@
 
 # Mimicway
 
-[![CI](https://github.com/Eoth/mimicway/actions/workflows/ci.yml/badge.svg)](https://github.com/Eoth/mimicway/actions/workflows/ci.yml) [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/Eoth/mimicway/badge)](https://scorecard.dev/viewer/?uri=github.com/Eoth/mimicway)
+[![CI](https://github.com/Eoth/mimicway/actions/workflows/ci.yml/badge.svg)](https://github.com/Eoth/mimicway/actions/workflows/ci.yml) [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/Eoth/mimicway/badge)](https://scorecard.dev/viewer/?uri=github.com/Eoth/mimicway) [![XERJ Corpus Hub contributor](https://hub.xerj.org/contributors/Eoth/badge.svg)](https://hub.xerj.org/contributors/Eoth)
 
 Mock or proxy any HTTP API, one rule at a time, from a web UI. A single self-contained binary: no database, no agent, no cloud account.
 
