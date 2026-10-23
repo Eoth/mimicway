@@ -4,6 +4,8 @@ mod proxy;
 pub mod regex_cache;
 mod renderer;
 pub mod script;
+mod script_budget;
+mod script_json;
 pub mod template;
 
 pub use matcher::{MatchEngine, RequestData};

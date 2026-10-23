@@ -38,7 +38,7 @@ There is no other one: no telemetry, no update check, no hard-coded host. Outbou
 
 Because an editor chooses proxy targets, Mimicway will send HTTP requests to any host an editor configures: that is what a proxy is. Decide who may edit (authentication) and restrict where the process may connect (network policy) accordingly.
 
-**Rule scripts** (Rhai) are written by editors and run on every matching request, in a sandbox: at most 10,000 operations, bounded call depth, string, array and map sizes, no file access (`import` resolves nothing), no `eval`, no network, and output of `print`/`debug` sent to the debug log. The native functions never panic, whatever their arguments (`src/engine/script.rs`, tests next to it).
+**Rule scripts** (Rhai) are written by editors and run on every matching request, in a sandbox: at most 10,000 operations, 500 ms and 64 variables per run, bounded call depth, string, array and map sizes (the native functions, `replace` and `split` stop before building a value over those sizes), no file access (`import` resolves nothing), no `eval`, no network, and output of `print`/`debug` sent to the debug log. The native functions never panic, whatever their arguments (`src/engine/script.rs`, tests next to it).
 
 **Service traffic** (paths, headers, bodies sent by the applications under test) is untrusted input: bodies are limited to 10 MiB, JSON conditions and `{{body.…}}` variables read the value they point to without building the document, XML is parsed without DTDs or entity expansion, regular expressions of the rules are compiled once with a size limit, and path parameters are decoded as UTF-8.
 

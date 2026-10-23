@@ -22,7 +22,7 @@ Read along the path a request takes, from the outside in. Production code lives 
 | 5 | `src/server/api.rs` | Authorization of each endpoint (matrix below); validation of every mutation, done under the store's write lock (`try_update`). |
 | 6 | `src/server/validation.rs` | Names, reserved routes, dot segments, regular expressions, backup file names (path traversal). |
 | 7 | `src/server/intercept.rs`, `src/engine/proxy.rs` | Service traffic: matching, mock rendering, proxying (the only outbound HTTP), timeouts, hop-by-hop headers. |
-| 8 | `src/engine/script.rs` | Rhai sandbox: limits, disabled module loading and `eval`, native functions. |
+| 8 | `src/engine/script.rs`, `src/engine/script_budget.rs`, `src/engine/script_json.rs` | Rhai sandbox: disabled module loading and `eval`, native functions; limits of a run (operations, time, variables, size of each value), and the functions that stop before building a value over them. |
 | 9 | `src/engine/template.rs`, `src/engine/renderer.rs`, `src/engine/matcher.rs`, `src/engine/regex_cache.rs` | Response templates, chaos injection, condition evaluation on untrusted input. |
 | 10 | `src/store/mod.rs` | Persistence: atomic writes, backups, restore. |
 | 11 | `src/server/redaction.rs`, `src/server/request_log.rs`, `src/server/observation.rs`, `src/server/suggestion.rs` | What is kept from traffic, and how credentials are removed. |

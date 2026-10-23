@@ -4,7 +4,7 @@
 
 For what the [response builder](responses-and-templates.md) does not cover directly (calculations, values that depend on each other, data that is "always the same for the same input"…), each rule can run a short script written in a simple language called **Rhai**. The script's result then becomes a variable of the response body.
 
-> Rhai is a small scripting language (with a syntax close to JavaScript and Rust) that runs in a sandbox: it cannot reach the disk or the network, cannot `eval` code, and cannot use unbounded resources (at most 10,000 operations, 1 MB strings, 1,000-item arrays, 500-entry maps and 32 nested calls per run).
+> Rhai is a small scripting language (with a syntax close to JavaScript and Rust) that runs in a sandbox: it cannot reach the disk or the network, cannot `eval` code, and cannot use unbounded resources (per run, at most 10,000 operations, 500 ms, 64 variables at once and 32 nested calls; per value, at most 1 MiB of text, 1,000 array items and 500 map entries).
 > You do not need to know Rhai in depth: the functions below cover most needs, and the editor suggests them as you type.
 
 ## Three independent script slots
@@ -385,5 +385,6 @@ The same idea works on a **JSON** body with `parse_json(request.body).fieldName`
 - Scripts do **not** run for [Kafka](kafka-messaging.md) messages: they are for HTTP traffic.
 - "Validate the script" only checks syntax. An error that only happens at run time (missing function, division by zero…) or a logic error (a wrong computed value) is not detected by it: use the [rule tester](rule-tester-and-conflicts.md) against a captured request (see "When a script fails").
 - `parse_json(text)` returns an "empty" value (neither array nor map) when the text is not valid JSON, rather than failing the script: check the request's format when `parse_json(request.body)` does not behave as expected.
+- A script that reaches a limit stops, and its error names the limit and its value, for instance "Script stopped: an array of more than 1000 items, the limit of a value (line 3, position 12)". The limits of a value count everything it holds: the items of nested arrays, the entries of nested maps, the text of every string (and, for `parse_json` and `parse_xml_items`, of every key or field name). `parse_json`, `parse_xml_items`, `to_json`, `xml_element`, `replace` and `split` stop as soon as their result would break a limit, so a request body of several megabytes is read only as far as needed: a list of more than 1,000 items is refused, not truncated.
 - `parse_xml_items` captures one level of child fields per repeated element (see the SOAP example): no nested structure inside an article or line.
 - `parse_date` expects a **fixed width** for each token (`dd` and `MM` always 2 digits, `yyyy` always 4): a day or month written with one digit (`"5/3/2026"` with `"dd/MM/yyyy"`) is rejected as a runtime error, not read with a variable width.

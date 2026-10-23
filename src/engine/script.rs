@@ -1,6 +1,7 @@
 // Rule scripts, written in Rhai (https://rhai.rs).
 // Sandbox: a rule script comes from whoever can edit the configuration and runs on every matching request, so it
-// gets bounded CPU and memory (operations, call depth, string/array/map sizes) and no way out of the process:
+// gets a budget (script_budget.rs: operations, time, variables, call depth, size of each value) and no way out of the
+// process:
 // `import` cannot load files (Rhai's default resolver reads `.rhai` files from the disk), `eval` is disabled so that
 // validating a script really validates all the code it runs, and `print`/`debug` go to the debug log instead of
 // the server's stdout. The native functions registered below never panic, whatever their arguments.
@@ -40,12 +41,7 @@ impl Default for ScriptEngine {
 impl ScriptEngine {
     pub fn new() -> Self {
         let mut engine = rhai::Engine::new();
-        engine.set_max_operations(10_000);
-        engine.set_max_string_size(1_048_576);
-        engine.set_max_array_size(1_000);
-        engine.set_max_map_size(500);
-        engine.set_max_call_levels(32);
-        engine.set_max_expr_depths(64, 32);
+        super::script_budget::apply(&mut engine);
         engine.set_module_resolver(rhai::module_resolvers::DummyModuleResolver::new());
         engine.disable_symbol("eval");
         engine.on_print(|text| tracing::debug!(target: "mimicway::script", "print: {text}"));
@@ -125,36 +121,32 @@ impl ScriptEngine {
         // group codes. The seed can be any Rhai value (string, integer, boolean...): its text form is hashed.
         engine.register_fn(
             "seeded_int",
-            |seed: rhai::Dynamic, min: i64, max: i64| -> i64 {
-                seeded_int_impl(&seed.to_string(), min, max)
+            |seed: rhai::Dynamic, min: i64, max: i64| -> Result<i64, Box<rhai::EvalAltResult>> {
+                Ok(seeded_int_impl(&seed_text(&seed)?, min, max))
             },
         );
         engine.register_fn(
             "seeded_pick",
-            |seed: rhai::Dynamic, list: rhai::Array| -> rhai::Dynamic {
-                seeded_pick_impl(&seed.to_string(), &list)
+            |seed: rhai::Dynamic,
+             list: rhai::Array|
+             -> Result<rhai::Dynamic, Box<rhai::EvalAltResult>> {
+                Ok(seeded_pick_impl(&seed_text(&seed)?, &list))
             },
         );
 
         // JSON to navigable Rhai values (arrays, maps) and back. A script loops over `parse_json(request.body)` and returns,
         // for instance, `#{ items: to_json(out) }`, which the template inserts as text with {{script.items}}.
-        engine.register_fn("parse_json", |text: &str| -> rhai::Dynamic {
-            serde_json::from_str::<serde_json::Value>(text)
-                .map(|v| json_value_to_dynamic(&v))
-                .unwrap_or(rhai::Dynamic::UNIT)
-        });
-        engine.register_fn("to_json", |value: rhai::Dynamic| -> String {
-            serde_json::to_string(&dynamic_to_json_value(&value)).unwrap_or_default()
+        engine.register_fn("parse_json", super::script_json::parse);
+        engine.register_fn("to_json", |value: rhai::Dynamic| {
+            super::script_json::to_text(&value)
         });
 
         // The XML counterparts. XML has no obvious mapping to arrays and maps, so instead of a generic conversion,
         // parse_xml_items() extracts the elements repeated at a path (what the need is: a list of items), one level of
         // children each, and xml_element() builds an element, recursively, from a Rhai value. Paths use the same syntax as
         // XPath conditions: segments separated by "/", namespace prefixes ignored.
-        engine.register_fn("parse_xml_items", |text: &str, path: &str| -> rhai::Array {
-            parse_xml_items_impl(text, path)
-        });
-        engine.register_fn("xml_element", |tag: &str, value: rhai::Dynamic| -> String {
+        engine.register_fn("parse_xml_items", parse_xml_items_impl);
+        engine.register_fn("xml_element", |tag: &str, value: rhai::Dynamic| {
             xml_element_impl(tag, &value)
         });
 
@@ -167,7 +159,7 @@ impl ScriptEngine {
         self.engine
             .compile(script)
             .map(|_| ())
-            .map_err(|e| e.to_string())
+            .map_err(|e| super::script_budget::describe_parse(&e))
     }
 
     pub fn execute(&self, script: &str, context: &ScriptContext) -> Result<ScriptResult, String> {
@@ -199,24 +191,37 @@ impl ScriptEngine {
 
         scope.push("request", rhai::Dynamic::from_map(request));
 
-        let result = self
-            .engine
-            .eval_with_scope::<rhai::Dynamic>(&mut scope, script)
-            .map_err(|e| e.to_string())?;
+        let result = {
+            let _clock = super::script_budget::RunClock::start();
+            self.engine
+                .eval_with_scope::<rhai::Dynamic>(&mut scope, script)
+        }
+        .map_err(|e| super::script_budget::describe(&e))?;
 
+        let describe = |e: Box<rhai::EvalAltResult>| super::script_budget::describe(&e);
+        // Rhai checks a map's size when the map is read, not when an assignment adds a key: a map returned as it is
+        // was never checked.
+        self.engine
+            .ensure_data_size_within_limits(&result)
+            .map_err(describe)?;
         if result.is_map() {
             let map = result.cast::<rhai::Map>();
-            let fields: HashMap<String, String> = map
+            let fields = map
                 .into_iter()
-                .map(|(k, v)| (k.to_string(), dynamic_field_to_string(&v)))
-                .collect();
+                .map(|(k, v)| {
+                    Ok((
+                        k.to_string(),
+                        dynamic_field_to_string(&v).map_err(describe)?,
+                    ))
+                })
+                .collect::<Result<HashMap<String, String>, String>>()?;
             Ok(ScriptResult {
                 value: String::new(),
                 fields,
             })
         } else {
             Ok(ScriptResult {
-                value: result.to_string(),
+                value: super::script_budget::display(&result).map_err(describe)?,
                 fields: HashMap::new(),
             })
         }
@@ -398,6 +403,17 @@ fn seeded_int_impl(seed: &str, min: i64, max: i64) -> i64 {
     (min as i128 + (hash as u128 % range) as i128) as i64
 }
 
+// A text seed is hashed as it is, without a copy (a request body may be one); any other value through its text form,
+// which stops at the text limit.
+fn seed_text(seed: &rhai::Dynamic) -> Result<rhai::ImmutableString, Box<rhai::EvalAltResult>> {
+    if seed.is_string()
+        && let Ok(text) = seed.clone().into_immutable_string()
+    {
+        return Ok(text);
+    }
+    super::script_budget::display(seed).map(Into::into)
+}
+
 fn seeded_pick_impl(seed: &str, list: &rhai::Array) -> rhai::Dynamic {
     if list.is_empty() {
         return rhai::Dynamic::UNIT;
@@ -411,66 +427,11 @@ fn seeded_pick_impl(seed: &str, list: &rhai::Array) -> rhai::Dynamic {
 // scalar keeps its plain text. A map or an array (a picked object nested under a key, for instance
 // `#{ city: pick, id: uuid() }`) becomes JSON, because Rhai's own display form (`#{"k": "v"}`) is neither JSON
 // nor XML once pasted into a response.
-fn dynamic_field_to_string(value: &rhai::Dynamic) -> String {
+fn dynamic_field_to_string(value: &rhai::Dynamic) -> Result<String, Box<rhai::EvalAltResult>> {
     if value.is_map() || value.is_array() {
-        serde_json::to_string(&dynamic_to_json_value(value)).unwrap_or_default()
+        super::script_json::to_text(value)
     } else {
-        value.to_string()
-    }
-}
-
-// --- JSON <-> Dynamic (parse_json / to_json) ---
-
-fn json_value_to_dynamic(value: &serde_json::Value) -> rhai::Dynamic {
-    match value {
-        serde_json::Value::Null => rhai::Dynamic::UNIT,
-        serde_json::Value::Bool(b) => rhai::Dynamic::from(*b),
-        serde_json::Value::Number(n) => {
-            if let Some(i) = n.as_i64() {
-                rhai::Dynamic::from(i)
-            } else {
-                rhai::Dynamic::from(n.as_f64().unwrap_or_default())
-            }
-        }
-        serde_json::Value::String(s) => rhai::Dynamic::from(s.clone()),
-        serde_json::Value::Array(arr) => {
-            let items: rhai::Array = arr.iter().map(json_value_to_dynamic).collect();
-            rhai::Dynamic::from_array(items)
-        }
-        serde_json::Value::Object(obj) => {
-            let map: rhai::Map = obj
-                .iter()
-                .map(|(k, v)| (k.as_str().into(), json_value_to_dynamic(v)))
-                .collect();
-            rhai::Dynamic::from_map(map)
-        }
-    }
-}
-
-fn dynamic_to_json_value(value: &rhai::Dynamic) -> serde_json::Value {
-    if value.is_unit() {
-        serde_json::Value::Null
-    } else if value.is_bool() {
-        serde_json::Value::Bool(value.as_bool().unwrap_or_default())
-    } else if value.is_int() {
-        serde_json::Value::from(value.as_int().unwrap_or_default())
-    } else if value.is_float() {
-        serde_json::Number::from_f64(value.as_float().unwrap_or_default())
-            .map(serde_json::Value::Number)
-            .unwrap_or(serde_json::Value::Null)
-    } else if value.is_array() {
-        let arr = value.clone().into_array().unwrap_or_default();
-        serde_json::Value::Array(arr.iter().map(dynamic_to_json_value).collect())
-    } else if value.is_map() {
-        let map = value.clone().cast::<rhai::Map>();
-        let obj: serde_json::Map<String, serde_json::Value> = map
-            .iter()
-            .map(|(k, v)| (k.to_string(), dynamic_to_json_value(v)))
-            .collect();
-        serde_json::Value::Object(obj)
-    } else {
-        // Strings, and any type without a JSON counterpart, as text, like the map fields above.
-        serde_json::Value::String(value.to_string())
+        super::script_budget::display(value)
     }
 }
 
@@ -480,14 +441,19 @@ fn dynamic_to_json_value(value: &rhai::Dynamic) -> serde_json::Value {
 // namespace prefixes ignored, as in XPath conditions) as an array of maps: one entry per child element, keyed by
 // its tag, valued by its text. Only the first level of children is read, which fits flat SOAP items such as
 // `<product><sku>A</sku><qty>2</qty></product>`; deeper structure inside an item is ignored, since a generic XML
-// tree would be out of proportion with this need.
-fn parse_xml_items_impl(xml: &str, path: &str) -> rhai::Array {
+// tree would be out of proportion with this need. Extraction stops at the first item, field or byte of text over the
+// limits of a value (field names count with the text), rather than gathering a large body whole before Rhai checks it.
+fn parse_xml_items_impl(xml: &str, path: &str) -> Result<rhai::Array, Box<rhai::EvalAltResult>> {
+    use super::script_budget::{
+        ARRAY_TOO_LARGE, MAP_TOO_LARGE, MAX_ARRAY_SIZE, MAX_MAP_SIZE, MAX_STRING_SIZE,
+        TEXT_TOO_LARGE, too_large,
+    };
     use quick_xml::events::Event;
     use quick_xml::reader::Reader;
 
     let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
     let Some((item_tag, parent_segments)) = segments.split_last() else {
-        return rhai::Array::new();
+        return Ok(rhai::Array::new());
     };
 
     let mut reader = Reader::from_str(xml);
@@ -500,6 +466,7 @@ fn parse_xml_items_impl(xml: &str, path: &str) -> rhai::Array {
     let mut current_item = rhai::Map::new();
     let mut current_field = String::new();
     let mut current_text = String::new();
+    let (mut fields, mut text_bytes) = (0usize, 0usize);
 
     loop {
         match reader.read_event() {
@@ -531,11 +498,21 @@ fn parse_xml_items_impl(xml: &str, path: &str) -> rhai::Array {
                 if item_depth == 2
                     && let Some(text) = crate::engine::matcher::MatchEngine::xml_text(&event)
                 {
+                    if text_bytes + current_field.len() + current_text.len() + text.len()
+                        > MAX_STRING_SIZE
+                    {
+                        return Err(too_large(TEXT_TOO_LARGE));
+                    }
                     current_text.push_str(&text);
                 }
             }
             Ok(Event::End(_)) => {
                 if item_depth == 2 {
+                    fields += 1;
+                    if fields > MAX_MAP_SIZE {
+                        return Err(too_large(MAP_TOO_LARGE));
+                    }
+                    text_bytes += current_field.len() + current_text.trim().len();
                     current_item.insert(
                         std::mem::take(&mut current_field).into(),
                         rhai::Dynamic::from(current_text.trim().to_string()),
@@ -543,6 +520,9 @@ fn parse_xml_items_impl(xml: &str, path: &str) -> rhai::Array {
                     current_text.clear();
                     item_depth = 1;
                 } else if item_depth == 1 {
+                    if items.len() == MAX_ARRAY_SIZE {
+                        return Err(too_large(ARRAY_TOO_LARGE));
+                    }
                     items.push(rhai::Dynamic::from_map(std::mem::take(&mut current_item)));
                     item_depth = 0;
                 } else if item_depth > 2 {
@@ -559,7 +539,7 @@ fn parse_xml_items_impl(xml: &str, path: &str) -> rhai::Array {
             _ => {}
         }
     }
-    items
+    Ok(items)
 }
 
 // Builds `<tag>...</tag>` from a Rhai value:
@@ -568,37 +548,75 @@ fn parse_xml_items_impl(xml: &str, path: &str) -> rhai::Array {
 // - an array at the top repeats `tag` once per item (handy to build a list in one call);
 // - a scalar gives escaped text;
 // - unit (missing value) gives `<tag/>`.
-fn xml_element_impl(tag: &str, value: &rhai::Dynamic) -> String {
-    if value.is_map() {
-        let map = value.clone().cast::<rhai::Map>();
-        let mut inner = String::new();
-        for (k, v) in map.iter() {
-            if v.is_array() {
-                let arr = v.clone().into_array().unwrap_or_default();
-                for item in &arr {
-                    inner.push_str(&xml_element_impl(k.as_ref(), item));
+fn xml_element_impl(tag: &str, value: &rhai::Dynamic) -> Result<String, Box<rhai::EvalAltResult>> {
+    let mut out = String::new();
+    write_xml_element(&mut out, tag, value)?;
+    Ok(out)
+}
+
+// Every piece goes through `push_xml`, which refuses to grow the text past its limit: a tag repeated once per item
+// would otherwise build gigabytes (a long tag over a thousand items) before Rhai checks the result. Arrays and maps
+// are read in place, never copied.
+fn write_xml_element(
+    out: &mut String,
+    tag: &str,
+    value: &rhai::Dynamic,
+) -> Result<(), Box<rhai::EvalAltResult>> {
+    if let Some(map) = value.read_lock::<rhai::Map>() {
+        push_xml(out, &["<", tag, ">"])?;
+        for (key, item) in map.iter() {
+            match item.read_lock::<rhai::Array>() {
+                Some(array) => {
+                    for entry in array.iter() {
+                        write_xml_element(out, key, entry)?;
+                    }
                 }
-            } else {
-                inner.push_str(&xml_element_impl(k.as_ref(), v));
+                None => write_xml_element(out, key, item)?,
             }
         }
-        format!("<{tag}>{inner}</{tag}>")
-    } else if value.is_array() {
-        let arr = value.clone().into_array().unwrap_or_default();
-        arr.iter().map(|item| xml_element_impl(tag, item)).collect()
+        push_xml(out, &["</", tag, ">"])
+    } else if let Some(array) = value.read_lock::<rhai::Array>() {
+        for item in array.iter() {
+            write_xml_element(out, tag, item)?;
+        }
+        Ok(())
     } else if value.is_unit() {
-        format!("<{tag}/>")
+        push_xml(out, &["<", tag, "/>"])
     } else {
-        format!("<{tag}>{}</{tag}>", xml_escape_text(&value.to_string()))
+        push_xml(out, &["<", tag, ">"])?;
+        match value.read_lock::<rhai::ImmutableString>() {
+            Some(text) => push_xml_text(out, &text)?,
+            None => push_xml_text(out, &value.to_string())?,
+        }
+        push_xml(out, &["</", tag, ">"])
     }
 }
 
-fn xml_escape_text(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-        .replace('\'', "&apos;")
+fn push_xml(out: &mut String, parts: &[&str]) -> Result<(), Box<rhai::EvalAltResult>> {
+    let length: usize = parts.iter().map(|part| part.len()).sum();
+    if out.len() + length > super::script_budget::MAX_STRING_SIZE {
+        return Err(super::script_budget::too_large(
+            super::script_budget::TEXT_TOO_LARGE,
+        ));
+    }
+    parts.iter().for_each(|part| out.push_str(part));
+    Ok(())
+}
+
+fn push_xml_text(out: &mut String, text: &str) -> Result<(), Box<rhai::EvalAltResult>> {
+    for c in text.chars() {
+        let mut buffer = [0; 4];
+        let piece = match c {
+            '&' => "&amp;",
+            '<' => "&lt;",
+            '>' => "&gt;",
+            '"' => "&quot;",
+            '\'' => "&apos;",
+            _ => c.encode_utf8(&mut buffer),
+        };
+        push_xml(out, &[piece])?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]

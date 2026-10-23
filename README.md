@@ -31,7 +31,7 @@ Mimicway is meant for corporate networks where every outbound flow has to be jus
 | Who can reach it? | By default it listens on `127.0.0.1` only. Containers opt in to every interface with `BIND_ADDRESS=0.0.0.0`. |
 | Can a web page drive it? | No. The management API refuses cross-site writes, foreign CORS origins and, without authentication, requests addressed to a name other than `localhost`, an IP address or the names of `ALLOWED_HOSTS` (DNS rebinding). |
 | Does it keep secrets from the traffic? | No. `Authorization`, cookies and API-key headers are replaced by `[redacted]` in logs, observation and suggestions; URLs lose their credentials. |
-| Can a script escape? | Rhai scripts have no file, network or `eval` access and are bounded in operations, string size and depth. |
+| Can a script escape? | Rhai scripts have no file, network or `eval` access and are bounded in operations, time, variables, size of each value and depth. |
 | Unsafe code? | `#![forbid(unsafe_code)]`, tests included. |
 | Supply chain? | `Cargo.lock` and `package-lock.json` committed, CI actions and base images pinned by digest; `cargo-deny` (advisories, licenses, sources), `npm audit`, Trivy and gitleaks run in CI. Releases ship SBOMs, build provenance attestations and a signed image. |
 
@@ -249,7 +249,7 @@ Pipes: `lower`, `upper`, `trim`, `capitalize`, `first(n)`, `last(n)`, `substr(st
 
 Fake data kinds: `FirstName`, `LastName`, `Email`, `CompanyName`, `StreetName`, `DatePast`, `DateFuture`, `TimestampMs`, `BoolRandom`, `LoremSentence`, and French formats (`PhoneNumberFR`, `CityFR`, `PostcodeFR`, `FullAddressFR`, `CountryFR`, `IbanFR`, `Siren`, `Siret`). The visual builder adds integers in a range (`Integer{min,max}`).
 
-A rule can also run up to three [Rhai](https://rhai.rs) scripts (`pre_script`, `script`, `post_script`) that read the request and return a value or a map used by the template. Besides the language itself they get `random_int`, `seeded_int`, `seeded_pick` (same input, same answer), `uuid`, `fake`, `now_ms`, `now_iso`, `year`, `date_now`, `date_past`, `date_future`, `parse_date`, `parse_json`, `to_json`, `parse_xml_items` and `xml_element`. Scripts run in a sandbox: no file or network access, no `eval`, at most 10,000 operations, 1 MB strings, 1,000-item arrays, 32 call levels. Full reference with examples: [Rhai scripts](docs/en/rhai-scripts.md).
+A rule can also run up to three [Rhai](https://rhai.rs) scripts (`pre_script`, `script`, `post_script`) that read the request and return a value or a map used by the template. Besides the language itself they get `random_int`, `seeded_int`, `seeded_pick` (same input, same answer), `uuid`, `fake`, `now_ms`, `now_iso`, `year`, `date_now`, `date_past`, `date_future`, `parse_date`, `parse_json`, `to_json`, `parse_xml_items` and `xml_element`. Scripts run in a sandbox: no file or network access, no `eval`; a run gets at most 10,000 operations, 500 ms, 64 variables at once and 32 call levels, and each value at most 1 MiB of text, 1,000 array items and 500 map entries. A script that reaches a limit stops with an error that names it. Full reference with examples: [Rhai scripts](docs/en/rhai-scripts.md).
 
 ## Deployment
 
