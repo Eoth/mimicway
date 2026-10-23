@@ -580,3 +580,13 @@ Size S
 **What.** A `frontend/.npmrc` with `ignore-scripts=true`, and a check that the build, the tests and Playwright's browser download work without them.
 
 **Done when.** `npm ci` in `frontend/` runs no install script, and the documented steps pass from a clean clone.
+
+### E28. Limits of a script value that let a list of objects through
+
+Size S
+
+**Why.** Rhai counts the 500 map entries and the 1,000 array items of a value across everything it holds, nested maps and arrays included: a request whose JSON body lists 251 objects of two fields is refused by `parse_json` ("a map of more than 500 entries"), although the guide promises "1,000-item arrays, 500-entry maps", which a reader takes per array and per map. These limits were the only bound on the memory of a run; since a run stops at 16 MiB of memory counted by the allocator, they no longer need to be that tight.
+
+**What.** Raise the array, map and text limits of a value to what the memory budget of a run allows (for instance 10,000 items and 5,000 entries), measure the slowest and the largest legitimate script again, and describe the limits as totals per value in the guide (both languages) and the README.
+
+**Done when.** A JSON body of 1,000 objects of three fields parses and is written back within the time and memory budget of a run, the regression test of the budget still passes, and the documented limits say that they count a whole value.
