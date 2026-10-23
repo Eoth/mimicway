@@ -1,9 +1,10 @@
 // The live state of the TCP mocks: configuration, listener tasks and their status, behind one lock. Simpler than
 // MockStore: no write-behind and no backups, changes being rare and small (see `tcp::config`).
 //
-// `replace()` is the only way to change it (used by the API, server/api.rs): it writes the file atomically
-// (temporary file, then rename, as MockStore does), then stops the old listeners before starting the new ones, so
-// the TCP mocks change without restarting the process or touching the HTTP server.
+// `try_update()` is the only way to change it (used by the API, server/api.rs): under the write lock, it checks the
+// change against the current configuration, writes the file atomically (temporary file, then rename, as MockStore
+// does), then stops the old listeners before starting the new ones, so the TCP mocks change without restarting the
+// process or touching the HTTP server.
 use crate::tcp::config::TcpConfig;
 use crate::tcp::listener::{TcpServiceStatus, spawn_tcp_services};
 use std::path::{Path, PathBuf};
@@ -49,14 +50,25 @@ impl TcpRuntime {
         self.inner.read().await.statuses.clone()
     }
 
-    /// Replaces the whole configuration, writes it, then restarts every listener (no per-service diff: there are a
-    /// handful, and a full restart is cheap and simpler to get right). Each old task is aborted AND awaited: awaiting an
-    /// aborted task returns only once it and its `TcpListener` are dropped, so the port is free before it is bound again.
-    pub async fn replace(&self, new_config: TcpConfig) -> std::io::Result<()> {
+    /// Applies `change` to a copy of the configuration; when it accepts, writes the result and restarts every listener
+    /// (no per-service diff: there are a handful, and a full restart is cheap and simpler to get right). Check, write and
+    /// restart run under the write lock: two changes at the same time are each checked against what the other left,
+    /// not both against one snapshot, where the second replaced the first without a word. A refusal changes nothing.
+    /// Each old task is aborted AND awaited: awaiting an aborted task returns only once it and its `TcpListener` are
+    /// dropped, so the port is free before it is bound again.
+    pub async fn try_update<T, E>(
+        &self,
+        change: impl FnOnce(&mut TcpConfig) -> Result<T, E>,
+    ) -> std::io::Result<Result<T, E>> {
+        let mut guard = self.inner.write().await;
+        let mut new_config = guard.config.clone();
+        let accepted = match change(&mut new_config) {
+            Ok(accepted) => accepted,
+            Err(refusal) => return Ok(Err(refusal)),
+        };
         let yaml = serde_yaml::to_string(&new_config).map_err(std::io::Error::other)?;
         Self::write_to_disk(&TcpConfig::config_file(&self.data_dir), &yaml)?;
 
-        let mut guard = self.inner.write().await;
         for handle in guard.handles.drain(..) {
             handle.abort();
             let _ = handle.await;
@@ -65,7 +77,17 @@ impl TcpRuntime {
         guard.config = new_config;
         guard.handles = handles;
         guard.statuses = statuses;
-        Ok(())
+        Ok(Ok(accepted))
+    }
+
+    #[cfg(test)]
+    async fn replace(&self, new_config: TcpConfig) -> std::io::Result<()> {
+        self.try_update(|config| {
+            *config = new_config;
+            Ok::<(), std::convert::Infallible>(())
+        })
+        .await
+        .map(|_| ())
     }
 
     fn write_to_disk(path: &Path, yaml: &str) -> std::io::Result<()> {

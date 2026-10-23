@@ -15,9 +15,9 @@
 //   - SMTP: the same need for several exchanges per connection, with a simpler text framing.
 //   - Any protocol with state across messages.
 //
-// Reconfigured live through the API (`/api/tcp/services`, server/api.rs): `TcpRuntime::replace()` writes the new
-// configuration, then restarts every TCP listener (no per-service diff: there are a handful of them). The HTTP
-// server is never affected.
+// Reconfigured live through the API (`/api/tcp/services`, server/api.rs): `TcpRuntime::try_update()` checks and
+// writes the new configuration under one lock, then restarts every TCP listener (no per-service diff: there are a
+// handful of them). The HTTP server is never affected.
 pub mod config;
 pub mod hex;
 pub mod listener;

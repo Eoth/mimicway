@@ -769,26 +769,20 @@ async fn list_tcp_services(
 async fn create_tcp_service(
     State(state): State<AppState>,
     Extension(user): Extension<AuthUser>,
-    Json(service): Json<crate::tcp::config::TcpService>,
+    Json(mut service): Json<crate::tcp::config::TcpService>,
 ) -> Result<(StatusCode, Json<crate::tcp::config::TcpService>), AppError> {
     if state.auth_config.enabled {
         require_super_admin(&user)?;
     }
+    // Stored as checked: `svc ` would otherwise sit next to `svc`.
+    service.name = service.name.trim().to_string();
 
-    let mut config = state.tcp_runtime.snapshot_config().await;
-
-    if let Err(e) = crate::tcp::validation::validate_tcp_service(&service, &config.services) {
-        tracing::warn!(service = %service.name, field = %e.field, reason = %e.message, "tcp service rejected");
-        return Err(AppError::Validation(e.message));
-    }
-
-    config.services.push(service.clone());
-    state
-        .tcp_runtime
-        .replace(config)
-        .await
-        .map_err(|e| AppError::Validation(e.to_string()))?;
-
+    change_tcp_services(&state, |services| {
+        check_tcp_service(&service, services)?;
+        services.push(service.clone());
+        Ok(())
+    })
+    .await?;
     Ok((StatusCode::CREATED, Json(service)))
 }
 
@@ -797,38 +791,30 @@ async fn update_tcp_service(
     State(state): State<AppState>,
     Extension(user): Extension<AuthUser>,
     Path(name): Path<String>,
-    Json(service): Json<crate::tcp::config::TcpService>,
+    Json(mut service): Json<crate::tcp::config::TcpService>,
 ) -> Result<Json<crate::tcp::config::TcpService>, AppError> {
     if state.auth_config.enabled {
         require_super_admin(&user)?;
     }
+    service.name = service.name.trim().to_string();
 
-    let mut config = state.tcp_runtime.snapshot_config().await;
-    let Some(idx) = config.services.iter().position(|s| s.name == name) else {
-        return Err(AppError::NotFound);
-    };
-
-    // Leave the service being replaced out of the name and port checks, or a PUT that changes nothing would conflict
-    // with itself.
-    let others: Vec<_> = config
-        .services
-        .iter()
-        .enumerate()
-        .filter(|(i, _)| *i != idx)
-        .map(|(_, s)| s.clone())
-        .collect();
-    if let Err(e) = crate::tcp::validation::validate_tcp_service(&service, &others) {
-        tracing::warn!(service = %name, field = %e.field, reason = %e.message, "tcp service rejected");
-        return Err(AppError::Validation(e.message));
-    }
-
-    config.services[idx] = service.clone();
-    state
-        .tcp_runtime
-        .replace(config)
-        .await
-        .map_err(|e| AppError::Validation(e.to_string()))?;
-
+    change_tcp_services(&state, |services| {
+        let Some(idx) = services.iter().position(|s| s.name == name) else {
+            return Err(AppError::NotFound);
+        };
+        // Leave the service being replaced out of the name and port checks, or a PUT that changes nothing would
+        // conflict with itself.
+        let others: Vec<_> = services
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| *i != idx)
+            .map(|(_, s)| s.clone())
+            .collect();
+        check_tcp_service(&service, &others)?;
+        services[idx] = service.clone();
+        Ok(())
+    })
+    .await?;
     Ok(Json(service))
 }
 
@@ -842,20 +828,41 @@ async fn delete_tcp_service(
         require_super_admin(&user)?;
     }
 
-    let mut config = state.tcp_runtime.snapshot_config().await;
-    let before = config.services.len();
-    config.services.retain(|s| s.name != name);
-    if config.services.len() == before {
-        return Err(AppError::NotFound);
-    }
+    change_tcp_services(&state, |services| {
+        let before = services.len();
+        services.retain(|s| s.name != name);
+        if services.len() == before {
+            return Err(AppError::NotFound);
+        }
+        Ok(())
+    })
+    .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
 
+// Checks and applies a change of the TCP mocks under the runtime's lock, so that two changes at the same time never
+// both pass a check against the same state (see `TcpRuntime::try_update`).
+#[cfg(feature = "tcp-mock")]
+async fn change_tcp_services(
+    state: &AppState,
+    change: impl FnOnce(&mut Vec<crate::tcp::config::TcpService>) -> Result<(), AppError>,
+) -> Result<(), AppError> {
     state
         .tcp_runtime
-        .replace(config)
+        .try_update(|config| change(&mut config.services))
         .await
-        .map_err(|e| AppError::Validation(e.to_string()))?;
+        .map_err(|e| AppError::Validation(e.to_string()))?
+}
 
-    Ok(StatusCode::NO_CONTENT)
+#[cfg(feature = "tcp-mock")]
+fn check_tcp_service(
+    service: &crate::tcp::config::TcpService,
+    others: &[crate::tcp::config::TcpService],
+) -> Result<(), AppError> {
+    crate::tcp::validation::validate_tcp_service(service, others).map_err(|e| {
+        tracing::warn!(service = %service.name, field = %e.field, reason = %e.message, "tcp service rejected");
+        AppError::Validation(e.message)
+    })
 }
 
 // --------------- Services ---------------
@@ -1936,6 +1943,9 @@ mod authz_tests;
 
 #[cfg(test)]
 mod suggestion_tests;
+
+#[cfg(all(test, feature = "tcp-mock"))]
+mod tcp_tests;
 
 #[cfg(test)]
 mod uniqueness_tests;

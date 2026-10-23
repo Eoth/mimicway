@@ -34,7 +34,8 @@ pub fn validate_tcp_service(
             ),
         );
     }
-    if existing.iter().any(|s| s.name == name) {
+    // Trimmed on both sides: a name stored with spaces before names were trimmed still takes its slot.
+    if existing.iter().any(|s| s.name.trim() == name) {
         return error(
             "name",
             tr("A TCP service named \"{0}\" already exists.", &[&name]),
@@ -135,6 +136,16 @@ mod tests {
         let mut s = valid_service();
         s.listen_port = 9001;
         let e = validate_tcp_service(&s, &existing).unwrap_err();
+        assert_eq!(e.field, "name");
+    }
+
+    #[test]
+    fn a_name_stored_with_spaces_still_takes_its_slot() {
+        let mut stored = valid_service();
+        stored.name = "svc ".into();
+        let mut s = valid_service();
+        s.listen_port = 9001;
+        let e = validate_tcp_service(&s, &[stored]).unwrap_err();
         assert_eq!(e.field, "name");
     }
 
