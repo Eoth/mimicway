@@ -69,13 +69,13 @@ test.describe('Config backups & restore', () => {
   // (require_super_admin_rejects_non_admin, src/server/api.rs), and BackupManager.test.js how the interface reports it.
 
   test('UI restore flow: click through to a restored config', async ({ page, request }) => {
+    // Ordinary changes share one backup per burst, so the backup is the one an import makes: replacing the whole
+    // configuration always backs up the state it overwrites, here the one with the target service. The restore must
+    // undo the import.
+    await request.post(`${API}/services`, { data: validService('restore-target-svc') });
     const targetFilename = await newBackupFilename(request, () =>
-      request.post(`${API}/services`, { data: validService('restore-target-svc') }),
+      request.put(`${API}/config`, { data: { services: [validService('restore-decoy-svc')], groups: [] } }),
     );
-
-    // That backup holds the configuration from before the write, with no service. A second write changes the current
-    // one, which the restore must undo.
-    await request.post(`${API}/services`, { data: validService('restore-decoy-svc') });
 
     await page.goto('/');
     await page.waitForLoadState('networkidle');
@@ -98,7 +98,7 @@ test.describe('Config backups & restore', () => {
     await expect(async () => {
       const res = await request.get(`${API}/services`);
       const services = await res.json();
-      expect(services.length).toBe(0);
+      expect(services.map((svc) => svc.name)).toEqual(['restore-target-svc']);
     }).toPass();
   });
 

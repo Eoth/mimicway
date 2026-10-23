@@ -167,6 +167,7 @@ Everything is set through environment variables; none is required.
 | `STATIC_DIR` | *(the UI embedded in the binary)* | A directory to serve the UI from instead, for UI development or a customized UI. A binary built without the UI reads `./frontend/dist`. |
 | `RUST_LOG` | `mimicway=info` | Log filter, for example `mimicway=debug`. |
 | `BACKUP_MAX_COUNT` | `5` | Backups kept in `{DATA_PATH}/backups/` before rotation. |
+| `BACKUP_MIN_INTERVAL_SECS` | `60` | Changes coming within this many seconds of the last backup share it; `0` backs up every change. |
 | `API_BASE_URL` | *(empty)* | Where the UI calls the API when they are served from different origins; see [Split UI and API](#split-ui-and-api). |
 | `CORS_ALLOWED_ORIGINS` | *(empty)* | Comma-separated origins allowed to call the management API from a browser, besides the UI's own origin. Needed only with `API_BASE_URL`. Mocked services always answer any origin. |
 | `MAX_REQUESTS_IN_FLIGHT` | `1024` | Requests handled at once; the next one gets 503 with `Retry-After: 1` at once instead of waiting. `/api/health` is never refused. |
@@ -305,7 +306,7 @@ Mimicway does not terminate TLS; put it behind your usual reverse proxy or ingre
 
 ## Backups
 
-Before each change, the previous `mock-config.yaml` is copied to `{DATA_PATH}/backups/` (the last `BACKUP_MAX_COUNT` are kept). A reset also writes a copy to `backups/protected/`, kept 30 days whatever the rotation. Changes apply in memory at once and reach the disk in the background; on `SIGTERM` or Ctrl+C the server finishes writing before it exits.
+Before a change, the previous `mock-config.yaml` is copied to `{DATA_PATH}/backups/` (the last `BACKUP_MAX_COUNT` are kept). Changes coming in a burst share one copy, taken before the first of them: a change backs up only when the last backup is `BACKUP_MIN_INTERVAL_SECS` old (60 by default), so that an action sending several requests, such as merging an import, does not push the older copies out. Replacing the whole configuration (restore, import that replaces, reset) always backs up first. A change that leaves the configuration as it is writes nothing, and a copy identical to the newest one is not made again. A reset also writes a copy to `backups/protected/`, kept 30 days whatever the rotation. Changes apply in memory at once and reach the disk in the background; on `SIGTERM` or Ctrl+C the server finishes writing before it exits.
 
 Restore from the UI (Backups button, super-admins), or by hand: stop Mimicway, copy a backup over `mock-config.yaml`, start it again.
 

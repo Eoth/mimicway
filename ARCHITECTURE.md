@@ -30,7 +30,7 @@ Mimicway is one Rust program (`src/`, built with Cargo) that also serves its web
 | Management API | `src/server/api.rs` | Every `/api` endpoint, each with its authorization check; `validation.rs` checks names, reserved routes, paths and expressions before anything is stored. |
 | Service traffic | `src/server/intercept.rs` | Finds the service from the path (`/{name}/...` or `/{group code}/{name}/...`), asks the matcher for the first rule that applies, then renders the mock response or forwards the request. |
 | Engine | `src/engine/` | `matcher.rs` evaluates conditions on paths, query, headers, JSON, XML and forms; `renderer.rs` and `template.rs` build responses (fake data, chaos); `script.rs` runs Rhai scripts in a sandbox, within the limits of `script_budget.rs`; `proxy.rs` is the HTTP client of proxying and of the availability check (`server/ping.rs`). |
-| Store | `src/store/` | The configuration (services and groups): reads take a snapshot, changes swap in a modified copy, and a background task writes the YAML file; backups before each overwrite. |
+| Store | `src/store/` | The configuration (services and groups): reads take a snapshot, changes swap in a modified copy, and a background task writes the YAML file; a backup before an overwrite, one per burst of changes. |
 | Authentication | `src/auth/` | Local validation of Keycloak tokens against the realm's keys (`keycloak.rs`), group permissions (`mod.rs`). Off unless `AUTH_ENABLED=true`. |
 | Observation and suggestions | `src/server/observation.rs`, `suggestion.rs` | On demand, bounded copies of what a proxied service exchanges, and the rules suggested from them; memory only. |
 | Request log | `src/server/request_log.rs`, `redaction.rs` | The last 200 requests, in memory, credential headers replaced by `[redacted]`. |
@@ -52,7 +52,7 @@ Mimicway is one Rust program (`src/`, built with Cargo) that also serves its web
 
 1. Authentication (when enabled) identifies the user; the handler checks that user's right on the service or group concerned.
 2. The new configuration is validated against the current one under the store's write lock (`try_update`), so two changes cannot interleave.
-3. Under the same lock, the previous file is copied to `backups/` (rotated, `BACKUP_MAX_COUNT`) and the new snapshot is swapped in: every later request sees it at once.
+3. Under the same lock, a change that alters nothing stops here; otherwise the previous file is copied to `backups/` when the last copy is `BACKUP_MIN_INTERVAL_SECS` old (always for a whole replacement; rotated, `BACKUP_MAX_COUNT`), and the new snapshot is swapped in: every later request sees it at once.
 4. The YAML file is written by the background writer (temporary file, then rename), never by the request.
 
 ## Properties the design keeps

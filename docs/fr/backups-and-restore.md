@@ -2,13 +2,17 @@
 
 # Sauvegardes et restauration
 
-Mimicway protège votre configuration contre les erreurs de manipulation : avant chaque changement, l'état précédent est sauvegardé, si bien que vous pouvez toujours revenir en arrière.
+Mimicway protège votre configuration contre les erreurs de manipulation : avant les changements, l'état précédent est sauvegardé, si bien que vous pouvez toujours revenir en arrière.
 
 ## Sauvegardes automatiques
 
-Avant **chaque changement** de la configuration (création, modification ou suppression d'un service ou d'une règle, restauration d'une sauvegarde…), l'état précédent est copié dans un historique de sauvegardes, **sans aucune action de votre part**.
+Avant un changement de la configuration (création, modification ou suppression d'un service ou d'une règle, restauration d'une sauvegarde…), l'état précédent est copié dans un historique de sauvegardes, **sans aucune action de votre part**.
 
-Seules les sauvegardes les plus récentes sont conservées (`BACKUP_MAX_COUNT`, 5 par défaut) : les plus anciennes sont retirées à mesure que de nouvelles arrivent.
+Seules les sauvegardes les plus récentes sont conservées (`BACKUP_MAX_COUNT`, 5 par défaut) : les plus anciennes sont retirées à mesure que de nouvelles arrivent. Pour qu'elles couvrent plus que les derniers clics :
+
+- **Les changements faits en rafale partagent une sauvegarde**, prise avant le premier d'entre eux. Un changement n'est sauvegardé que si la dernière sauvegarde a une minute (`BACKUP_MIN_INTERVAL_SECS`, 60 par défaut ; `0` sauvegarde chaque changement). Fusionner un import, qui envoie une requête par groupe et par service, fait au plus une sauvegarde. Revenir à une sauvegarde annule donc tous les changements faits dans la minute qui l'a suivie.
+- **Restaurer une sauvegarde, importer un fichier qui remplace tout et réinitialiser sauvegardent toujours d'abord**, à tout moment.
+- **Enregistrer sans rien changer n'écrit rien**, et une sauvegarde identique à la plus récente n'est pas faite deux fois.
 
 ## Restaurer une sauvegarde
 

@@ -2,13 +2,17 @@
 
 # Backups and restore
 
-Mimicway protects your configuration against mistakes: before each change, the previous state is saved, so you can always go back.
+Mimicway protects your configuration against mistakes: before changes, the previous state is saved, so you can always go back.
 
 ## Automatic backups
 
-Before **every change** to the configuration (creating, editing or deleting a service or a rule, restoring a backup…), the previous state is copied to a backup history, **without any action on your part**.
+Before a change to the configuration (creating, editing or deleting a service or a rule, restoring a backup…), the previous state is copied to a backup history, **without any action on your part**.
 
-Only the most recent backups are kept (`BACKUP_MAX_COUNT`, 5 by default): older ones are removed as new ones arrive.
+Only the most recent backups are kept (`BACKUP_MAX_COUNT`, 5 by default): older ones are removed as new ones arrive. So that they cover more than the last few clicks:
+
+- **Changes made in a burst share one backup**, taken before the first of them. A change is backed up only when the last backup is a minute old (`BACKUP_MIN_INTERVAL_SECS`, 60 by default; `0` backs up every change). Merging an import, which sends one request per group and per service, makes one backup at most. Going back to a backup therefore undoes every change made in the minute that followed it.
+- **Restoring a backup, importing a file that replaces everything and a full reset always back up first**, whenever they happen.
+- **Saving without changing anything writes nothing**, and a backup identical to the newest one is not made twice.
 
 ## Restoring a backup
 

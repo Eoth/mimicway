@@ -21,7 +21,7 @@ Before anything changes, the dialog says how many services and groups the file h
 
 ![The import dialog for a file holding 1 service and 1 group: Replace everything, Merge (add what is missing) or Cancel](screenshots/administration-import-dialog.png)
 
-> As for any change, an [automatic backup](backups-and-restore.md) of the previous state is written before the import: a mistake can be undone.
+> An [automatic backup](backups-and-restore.md) of the previous state is written before the import (a merge shares it with the changes of the same minute): a mistake can be undone.
 
 ## Full reset
 

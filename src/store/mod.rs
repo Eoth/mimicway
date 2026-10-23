@@ -5,10 +5,14 @@
 // then rename) is left to a background task (write-behind, see WriterHandle), so a request never waits on disk I/O.
 //
 // Backups: before the file is overwritten, the previous content is copied to {data_dir}/backups/ and only the
-// newest BACKUP_MAX_COUNT copies are kept (5 by default; the reference Kubernetes volume is small). It happens as
-// part of the change itself, with no timer. The copy is made synchronously, under the write lock and BEFORE the new
-// content is queued for writing (prepare_and_backup): a change is never accepted without its backup, which is the
-// whole point of the rollback.
+// newest BACKUP_MAX_COUNT copies are kept (5 by default; the reference Kubernetes volume is small). One copy per burst
+// of changes: a change backs up only when the last backup is older than BACKUP_MIN_INTERVAL_SECS (60 by default), so
+// that an action sending several requests (an import merged service by service sent eight) does not push every older
+// copy out of the few kept. A change that leaves the configuration as it is writes nothing, and a copy identical to
+// the newest one is not made again. Replacing the whole configuration (restore, import, reset) always backs up first.
+// The copy is made under the write lock and BEFORE the new content is queued for writing (prepare_and_backup), after
+// the writes already queued have reached the file: a change is never accepted without its backup, which is the whole
+// point of the rollback, and the copy holds the last state, not an older one still on disk.
 //
 // A full reset first copies the configuration to backups/protected/ (backup_before_reset). Rotation only looks at
 // files directly in backups/, so later changes can never push that copy out. It expires after 30 days
@@ -18,6 +22,7 @@ use crate::models::MockConfig;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, Instant};
 use tokio::sync::{RwLock, mpsc, oneshot};
 
 static BACKUP_SEQ: AtomicU64 = AtomicU64::new(0);
@@ -26,6 +31,19 @@ const PROTECTED_BACKUP_MAX_AGE_MS: u128 = 30 * 24 * 60 * 60 * 1000;
 
 /// Rotated backups kept in `backups/` when `BACKUP_MAX_COUNT` is unset.
 const DEFAULT_BACKUP_MAX_COUNT: usize = 5;
+
+/// Seconds between two backups of ordinary changes when `BACKUP_MIN_INTERVAL_SECS` is unset. A minute holds the
+/// requests of one action, however many it sends, and with five backups kept, at least five minutes of editing.
+const DEFAULT_BACKUP_MIN_INTERVAL_SECS: u64 = 60;
+
+/// When a write backs up the file it overwrites.
+#[derive(Clone, Copy, PartialEq)]
+enum BackupWhen {
+    /// An ordinary change: once per burst (`backup_min_interval`).
+    OncePerBurst,
+    /// The whole configuration replaced (restore, import, reset): every time.
+    Always,
+}
 
 // The write queue is bounded on purpose: write-behind exists so that requests stop waiting on disk I/O, not to let
 // a queue grow without limit during a burst. Each change is one job (no batching), and 64 jobs absorb realistic
@@ -136,6 +154,18 @@ impl WriterHandle {
         }
     }
 
+    /// Whether the last write failed, so that the file may hold less than memory: a change that leaves the
+    /// configuration as it is still writes then, which is how saving again retries after a disk error.
+    fn last_write_failed(&self) -> bool {
+        let last_ok = self.stats.last_write_ok_ms.load(Ordering::Relaxed);
+        self.stats
+            .last_error
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+            .is_some_and(|e| e.at_ms >= last_ok)
+    }
+
     fn status(&self) -> WriteQueueStatus {
         let pending = WRITE_QUEUE_CAPACITY.saturating_sub(self.tx.capacity());
         let last_write_ok_ms = match self.stats.last_write_ok_ms.load(Ordering::Relaxed) {
@@ -160,6 +190,9 @@ pub struct MockStore {
     /// against (`BackupDirs`).
     root: PathBuf,
     writer: WriterHandle,
+    backup_min_interval: Duration,
+    /// When this process last backed up the file; None until the first change, which always backs up.
+    last_backup: Arc<std::sync::Mutex<Option<Instant>>>,
 }
 
 impl MockStore {
@@ -172,7 +205,16 @@ impl MockStore {
             path,
             root,
             writer: WriterHandle::spawn(),
+            backup_min_interval: Self::backup_min_interval_in(crate::settings::env),
+            last_backup: Arc::default(),
         })
+    }
+
+    /// The same store, backing up ordinary changes at most once per `interval` (tests: 0 backs up every change).
+    #[cfg(test)]
+    fn with_backup_min_interval(mut self, interval: Duration) -> Self {
+        self.backup_min_interval = interval;
+        self
     }
 
     /// The directory of a configuration file, resolved on disk (symbolic links followed).
@@ -214,6 +256,14 @@ impl MockStore {
         crate::settings::number(lookup, "BACKUP_MAX_COUNT", DEFAULT_BACKUP_MAX_COUNT)
     }
 
+    fn backup_min_interval_in(lookup: impl Fn(&str) -> Option<String>) -> Duration {
+        Duration::from_secs(crate::settings::number(
+            lookup,
+            "BACKUP_MIN_INTERVAL_SECS",
+            DEFAULT_BACKUP_MIN_INTERVAL_SECS,
+        ))
+    }
+
     pub async fn load_or_init(data_dir: &Path) -> Result<Self, StoreError> {
         let file = Self::config_file(data_dir);
         std::fs::create_dir_all(data_dir).map_err(|e| StoreError::Io(e.to_string()))?;
@@ -240,6 +290,8 @@ impl MockStore {
             path: file,
             root,
             writer: WriterHandle::spawn(),
+            backup_min_interval: Self::backup_min_interval_in(crate::settings::env),
+            last_backup: Arc::default(),
         })
     }
 
@@ -260,11 +312,15 @@ impl MockStore {
     }
 
     /// Applies the change in memory at once and leaves the disk write to the background task. The write lock is held
-    /// from the synchronous backup until the job is queued, so concurrent changes reach the single-consumer queue in
-    /// the order they were applied, and the disk sees them in that order.
+    /// from the backup until the job is queued, so concurrent changes reach the single-consumer queue in the order they
+    /// were applied, and the disk sees them in that order. Replacing the whole configuration always backs up first;
+    /// replacing it with itself writes nothing.
     pub async fn replace(&self, config: MockConfig) -> Result<(), StoreError> {
         let mut guard = self.config.write().await;
-        let yaml = self.prepare_and_backup(&config)?;
+        if **guard == config && !self.writer.last_write_failed() {
+            return Ok(());
+        }
+        let yaml = self.prepare_and_backup(&config, BackupWhen::Always).await?;
         *guard = Arc::new(config);
         self.writer.send_write(self.path.clone(), yaml).await;
         Ok(())
@@ -277,7 +333,12 @@ impl MockStore {
         let mut guard = self.config.write().await;
         let mut cfg = (**guard).clone();
         f(&mut cfg);
-        let yaml = self.prepare_and_backup(&cfg)?;
+        if cfg == **guard && !self.writer.last_write_failed() {
+            return Ok(guard.clone());
+        }
+        let yaml = self
+            .prepare_and_backup(&cfg, BackupWhen::OncePerBurst)
+            .await?;
         *guard = Arc::new(cfg);
         self.writer.send_write(self.path.clone(), yaml).await;
         Ok(guard.clone())
@@ -295,7 +356,12 @@ impl MockStore {
         if let Err(refusal) = f(&mut cfg) {
             return Ok(Err(refusal));
         }
-        let yaml = self.prepare_and_backup(&cfg)?;
+        if cfg == **guard && !self.writer.last_write_failed() {
+            return Ok(Ok(guard.clone()));
+        }
+        let yaml = self
+            .prepare_and_backup(&cfg, BackupWhen::OncePerBurst)
+            .await?;
         *guard = Arc::new(cfg);
         self.writer.send_write(self.path.clone(), yaml).await;
         Ok(Ok(guard.clone()))
@@ -433,19 +499,33 @@ impl MockStore {
         Ok(())
     }
 
-    /// The synchronous part of a write: serializes to YAML, purges expired protected backups, then backs up the current
-    /// file before anything replaces it. Runs under the write lock, before the asynchronous write is queued (see the
-    /// top of this file: the backup always comes first).
-    fn prepare_and_backup(&self, config: &MockConfig) -> Result<String, StoreError> {
+    /// The part of a write done before it is queued: serializes to YAML, purges expired protected backups, then backs
+    /// up the current file when `when` says so. Runs under the write lock (see the top of this file: the backup always
+    /// comes first). Before copying, it waits for the writes already queued: without that, a change made a moment
+    /// before a restore was still only in memory, and the restore's backup held the state before it.
+    async fn prepare_and_backup(
+        &self,
+        config: &MockConfig,
+        when: BackupWhen,
+    ) -> Result<String, StoreError> {
         let yaml = serde_yaml::to_string(config).map_err(|e| StoreError::Yaml(e.to_string()))?;
 
         let dirs = BackupDirs::open(&self.root, &self.path)?;
         Self::purge_expired_protected_backups(&dirs.protected)?;
-        if let Some(file) = &dirs.config_file {
+        if let Some(file) = &dirs.config_file
+            && self.backup_due(when)
+        {
+            self.writer.flush().await;
             Self::backup_before_overwrite(file, &dirs.backups)?;
+            *self.last_backup.lock().unwrap_or_else(|e| e.into_inner()) = Some(Instant::now());
         }
 
         Ok(yaml)
+    }
+
+    fn backup_due(&self, when: BackupWhen) -> bool {
+        let last = *self.last_backup.lock().unwrap_or_else(|e| e.into_inner());
+        when == BackupWhen::Always || last.is_none_or(|at| at.elapsed() >= self.backup_min_interval)
     }
 
     /// The asynchronous part: writes the serialized YAML through a temporary file and a rename. Only the background
@@ -497,28 +577,49 @@ impl MockStore {
     }
 
     /// Copies the current configuration file (`file`, resolved by `BackupDirs`) into `backups_dir` before it is
-    /// overwritten, then deletes the oldest copies beyond `backup_max_count()`.
+    /// overwritten, unless the newest copy already holds the same bytes, then deletes the oldest copies beyond
+    /// `backup_max_count()`.
     fn backup_before_overwrite(file: &Path, backups_dir: &Path) -> Result<(), StoreError> {
+        let mut files = Self::backup_files(backups_dir)?;
+        if let Some(newest) = files.last()
+            && Self::same_bytes(file, newest)
+        {
+            return Ok(());
+        }
         let seq = BACKUP_SEQ.fetch_add(1, Ordering::Relaxed);
-        let backup_name = format!("mock-config-{}-{:06}.yaml", Self::now_ms(), seq);
-        std::fs::copy(file, backups_dir.join(&backup_name))
-            .map_err(|e| StoreError::Io(e.to_string()))?;
+        let backup = backups_dir.join(format!("mock-config-{}-{:06}.yaml", Self::now_ms(), seq));
+        std::fs::copy(file, &backup).map_err(|e| StoreError::Io(e.to_string()))?;
+        files.push(backup);
 
-        Self::rotate_backups(backups_dir)?;
-        Ok(())
+        Self::rotate_backups(&files)
     }
 
-    fn rotate_backups(backups_dir: &Path) -> Result<(), StoreError> {
+    /// The files directly in `backups_dir`, oldest first: names hold a fixed-width timestamp and sequence, so sorting
+    /// them as text sorts them by date.
+    fn backup_files(backups_dir: &Path) -> Result<Vec<PathBuf>, StoreError> {
         let mut files: Vec<PathBuf> = std::fs::read_dir(backups_dir)
             .map_err(|e| StoreError::Io(e.to_string()))?
             .filter_map(|entry| entry.ok())
+            .filter(|entry| entry.file_type().is_ok_and(|t| t.is_file()))
             .map(|entry| entry.path())
-            .filter(|p| p.is_file())
             .collect();
-
-        // Names hold a fixed-width timestamp and sequence: sorting them as text sorts them by date (newest last).
         files.sort();
+        Ok(files)
+    }
 
+    /// Whether two files hold the same bytes. The sizes are compared first, so that two different configurations, the
+    /// usual case, cost no read; a file that cannot be read counts as different, and the copy is made.
+    fn same_bytes(a: &Path, b: &Path) -> bool {
+        let len = |p: &Path| std::fs::metadata(p).map(|m| m.len()).ok();
+        match (len(a), len(b)) {
+            (Some(x), Some(y)) if x == y => {}
+            _ => return false,
+        }
+        matches!((std::fs::read(a), std::fs::read(b)), (Ok(x), Ok(y)) if x == y)
+    }
+
+    /// Deletes the oldest of `files` (oldest first) beyond `backup_max_count()`.
+    fn rotate_backups(files: &[PathBuf]) -> Result<(), StoreError> {
         let max = Self::backup_max_count();
         if files.len() > max {
             for old in &files[..files.len() - max] {
@@ -800,6 +901,110 @@ mod tests {
         std::fs::remove_dir_all(&dir).ok();
     }
 
+    /// The files directly in `backups/`, by name (oldest first), with their content.
+    fn backup_contents(dir: &Path) -> Vec<(String, String)> {
+        let Ok(entries) = std::fs::read_dir(dir.join("backups")) else {
+            return Vec::new();
+        };
+        let mut files: Vec<_> = entries
+            .map(|e| e.unwrap().path())
+            .filter(|p| p.is_file())
+            .collect();
+        files.sort();
+        files
+            .into_iter()
+            .map(|p| {
+                let name = p.file_name().unwrap().to_string_lossy().into_owned();
+                (name, std::fs::read_to_string(&p).unwrap())
+            })
+            .collect()
+    }
+
+    /// A data directory whose configuration file holds `sample_config()`, and a store loaded from it.
+    async fn store_on_sample(dir: &Path) -> (MockStore, String) {
+        let yaml = serde_yaml::to_string(&sample_config()).unwrap();
+        std::fs::write(MockStore::config_file(dir), &yaml).unwrap();
+        (MockStore::load_or_init(dir).await.unwrap(), yaml)
+    }
+
+    fn renamed(name: &str) -> impl FnOnce(&mut MockConfig) {
+        let name = name.to_string();
+        move |cfg| cfg.services[0].name = name
+    }
+
+    #[tokio::test]
+    async fn a_burst_of_changes_shares_one_backup_taken_before_the_first() {
+        // An import merged service by service sent one request each: eight backups within 30 ms, which pushed every
+        // older one out of the five kept.
+        let dir = temp_dir();
+        let (store, before) = store_on_sample(&dir).await;
+        for i in 0..8 {
+            store.update(renamed(&format!("svc-{i}"))).await.unwrap();
+        }
+        store.flush().await;
+
+        let backups = backup_contents(&dir);
+        assert_eq!(backups.len(), 1, "{backups:?}");
+        assert_eq!(backups[0].1, before);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[tokio::test]
+    async fn a_change_that_changes_nothing_writes_nothing() {
+        let dir = temp_dir();
+        let (store, before) = store_on_sample(&dir).await;
+        store.update(|_| {}).await.unwrap();
+        store
+            .try_update(|_| Ok::<(), ()>(()))
+            .await
+            .unwrap()
+            .unwrap();
+        store.replace(sample_config()).await.unwrap();
+        store.flush().await;
+
+        assert!(backup_contents(&dir).is_empty());
+        assert_eq!(
+            std::fs::read_to_string(MockStore::config_file(&dir)).unwrap(),
+            before
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[tokio::test]
+    async fn a_backup_identical_to_the_newest_one_is_not_written_again() {
+        // A burst that ends where it started leaves the file as the backup taken before it.
+        let dir = temp_dir();
+        let (store, before) = store_on_sample(&dir).await;
+        store.update(renamed("elsewhere")).await.unwrap();
+        store.update(renamed("svc-a")).await.unwrap();
+        let mut replaced = sample_config();
+        replaced.services[0].name = "replaced".into();
+        store.replace(replaced).await.unwrap();
+        store.flush().await;
+
+        let backups = backup_contents(&dir);
+        assert_eq!(backups.len(), 1, "{backups:?}");
+        assert_eq!(backups[0].1, before);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[tokio::test]
+    async fn replacing_the_whole_configuration_backs_up_the_last_state_even_within_a_burst() {
+        // Restore, import and reset replace everything: the state they overwrite is always kept, including a change
+        // the background writer has not put on disk yet.
+        let dir = temp_dir();
+        let (store, before) = store_on_sample(&dir).await;
+        store.update(renamed("just-changed")).await.unwrap();
+        store.replace(MockConfig::empty()).await.unwrap();
+        store.flush().await;
+
+        let backups = backup_contents(&dir);
+        assert_eq!(backups.len(), 2, "{backups:?}");
+        assert_eq!(backups[0].1, before);
+        assert!(backups[1].1.contains("just-changed"), "{}", backups[1].1);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
     // The rotation tests rely on the default count: tests never change the process environment (see crate::settings).
     #[tokio::test]
     async fn backup_rotation_keeps_max_n() {
@@ -982,6 +1187,29 @@ mod tests {
         assert_eq!(MockStore::backup_max_count_in(lookup), 12);
     }
 
+    #[test]
+    fn backup_min_interval_defaults_to_a_minute_and_reads_the_environment() {
+        assert_eq!(
+            MockStore::backup_min_interval_in(vars(&[])),
+            Duration::from_secs(60)
+        );
+        let lookup = vars(&[("BACKUP_MIN_INTERVAL_SECS", "0")]);
+        assert_eq!(MockStore::backup_min_interval_in(lookup), Duration::ZERO);
+    }
+
+    #[tokio::test]
+    async fn without_an_interval_every_change_backs_up_as_before() {
+        let dir = temp_dir();
+        let (store, _) = store_on_sample(&dir).await;
+        let store = store.with_backup_min_interval(Duration::ZERO);
+        for i in 0..3 {
+            store.update(renamed(&format!("svc-{i}"))).await.unwrap();
+        }
+        store.flush().await;
+        assert_eq!(backup_contents(&dir).len(), 3);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
     #[tokio::test]
     async fn replace_empty_config() {
         let dir = temp_dir();
@@ -1009,7 +1237,7 @@ mod tests {
         let dir = temp_dir();
         let store = MockStore::load_or_init(&dir).await.unwrap();
         store.replace(sample_config()).await.unwrap();
-        store.replace(sample_config()).await.unwrap();
+        store.replace(MockConfig::empty()).await.unwrap();
         store.backup_before_reset().await.unwrap();
 
         let backups = store.list_backups().await.unwrap();

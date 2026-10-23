@@ -9,6 +9,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 ### Removed
 - **Breaking**: the `pre_script` and `post_script` blocks of a rule, with their template variables `{{pre_script…}}` and `{{post_script…}}`, and the "Advanced options" of the rule form that held them. They ran at the same moment as `script`, on the same request, without seeing each other's result, so they only repeated it, and "post" suggested a block run after the response, which none was. A configuration where they are empty loads as before. One where a block still holds code is refused at start, at import, at restore and through the API, with a message that names the rule and the block, rather than loaded without that code; [MIGRATING.md](MIGRATING.md#after-030-one-script-per-rule) explains how to move it into `script`. The rule tester (`POST /api/rule-test`) no longer takes these two blocks, and its `script_errors` and `script_results` items no longer have a `slot`.
 
+### Fixed
+- The backups of the configuration hold more than the last minute. Each change made one, and five are kept: merging an import of two groups and six services made eight within 30 ms, so the five left held that import alone, and saving a rule unchanged made one too. Changes made in a burst now share one backup, taken before the first of them: a change backs up only when the last backup is a minute old (new setting `BACKUP_MIN_INTERVAL_SECS`, 60 by default, `0` for the former behavior). Restoring, importing a file that replaces everything and resetting still back up every time. A change that leaves the configuration as it is writes nothing, and a backup identical to the newest one is not made again. Measured on the same ten actions of the interface: 17 backups (23,645 bytes) before, 4 (3,348 bytes) after.
+- The backup a restore, an import or a reset takes of the state it overwrites now holds the last change: a change made a moment before was still on its way to the disk, and the backup held the state before it.
+
 ## [0.3.0] - 2026-10-23
 
 ### Added

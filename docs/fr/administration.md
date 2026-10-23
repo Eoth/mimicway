@@ -21,7 +21,7 @@ Avant tout changement, la fenêtre indique combien de services et de groupes con
 
 ![La fenêtre d'import pour un fichier qui contient 1 service et 1 groupe : Remplacer tout, Fusionner (ajouter les manquants) ou Annuler](screenshots/administration-import-dialog.png)
 
-> Comme pour tout changement, une [sauvegarde automatique](backups-and-restore.md) de l'état précédent est écrite avant l'import : une erreur reste réversible.
+> Une [sauvegarde automatique](backups-and-restore.md) de l'état précédent est écrite avant l'import (une fusion la partage avec les changements de la même minute) : une erreur reste réversible.
 
 ## Réinitialisation complète
 

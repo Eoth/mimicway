@@ -167,6 +167,7 @@ Tout se règle par des variables d'environnement ; aucune n'est obligatoire.
 | `STATIC_DIR` | *(l'interface intégrée au binaire)* | Un répertoire d'où servir l'interface à la place, pour développer l'interface ou en servir une version personnalisée. Un binaire construit sans l'interface lit `./frontend/dist`. |
 | `RUST_LOG` | `mimicway=info` | Filtre des journaux, par exemple `mimicway=debug`. |
 | `BACKUP_MAX_COUNT` | `5` | Sauvegardes conservées dans `{DATA_PATH}/backups/` avant rotation. |
+| `BACKUP_MIN_INTERVAL_SECS` | `60` | Les changements qui arrivent moins de ce nombre de secondes après la dernière sauvegarde la partagent ; `0` sauvegarde chaque changement. |
 | `API_BASE_URL` | *(vide)* | Où l'interface appelle l'API quand elles sont servies depuis des origines différentes ; voir [Interface et API séparées](#interface-et-api-séparées). |
 | `CORS_ALLOWED_ORIGINS` | *(vide)* | Origines, séparées par des virgules, autorisées à appeler l'API de gestion depuis un navigateur, en plus de l'origine de l'interface. Nécessaire seulement avec `API_BASE_URL`. Les services simulés répondent toujours à toute origine. |
 | `MAX_REQUESTS_IN_FLIGHT` | `1024` | Requêtes traitées en même temps ; la suivante reçoit aussitôt 503 avec `Retry-After: 1` au lieu d'attendre. `/api/health` n'est jamais refusé. |
@@ -305,7 +306,7 @@ Mimicway ne termine pas TLS ; placez-le derrière votre proxy inverse ou votre i
 
 ## Sauvegardes
 
-Avant chaque changement, le `mock-config.yaml` précédent est copié dans `{DATA_PATH}/backups/` (les `BACKUP_MAX_COUNT` derniers sont conservés). Une réinitialisation écrit aussi une copie dans `backups/protected/`, gardée 30 jours quelle que soit la rotation. Les changements s'appliquent immédiatement en mémoire et atteignent le disque en arrière-plan ; sur `SIGTERM` ou Ctrl+C, le serveur termine l'écriture avant de s'arrêter.
+Avant un changement, le `mock-config.yaml` précédent est copié dans `{DATA_PATH}/backups/` (les `BACKUP_MAX_COUNT` derniers sont conservés). Les changements qui arrivent en rafale partagent une seule copie, prise avant le premier d'entre eux : un changement ne sauvegarde que si la dernière sauvegarde a `BACKUP_MIN_INTERVAL_SECS` secondes (60 par défaut), pour qu'une action qui envoie plusieurs requêtes, comme la fusion d'un import, ne chasse pas les copies plus anciennes. Remplacer toute la configuration (restauration, import qui remplace, réinitialisation) sauvegarde toujours d'abord. Un changement qui laisse la configuration telle quelle n'écrit rien, et une copie identique à la plus récente n'est pas refaite. Une réinitialisation écrit aussi une copie dans `backups/protected/`, gardée 30 jours quelle que soit la rotation. Les changements s'appliquent immédiatement en mémoire et atteignent le disque en arrière-plan ; sur `SIGTERM` ou Ctrl+C, le serveur termine l'écriture avant de s'arrêter.
 
 Restaurez depuis l'interface (bouton Sauvegardes, super-admins), ou à la main : arrêtez Mimicway, copiez une sauvegarde par-dessus `mock-config.yaml`, puis redémarrez-le.
 

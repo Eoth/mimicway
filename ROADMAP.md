@@ -231,7 +231,7 @@ Size L, to split (the second listener first, then the interface's URLs, then the
 
 Size S
 
-**Why.** With authentication on, any signed-in user may create groups, and their admins services, without limit (`create_group`, `create_service` in `src/server/api.rs`); every change rewrites the whole configuration file and a backup. A full reset keeps a protected copy for 30 days whatever the number of resets. One user can grow the configuration, the disk and the time of every write.
+**Why.** With authentication on, any signed-in user may create groups, and their admins services, without limit (`create_group`, `create_service` in `src/server/api.rs`); every change rewrites the whole configuration file, and a backup at most once a minute. A full reset keeps a protected copy for 30 days whatever the number of resets. One user can grow the configuration, the disk and the time of every write.
 
 **What.** Configurable caps: groups per user, services and rules per group, size of the configuration, protected backups kept; a write over a cap is refused with a message that names it.
 

@@ -132,9 +132,16 @@ test('import asks whether to replace everything or merge, and merging keeps what
   await expect(page.getByTestId('app-import-merge-button')).toBeVisible();
   await docsScreenshot(page, 'administration-import-dialog.png', '[data-testid="app-import-modal"] .modal-content');
 
+  // A merge sends one request per group and per service; together they make one backup at most, else a larger file
+  // pushed every older backup out of the five kept.
+  // Counted by name: the number of files stays at the cap however many are made.
+  const backupNames = async () => (await (await request.get(`${API}/config/backups`)).json()).map((b) => b.filename);
+  const backupsBefore = new Set(await backupNames());
   await page.getByTestId('app-import-merge-button').click();
   await expect(modal).toBeHidden();
   await expect(page.getByTestId('notification')).toContainText('1 service(s) and 1 group(s) added');
+  const madeByTheMerge = (await backupNames()).filter((name) => !backupsBefore.has(name));
+  expect(madeByTheMerge.length).toBeLessThanOrEqual(1);
   const services = await (await request.get(`${API}/services`)).json();
   expect(services.map((s) => [s.name, s.group_name]).sort()).toEqual([
     ['card-api', 'payments'],
