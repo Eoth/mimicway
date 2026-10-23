@@ -23,25 +23,22 @@ fn refused(script: &str, limit: &str) {
     assert!(error.contains(limit), "{script}: {error}");
 }
 
-// A text of 1 MiB minus `short` bytes, built in one operation.
-fn big(short: usize) -> String {
-    format!(
-        "let s = \"x\"; s.pad({}, \"x\");\n",
-        super::MAX_STRING_SIZE - short
-    )
-}
+// A text of 7 × 2^17 = 917,504 bytes, built by doubling: 17 copies, fast even in a debug build on a busy machine.
+// Built with `pad`, one character at a time, it took most of the run's 500 ms there, and a test of the memory limit
+// could stop at the time limit first.
+const DOUBLED: &str = "let s = \"1234567\"; for i in 0..17 { s += s; }\n";
 
 #[test]
 fn a_replace_that_would_multiply_a_text_is_refused_before_it_is_built() {
     // Rhai's own replace built the whole result first: here a terabyte, which aborted the process (and would abort
     // this test binary if the checked version were not the one called).
     refused(
-        &format!("{}let a = s; a.replace(\"x\", s); a", big(8)),
+        &format!("{DOUBLED}let a = s; a.replace(\"1\", s); a"),
         "a text longer than 1048576 bytes",
     );
     // An empty pattern matches between every two characters.
     refused(
-        &format!("{}let a = \"abc\"; a.replace(\"\", s); a", big(8)),
+        &format!("{DOUBLED}let a = \"abc\"; a.replace(\"\", s); a"),
         "a text longer than 1048576 bytes",
     );
 }
@@ -188,12 +185,9 @@ fn parse_json_reads_what_it_read_before() {
 
 #[test]
 fn to_json_stops_at_the_text_limit() {
-    // Control characters take six bytes each once escaped: the value is within the limits, its JSON is not.
-    let script = format!(
-        "{}let a = [s]; to_json(a)",
-        big(8).replace("\"x\")", "\"\\u0001\")")
-    );
-    refused(&script, "a text longer than 1048576 bytes");
+    // Control characters take six bytes each once escaped: 2^19 of them are within the limits, their JSON is not.
+    let script = "let s = \"\\u0001\"; for i in 0..19 { s += s; } let a = [s]; to_json(a)";
+    refused(script, "a text longer than 1048576 bytes");
     assert_eq!(
         run("to_json(#{a: [1, 2.5, \"x\", ()], b: true})").unwrap(),
         "{\"a\":[1,2.5,\"x\",null],\"b\":true}"
@@ -243,7 +237,7 @@ fn parse_xml_items_stops_at_the_limits_of_a_value() {
 #[test]
 fn a_run_stops_at_its_time_limit() {
     // Each call hashes 1 MiB: within the operation limit, the run would last seconds.
-    let script = format!("{}let n = 0; loop {{ n += seeded_int(s, 0, 9); }}", big(0));
+    let script = format!("{DOUBLED}let n = 0; loop {{ n += seeded_int(s, 0, 9); }}");
     let started = Instant::now();
     let error = run(&script).unwrap_err();
     assert!(error.contains("longer than 500 ms"), "{error}");
@@ -263,7 +257,7 @@ fn the_time_limit_does_not_outlive_its_run() {
         query_params: HashMap::new(),
         path_params: HashMap::new(),
     };
-    let script = format!("{}let n = 0; loop {{ n += seeded_int(s, 0, 9); }}", big(0));
+    let script = format!("{DOUBLED}let n = 0; loop {{ n += seeded_int(s, 0, 9); }}");
     assert!(engine.execute(&script, &context).is_err());
     // The same thread runs the next script with a fresh deadline, not the one left by the previous run.
     assert_eq!(engine.execute("40 + 2", &context).unwrap().value, "42");
@@ -281,7 +275,7 @@ fn the_other_limits_are_named_in_their_errors() {
         "more than 32 nested function calls",
     );
     refused(
-        &format!("{}let a = s + s; a", big(8)),
+        &format!("{DOUBLED}let a = s + s; a"),
         "a text longer than 1048576 bytes",
     );
     refused(
@@ -318,38 +312,38 @@ fn a_result_longer_than_a_text_is_refused() {
     );
 }
 
-// Every way found to hold values outside the limits of each value: 30 texts of 1 MiB each time, about twice the
-// memory budget of a run, which Rhai's own limits let through.
+// Every way found to hold values outside the limits of each value: 30 texts of 0.9 MiB each time, about 1.6 times
+// the memory budget of a run, which Rhai's own limits let through.
 #[test]
 fn values_held_outside_the_variables_stop_at_the_memory_budget() {
     let thirty = |each: &dyn Fn(usize) -> String| (0..30).map(each).collect::<Vec<_>>().join(", ");
     for script in [
         // The arguments of one call, all evaluated before the call fails.
-        format!("{}nope({})", big(8), thirty(&|i| format!("s + \"{i}\""))),
+        format!("{}nope({})", DOUBLED, thirty(&|i| format!("s + \"{i}\""))),
         // Map keys: Rhai's map limit counts entries, not the length of their keys.
         format!(
             "{}let m = #{{}}; for i in 0..30 {{ m[s + i] = 0; }} m.len()",
-            big(8)
+            DOUBLED
         ),
         // What `map` gathers before the result is checked.
         format!(
             "{}let a = []; for i in 0..30 {{ a.push(i); }} a.map(|x| s + x).len()",
-            big(8)
+            DOUBLED
         ),
         // Arguments curried into function pointers, which Rhai's limits do not count.
         format!(
             "fn f(x) {{ x }}\n{}let a = []; for i in 0..30 {{ a.push(Fn(\"f\").curry(s + i)); }} a.len()",
-            big(8)
+            DOUBLED
         ),
         // Values held by nested calls, one per level of a recursion (the text itself is shared, not copied).
         format!(
             "fn h(a, b) {{ 0 }}\nfn g(n, s) {{ if n > 0 {{ h(s + \"1\", g(n - 1, s)) }} else {{ 0 }} }}\n{}g(30, s)",
-            big(8)
+            DOUBLED
         ),
         // Variables, each within its limits.
         format!(
             "{}{}0",
-            big(8),
+            DOUBLED,
             (0..30)
                 .map(|i| format!("let v{i} = s + \"{i}\";\n"))
                 .collect::<String>()

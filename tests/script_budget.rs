@@ -119,7 +119,9 @@ async fn post(server: &Server, path: &str, body: String) -> Duration {
     started.elapsed()
 }
 
-const BIG: &str = "let s = \"x\"; s.pad(1048570, \"x\");";
+// 7 × 2^17 = 917,504 bytes by doubling: fast even in a debug build on a busy machine, where `pad` could use up the
+// 500 ms of a run before the memory limit under test.
+const DOUBLED: &str = "let s = \"1234567\"; for i in 0..17 { s += s; }";
 
 #[tokio::test]
 async fn one_operation_on_a_large_body_stays_within_the_budget_of_a_run() {
@@ -127,7 +129,7 @@ async fn one_operation_on_a_large_body_stays_within_the_budget_of_a_run() {
         ("reference", "1"),
         (
             "replace",
-            &format!("{BIG} let a = s; a.replace(\"x\", s); a"),
+            &format!("{DOUBLED} let a = s; a.replace(\"1\", s); a"),
         ),
         (
             "tag",
@@ -178,31 +180,31 @@ async fn values_held_outside_the_variables_stay_within_the_memory_budget_of_a_ru
         (
             "arguments",
             &format!(
-                "{BIG} nope({})",
+                "{DOUBLED} nope({})",
                 (0..60).map(|i| format!("s + \"{i}\"")).collect::<Vec<_>>().join(", ")
             ),
         ),
-        ("keys", &format!("{BIG} let m = #{{}}; for i in 0..60 {{ m[s + i] = 0; }} m.len()")),
+        ("keys", &format!("{DOUBLED} let m = #{{}}; for i in 0..60 {{ m[s + i] = 0; }} m.len()")),
         (
             "gathered",
-            &format!("{BIG} let a = []; for i in 0..60 {{ a.push(i); }} a.map(|x| s + x).len()"),
+            &format!("{DOUBLED} let a = []; for i in 0..60 {{ a.push(i); }} a.map(|x| s + x).len()"),
         ),
         (
             "curried",
             &format!(
-                "fn f(x) {{ x }}\n{BIG} let a = []; for i in 0..60 {{ a.push(Fn(\"f\").curry(s + i)); }} a.len()"
+                "fn f(x) {{ x }}\n{DOUBLED} let a = []; for i in 0..60 {{ a.push(Fn(\"f\").curry(s + i)); }} a.len()"
             ),
         ),
         (
             "nested",
             &format!(
-                "fn h(a, b) {{ 0 }}\nfn g(n, s) {{ if n > 0 {{ h(s + \"1\", g(n - 1, s)) }} else {{ 0 }} }}\n{BIG} g(30, s)"
+                "fn h(a, b) {{ 0 }}\nfn g(n, s) {{ if n > 0 {{ h(s + \"1\", g(n - 1, s)) }} else {{ 0 }} }}\n{DOUBLED} g(30, s)"
             ),
         ),
         (
             "variables",
             &format!(
-                "{BIG} {}0",
+                "{DOUBLED} {}0",
                 (0..60).map(|i| format!("let v{i} = s + \"{i}\";\n")).collect::<String>()
             ),
         ),
