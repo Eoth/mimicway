@@ -23,7 +23,7 @@ Each item has an identifier that never changes, a size (S: a day or less, M: a f
 3. [Make it indispensable](#3-make-it-indispensable): U1, U2, then U3 to U16, in the listed order.
 4. [Engineering backlog](#4-engineering-backlog): taken alongside, when they unblock an item above.
 
-Hardening comes before all of these: E23, E24, E25 and T15.
+Hardening comes before all of these: E29 and E30 first, then E23, E24, E25 and T15.
 
 ## 1. Ready for an international launch
 
@@ -590,3 +590,23 @@ Size S
 **What.** Raise the array, map and text limits of a value to what the memory budget of a run allows (for instance 10,000 items and 5,000 entries), measure the slowest and the largest legitimate script again, and describe the limits as totals per value in the guide (both languages) and the README.
 
 **Done when.** A JSON body of 1,000 objects of three fields parses and is written back within the time and memory budget of a run, the regression test of the budget still passes, and the documented limits say that they count a whole value.
+
+### E29. One script per rule
+
+Size M
+
+**Why.** A rule has three script blocks, `pre_script`, `script` and `post_script`, and all three run at the same moment, on the same request, without seeing each other's result (`Rule` in `src/models/mod.rs`, `run_rule_script` in `src/server/intercept.rs`). Two of them repeat the third, and the name "post" suggests a block that runs after the response, which none does. No user is known to rely on them.
+
+**What.** Remove `pre_script` and `post_script` from the model, the API (rule test and validation included), the execution, the template variables `{{pre_script…}}` and `{{post_script…}}`, the rule form, the guide in both languages and the README. A configuration that still holds them loads when they are empty. A non-empty block is refused, at start, import and restore, with a message that names the rule and the block, rather than dropped: dropping it would change what the mock returns without anyone seeing it. Breaking entry in the changelog, migration note in `MIGRATING.md`.
+
+**Done when.** No code, page or screenshot shows the two blocks; a configuration with `pre_script: ~` loads, and one with a non-empty `post_script` is refused with a message that names it, each shown by a test.
+
+### E30. Backups that keep more than a minute of history
+
+Size S
+
+**Why.** Every change copies the configuration into `backups/`, which keeps the newest five (`prepare_and_backup` in `src/store/mod.rs`). Measured in the interface: merging an import of two groups and six services sends eight requests and makes eight backups within 30 ms, so the five kept all hold that one import; saving a rule makes one even when nothing changed. Four of nineteen backups of the measured run held the same empty configuration.
+
+**What.** A change that leaves the configuration as it is writes nothing. Changes coming in a burst share one backup, taken before the first of them; a restore, an import that replaces everything and a reset still back up first. A backup identical to the newest one is not written again. The pre-reset copies are untouched.
+
+**Done when.** A test that fails on the current code shows a burst of changes making one backup, and the rule is documented in the README, in both languages.
