@@ -84,27 +84,25 @@
     newAdmin = '';
   }
 
-  async function assignServiceToGroup(serviceName, groupName) {
-    const svc = services.find((s) => s.name === serviceName);
-    if (!svc) return;
+  // Both take the service itself, never its name: names are unique within a group only, and a lookup by name acted
+  // on the first namesake found, which could belong to another group.
+  async function assignServiceToGroup(svc, groupName) {
     try {
-      const updated = await updateService(serviceName, svc.group_name, { ...svc, group_name: groupName || null });
+      const updated = await updateService(svc.name, svc.group_name, { ...svc, group_name: groupName || null });
       onServiceUpdate(updated, svc.group_name);
-      onNotify(t('Service "{0}" added to the group "{1}"', serviceName, groupName), 'success');
+      onNotify(t('Service "{0}" added to the group "{1}"', svc.name, groupName), 'success');
     } catch (e) {
       onNotify(t('Error: {0}', e.message), 'error');
     }
   }
 
-  async function removeServiceFromGroup(serviceName) {
-    const svc = services.find((s) => s.name === serviceName);
-    if (!svc) return;
+  async function removeServiceFromGroup(svc) {
     try {
       const payload = { ...svc };
       delete payload.group_name;
-      const updated = await updateService(serviceName, svc.group_name, payload);
+      const updated = await updateService(svc.name, svc.group_name, payload);
       onServiceUpdate(updated, svc.group_name);
-      onNotify(t('Service "{0}" removed from the group', serviceName), 'success');
+      onNotify(t('Service "{0}" removed from the group', svc.name), 'success');
     } catch (e) {
       onNotify(t('Error: {0}', e.message), 'error');
     }
@@ -264,7 +262,7 @@
                     <button
                       type="button"
                       class="chip-remove"
-                      onclick={() => removeServiceFromGroup(svc.name)}
+                      onclick={() => removeServiceFromGroup(svc)}
                       title={t('Remove from the group')}
                       aria-label={t('Remove {0} from the group', svc.name)}
                       data-testid="group-manager-remove-service-button-{group.name}-{svc.name}">x</button
@@ -289,7 +287,7 @@
                       <button
                         type="button"
                         class="btn btn-outline btn-sm"
-                        onclick={() => assignServiceToGroup(svc.name, group.name)}
+                        onclick={() => assignServiceToGroup(svc, group.name)}
                         data-testid="group-manager-assign-service-button-{group.name}-{svc.name}"
                       >
                         + {svc.name}

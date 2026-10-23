@@ -1,7 +1,7 @@
 import { render, fireEvent, waitFor } from '@testing-library/svelte';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import GroupManager from '../lib/components/GroupManager.svelte';
-import { getGroups, createGroup } from '../lib/api.js';
+import { getGroups, createGroup, updateService } from '../lib/api.js';
 
 vi.mock('../lib/api.js', () => ({
   getGroups: vi.fn(),
@@ -108,5 +108,40 @@ describe('GroupManager - creation form', () => {
 
     await waitFor(() => expect(getByText('The group name is required.')).toBeInTheDocument());
     expect(createGroup).not.toHaveBeenCalled();
+  });
+});
+
+describe('GroupManager - services with the same name in different groups', () => {
+  const service = (name, group_name) => ({ name, group_name, rules: [] });
+  const services = [service('users', 'team-a'), service('users', 'team-b'), service('users', null)];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getGroups.mockResolvedValue([
+      { name: 'team-a', code: 'tmaaa', admins: [], members: [] },
+      { name: 'team-b', code: 'tmbbb', admins: [], members: [] },
+    ]);
+    updateService.mockImplementation((_name, _group, payload) => Promise.resolve(payload));
+  });
+
+  it('removes from a group the service of that group, not a namesake of another group', async () => {
+    const { findByTestId } = render(GroupManager, { props: { services } });
+    await fireEvent.click(await findByTestId('group-manager-remove-service-button-team-b-users'));
+
+    await waitFor(() => expect(updateService).toHaveBeenCalledTimes(1));
+    const [name, group, payload] = updateService.mock.calls[0];
+    expect([name, group]).toEqual(['users', 'team-b']);
+    expect(payload.group_name ?? null).toBeNull();
+  });
+
+  it('adds to a group the ungrouped service clicked, not a namesake that has a group', async () => {
+    const { findByTestId } = render(GroupManager, { props: { services } });
+    await fireEvent.click(await findByTestId('group-manager-manage-button-team-b'));
+    await fireEvent.click(await findByTestId('group-manager-assign-service-button-team-b-users'));
+
+    await waitFor(() => expect(updateService).toHaveBeenCalledTimes(1));
+    const [name, group, payload] = updateService.mock.calls[0];
+    expect([name, group]).toEqual(['users', null]);
+    expect(payload.group_name).toBe('team-b');
   });
 });
