@@ -254,6 +254,9 @@ function parseTplValue(key, raw) {
       pipes = '';
     }
     const { source, value } = varNameToSource(varName);
+    // An expression the builder has no source for (a text in quotes, now_epoch, pre_script.total...) stays as written:
+    // a fixed value is inserted as it is, so the template keeps it whole instead of losing its braces and pipes.
+    if (source === 'fixed') return { key, fieldType: 'value', source, value: inner, pipe: '', asNumber: !isQuoted };
     return { key, fieldType: 'value', source, value, pipe: pipes, asNumber: !isQuoted };
   }
   return { key, fieldType: 'value', source: 'fixed', value: inner, pipe: '', asNumber: !isQuoted };
@@ -387,6 +390,13 @@ function readTplToken(str, start) {
         j += 2;
         continue;
       }
+      // An expression inside a string may hold quotes of its own ({{query.x | default("none")}}, a date in quotes):
+      // it is skipped whole, or its first quote would end the string.
+      const end = isVarOpen(str, j) ? findDoubleClose(str, j + 2) : -1;
+      if (end !== -1) {
+        j = end + 2;
+        continue;
+      }
       if (str[j] === '"') return [str.slice(i, j + 1), j + 1 - i];
       j++;
     }
@@ -407,19 +417,20 @@ function readTplToken(str, start) {
         j += 2;
         continue;
       }
+      // An expression is skipped whole, inside a string or not, for the quotes it may hold.
+      if (str[j] === '{' && j + 1 < str.length && str[j + 1] === '{') {
+        const end = findDoubleClose(str, j + 2);
+        if (end !== -1) {
+          j = end + 2;
+          continue;
+        }
+      }
       if (str[j] === '"') {
         inStr = !inStr;
         j++;
         continue;
       }
       if (!inStr) {
-        if (str[j] === '{' && j + 1 < str.length && str[j + 1] === '{') {
-          const end = findDoubleClose(str, j + 2);
-          if (end !== -1) {
-            j = end + 2;
-            continue;
-          }
-        }
         if (str[j] === '{') {
           depth++;
           j++;
@@ -660,6 +671,8 @@ function parseXmlLeafExpr(raw, toRaw) {
       pipe = '';
     }
     const { source, value } = varNameToSource(varName);
+    // As in parseTplValue: an expression without a source of the builder is kept whole, as a fixed value.
+    if (source === 'fixed') return { source, value: toRaw(trimmed), pipe: '' };
     return { source, value, pipe };
   }
   return { source: 'fixed', value: toRaw(trimmed), pipe: '' };

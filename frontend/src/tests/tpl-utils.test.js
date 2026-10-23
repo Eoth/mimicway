@@ -691,3 +691,38 @@ describe('templateToXmlFields', () => {
     expect(() => templateToXmlFields('just text')).toThrow(TypeError);
   });
 });
+
+// ── Expressions the builders have no source for ─────────────────────
+// A text in quotes transformed by a pipe (a date converted to epoch seconds), now_epoch, the fields of pre_script and
+// post_script: the builders offer no source for them, and reading a template back used to turn each into its bare
+// name, which the next save wrote as plain text, the expression lost.
+
+describe('templates that the builders read back without a source', () => {
+  const unmodelled = [
+    '{{"2026-12-31T10:00:00Z" | epoch_seconds}}',
+    '{{now_epoch}}',
+    '{{pre_script.total | default("0")}}',
+    '{{post_script}}',
+  ];
+
+  it('reads an expression whose quotes sit inside a JSON string', () => {
+    const tpl = '{"a":"{{query.x | default("none")}}","b":"{{"2026-12-31" | date("dd/MM/yyyy")}}"}';
+    expect(fieldsToTemplate(templateToFields(tpl))).toBe(tpl);
+    expect(templateToFields(tpl)[0]).toMatchObject({ source: 'query', value: 'x', pipe: 'default("none")' });
+  });
+
+  it('keeps each expression whole through the JSON builder', () => {
+    for (const expr of unmodelled) {
+      const tpl = `{"a":${expr},"b":"${expr}"}`;
+      expect(fieldsToTemplate(templateToFields(tpl)), expr).toBe(tpl);
+    }
+  });
+
+  it('keeps each expression whole through the XML builder', () => {
+    for (const expr of unmodelled) {
+      const tpl = `<response><a>${expr}</a></response>`;
+      const { rootTag, rootAttributes, fields } = templateToXmlFields(tpl);
+      expect(xmlFieldsToTemplate(fields, rootTag, rootAttributes), expr).toBe(tpl);
+    }
+  });
+});
