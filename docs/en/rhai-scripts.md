@@ -7,23 +7,15 @@ For what the [response builder](responses-and-templates.md) does not cover direc
 > Rhai is a small scripting language (with a syntax close to JavaScript and Rust) that runs in a sandbox: it cannot reach the disk or the network, cannot `eval` code, and cannot use unbounded resources (per run, at most 10,000 operations, 500 ms, 16 MiB of memory, 64 variables at once and 32 nested calls; per value, at most 1 MiB of text, 1,000 array items and 500 map entries).
 > You do not need to know Rhai in depth: the functions below cover most needs, and the editor suggests them as you type.
 
-## Three independent script slots
+## One script per rule
 
-A rule offers up to three script slots, all optional:
+A rule can have one script, the **Custom script** of the rule form, and it is optional. It runs before the response is rendered, on each request the rule matches.
 
-- **Pre-script (preparation)**
-- **Custom script** (the main one)
-- **Post-script (finalization)**
-
-The three blocks are **fully independent**: they all see the same request, and none can read another's result. "Pre" and "post" are a convention to help you organize your logic (preparing data, then formatting it, for instance), not an actual chain.
-
-> **Pre-script and post-script are folded by default** behind "Advanced options (pre-script / post-script)": most rules do not need them, and only the main script stays visible. Click that line to show them. When you edit a rule that already uses one of them, the section opens **by itself**: configured content is never hidden from you. Folding never deletes what you typed.
-
-![Advanced options folded on a new rule: only "▶ Advanced options" is visible](screenshots/rule-advanced-options-folded.png)
-
-Each block can return:
-- a **simple value** (text, number), used as `{{script}}` / `{{pre_script}}` / `{{post_script}}`,
+The script can return:
+- a **simple value** (text, number), used as `{{script}}`,
 - or a **map with several fields** (`#{ name: "...", age: 30 }`), each field usable on its own: `{{script.name}}`, `{{script.age}}`.
+
+> Earlier versions had two more blocks, a pre-script and a post-script. They ran at the same moment as the script, on the same request, and none could read another's result, so they are gone: put their code in the script, returning a map when you need several values. A configuration that still has code in them is refused, never loaded without it; [MIGRATING.md](../../MIGRATING.md) explains how to move it.
 
 ## Reading the request
 
@@ -72,7 +64,7 @@ A script can fail while running, for instance when it calls a function that does
 - **A missing key** (`request.path.no_such_name`) never raises an error: the script goes on, the value is empty.
 - **A call to a function that does not exist** (`my_invented_function(1, 2)`) **is a real runtime error**. The script stops right there: no later statement runs (including an `else` branch, if the error happens in the `if` branch).
 
-**In production**, a script error never stops the request from being served: the rule still applies, but `{{script}}`/`{{script.field}}` (or `{{pre_script...}}`/`{{post_script...}}`, depending on the failing block) render as **empty** text. Nothing tells the HTTP client that something went wrong: a broken script must never turn into a total outage of the mock. The error is still written to the server log.
+**In production**, a script error never stops the request from being served: the rule still applies, but `{{script}}`/`{{script.field}}` render as **empty** text. Nothing tells the HTTP client that something went wrong: a broken script must never turn into a total outage of the mock. The error is still written to the server log.
 
 **Before saving a rule**, two checks are available:
 1. **"Validate the script"**, under each script slot, checks the **syntax** (is it a valid Rhai program?). It does NOT detect a call to a missing function, nor an error that only happens at run time.

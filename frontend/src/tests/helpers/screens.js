@@ -20,9 +20,7 @@ export const fullRule = {
   method: 'POST',
   sub_path: '/x1',
   action: 'mock',
-  pre_script: '1',
   script: '2',
-  post_script: '3',
   response_mode: 'advanced',
   conditions: {
     all_of: [{ source: { type: 'QueryParam', key: 'q' }, operator: { type: 'Eq', value: '1' } }],
@@ -185,8 +183,9 @@ export function answerApi(api) {
     body_truncated: true,
     all_of: [{ condition: fullRule.conditions.all_of[0], matched: false, found_value: null, hint: null }],
     any_of: [{ condition: fullRule.conditions.any_of[0], matched: true, found_value: '1', hint: null }],
-    script_errors: [{ slot: 'pre_script', message: '1' }],
-    script_results: [{ slot: 'script', value: '1', fields: { k1: '2' } }],
+    // Both lists filled, although a real script lands in one of them only: each one's texts are checked on this screen.
+    script_errors: [{ message: '1' }],
+    script_results: [{ value: '1', fields: { k1: '2' } }],
   });
 }
 
@@ -309,7 +308,6 @@ export const SCREEN_GROUPS = [
         component: component('RuleForm'),
         props: { rule: fullRule, serviceName: 'b2', listenPath: '/v1/{n}', existingRules: [] },
         open: async (c) => {
-          await click(c, 'rule-form-advanced-options-toggle-button');
           await appeared(c, 'rule-tester-log-select');
           const select = c.querySelector('[data-testid="rule-tester-log-select"]');
           select.value = '0';

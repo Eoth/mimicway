@@ -82,7 +82,7 @@ Exemple : `{"siret":"{{path.siret}}"}` renvoie le paramètre de chemin `siret` d
 | `uuid` | Un identifiant unique généré |
 | `now_ms` / `now_iso` / `now_epoch` | La date et l'heure actuelles, dans plusieurs formats |
 | `seq` | Un compteur d'appels |
-| `script` / `pre_script` / `post_script` | Le résultat d'un [script Rhai](rhai-scripts.md) de la règle, si vous en avez écrit un |
+| `script` | Le résultat du [script Rhai](rhai-scripts.md) de la règle, si vous en avez écrit un |
 
 Dans le constructeur (aux deux niveaux, en JSON comme en XML), chaque variable est une option du menu **source** de chaque champ : « Paramètre URL {param} », « Query param », « En-tête HTTP », « Résultat du script », etc. Quelques-unes méritent un mot :
 

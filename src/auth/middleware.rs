@@ -404,7 +404,7 @@ mod tests {
             "rewrite_directory_urls": false, "group_name": null, "wsdl_mode": "auto",
             "rules": [{
                 "name": "list", "method": "GET", "sub_path": null, "action": "mock",
-                "pre_script": null, "script": null, "post_script": null,
+                "script": null,
                 "conditions": {"all_of": [], "any_of": []},
                 "response": {"status": 200, "headers": [], "body": [{"type": "Literal", "value": "mocked"}]}
             }]

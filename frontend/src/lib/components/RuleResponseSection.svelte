@@ -1,7 +1,7 @@
 <script>
   // The "Mocked response" fieldset of a rule: format selector (JSON, XML, text, advanced template, empty), headers and
-  // body, and also the three script slots (pre_script, script, post_script) and the chaos settings. Those are fields of
-  // the rule rather than of its response, but the form shows them in this fieldset.
+  // body, and also the script and the chaos settings. Those are fields of the rule rather than of its response, but the
+  // form shows them in this fieldset.
   //
   // RuleForm.svelte keeps this component mounted whatever the rule's action: `visible` (true for a mock rule) only hides
   // the fieldset. Behind an {#if}, switching to proxy and back before saving would lose the headers, body, scripts and
@@ -42,12 +42,6 @@
   );
 
   let responseOpen = $state(true);
-
-  // The pre-script and post-script slots start folded under "Advanced options", unless the rule already has one of them
-  // (never hide what the user configured); the main script is never folded. Computed once, when the form opens. Their
-  // code lives in this component, not in RuleScriptSlot, and folding only hides the panel (`hidden` attribute, not an
-  // {#if} that would unmount it): nothing typed is lost.
-  let advancedOpen = $state(!!init?.pre_script?.trim() || !!init?.post_script?.trim());
 
   const STRUCTURED_MODES = ['json-paste', 'json-guided', 'xml-paste', 'xml-guided'];
 
@@ -151,19 +145,9 @@
     return xmlFieldsToTemplate(mode === 'xml-paste' ? xmlPasteFields : xmlFields, xmlRootTag, xmlRootAttributes);
   }
 
-  // pre_script, script and post_script run independently (same request context, no chaining between them); one
-  // validation endpoint serves the three slots.
   let scriptEnabled = $state(!!init?.script);
   let scriptCode = $state(init?.script ?? '');
   let scriptValidation = $state({ status: '', message: '' });
-
-  let preScriptEnabled = $state(!!init?.pre_script);
-  let preScriptCode = $state(init?.pre_script ?? '');
-  let preScriptValidation = $state({ status: '', message: '' });
-
-  let postScriptEnabled = $state(!!init?.post_script);
-  let postScriptCode = $state(init?.post_script ?? '');
-  let postScriptValidation = $state({ status: '', message: '' });
 
   async function validateScriptCode(code) {
     if (!code.trim()) {
@@ -180,16 +164,6 @@
   async function handleValidateScript() {
     scriptValidation = { status: 'pending', message: t('Validating...') };
     scriptValidation = await validateScriptCode(scriptCode);
-  }
-
-  async function handleValidatePreScript() {
-    preScriptValidation = { status: 'pending', message: t('Validating...') };
-    preScriptValidation = await validateScriptCode(preScriptCode);
-  }
-
-  async function handleValidatePostScript() {
-    postScriptValidation = { status: 'pending', message: t('Validating...') };
-    postScriptValidation = await validateScriptCode(postScriptCode);
   }
 
   function buildFragmentsFromMode() {
@@ -736,23 +710,13 @@
         body: finalBody,
         chaos: chaosEnabled ? chaos : null,
       },
-      pre_script: preScriptEnabled && preScriptCode.trim() ? preScriptCode.trim() : null,
       script: scriptEnabled && scriptCode.trim() ? scriptCode.trim() : null,
-      post_script: postScriptEnabled && postScriptCode.trim() ? postScriptCode.trim() : null,
       // Records the view, to reopen it next time. The values of `responseMode` are the kebab-case variants of
       // ResponseEditorMode (src/models/mod.rs), so no mapping is needed.
       response_mode: responseMode,
     };
   }
 </script>
-
-{#snippet basicScriptHelp(varName)}
-  <p class="field-hint">
-    {t('Runs independently of the other script blocks (same request context, no chaining).')}
-    <Sentence text={t('Result available as {0} or {1}.')} codes={[`{{${varName}}}`, `{{${varName}.field}}`]} />
-    {t('Same Rhai syntax as the custom script below (see its examples).')}
-  </p>
-{/snippet}
 
 {#snippet mainScriptHelp()}
   <p class="field-hint">
@@ -1171,54 +1135,6 @@
         {#snippet help()}{@render mainScriptHelp()}{/snippet}
       </RuleScriptSlot>
 
-      <div class="sub-section advanced-options-section">
-        <button
-          type="button"
-          class="legend-toggle"
-          onclick={() => (advancedOpen = !advancedOpen)}
-          aria-expanded={advancedOpen}
-          aria-controls="rule-form-advanced-options-panel"
-          data-testid="rule-form-advanced-options-toggle-button"
-        >
-          {advancedOpen ? '▼' : '▶'}
-          {t('Advanced options (pre-script / post-script)')}
-        </button>
-        <div
-          id="rule-form-advanced-options-panel"
-          class="advanced-options-panel"
-          hidden={!advancedOpen}
-          data-testid="rule-form-advanced-options-panel"
-        >
-          <RuleScriptSlot
-            id="rule-pre-script"
-            toggleLabel={t('Pre-script (preparation)')}
-            enabled={preScriptEnabled}
-            code={preScriptCode}
-            onToggle={(v) => (preScriptEnabled = v)}
-            onCodeInput={(v) => (preScriptCode = v)}
-            validation={preScriptValidation}
-            onValidate={handleValidatePreScript}
-            rows={5}
-          >
-            {#snippet help()}{@render basicScriptHelp('pre_script')}{/snippet}
-          </RuleScriptSlot>
-
-          <RuleScriptSlot
-            id="rule-post-script"
-            toggleLabel={t('Post-script (finalization)')}
-            enabled={postScriptEnabled}
-            code={postScriptCode}
-            onToggle={(v) => (postScriptEnabled = v)}
-            onCodeInput={(v) => (postScriptCode = v)}
-            validation={postScriptValidation}
-            onValidate={handleValidatePostScript}
-            rows={5}
-          >
-            {#snippet help()}{@render basicScriptHelp('post_script')}{/snippet}
-          </RuleScriptSlot>
-        </div>
-      </div>
-
       <div class="sub-section chaos-section">
         <ToggleSwitch
           label={t('Chaos mode')}
@@ -1329,13 +1245,6 @@
 
   .open-detail-button,
   .back-to-paste-button {
-    margin-top: var(--space-2);
-  }
-
-  .advanced-options-section {
-    border-top-color: var(--color-border);
-  }
-  .advanced-options-panel {
     margin-top: var(--space-2);
   }
 

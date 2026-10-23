@@ -14,7 +14,7 @@ Pour chaque condition de la règle, le résultat dit si elle a matché et surtou
 
 ### Repérer un script cassé avant d'enregistrer
 
-Quand votre règle contient des [scripts Rhai](rhai-scripts.md), le testeur les exécute réellement contre la requête sélectionnée (seulement si la règle la matche, comme en production). Quand un script échoue, par exemple parce qu'il appelle une fonction qui n'existe pas, un message explicite nomme le bloc en cause (script personnalisé, pré-script ou post-script) et l'erreur exacte.
+Quand votre règle contient un [script Rhai](rhai-scripts.md), le testeur l'exécute réellement contre la requête sélectionnée (seulement si la règle la matche, comme en production). Quand un script échoue, par exemple parce qu'il appelle une fonction qui n'existe pas, un message explicite donne l'erreur exacte.
 
 C'est important, car une fois la règle enregistrée, une erreur de script **ne bloque jamais la réponse** : la requête est quand même servie, avec un résultat vide pour le script en échec, et rien de visible pour qui reçoit la réponse. Le testeur est l'endroit où ce genre de problème redevient visible, avant l'enregistrement ; voir [Scripts Rhai : quand un script échoue](rhai-scripts.md#quand-un-script-échoue).
 

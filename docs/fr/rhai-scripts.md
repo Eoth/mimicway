@@ -7,23 +7,15 @@ Pour ce que le [constructeur de réponse](responses-and-templates.md) ne couvre 
 > Rhai est un petit langage de script (à la syntaxe proche de JavaScript et de Rust) qui s'exécute dans un bac à sable : il ne peut atteindre ni le disque ni le réseau, ne peut pas évaluer de code avec `eval`, et ne peut pas consommer de ressources sans limite (par exécution, au plus 10 000 opérations, 500 ms, 16 Mio de mémoire, 64 variables à la fois et 32 appels imbriqués ; par valeur, au plus 1 Mio de texte, 1 000 éléments de tableau et 500 entrées d'objet).
 > Inutile de connaître Rhai en profondeur : les fonctions ci-dessous couvrent la plupart des besoins, et l'éditeur les suggère pendant la frappe.
 
-## Trois emplacements de script indépendants
+## Un script par règle
 
-Une règle propose jusqu'à trois emplacements de script, tous optionnels :
+Une règle peut avoir un script, le **Script personnalisé** du formulaire de règle, et il est optionnel. Il s'exécute avant que la réponse soit produite, à chaque requête que la règle matche.
 
-- **Pré-script (préparation)**
-- **Script personnalisé** (le principal)
-- **Post-script (finalisation)**
-
-Les trois blocs sont **entièrement indépendants** : ils voient tous la même requête, et aucun ne peut lire le résultat d'un autre. « Pré » et « post » sont une convention pour vous aider à organiser votre logique (préparer des données, puis les mettre en forme, par exemple), pas un véritable enchaînement.
-
-> **Le pré-script et le post-script sont repliés par défaut** derrière « Options avancées (pré-script / post-script) » : la plupart des règles n'en ont pas besoin, et seul le script principal reste visible. Cliquez sur cette ligne pour les afficher. Quand vous modifiez une règle qui utilise déjà l'un d'eux, la section s'ouvre **d'elle-même** : un contenu configuré ne vous est jamais caché. Replier ne supprime jamais ce que vous avez saisi.
-
-![Options avancées repliées sur une nouvelle règle : seul « ▶ Options avancées » est visible](screenshots/rule-advanced-options-folded.png)
-
-Chaque bloc peut renvoyer :
-- une **valeur simple** (texte, nombre), utilisée comme `{{script}}` / `{{pre_script}}` / `{{post_script}}`,
+Le script peut renvoyer :
+- une **valeur simple** (texte, nombre), utilisée comme `{{script}}`,
 - ou un **objet à plusieurs champs** (`#{ name: "...", age: 30 }`), chaque champ utilisable séparément : `{{script.name}}`, `{{script.age}}`.
+
+> Les versions précédentes avaient deux blocs de plus, un pré-script et un post-script. Ils s'exécutaient au même moment que le script, sur la même requête, et aucun ne pouvait lire le résultat d'un autre : ils ont disparu. Mettez leur code dans le script, en renvoyant un objet quand il vous faut plusieurs valeurs. Une configuration qui contient encore du code dans l'un d'eux est refusée, jamais chargée sans lui ; [MIGRATING.md](../../MIGRATING.md) explique comment le déplacer.
 
 ## Lire la requête
 
@@ -72,7 +64,7 @@ Un script peut échouer pendant son exécution, par exemple quand il appelle une
 - **Une clé absente** (`request.path.no_such_name`) ne provoque jamais d'erreur : le script continue, la valeur est vide.
 - **L'appel d'une fonction qui n'existe pas** (`my_invented_function(1, 2)`) **est une vraie erreur d'exécution**. Le script s'arrête là : aucune instruction suivante ne s'exécute (pas même une branche `else`, si l'erreur survient dans la branche `if`).
 
-**En production**, une erreur de script n'empêche jamais la requête d'être servie : la règle s'applique quand même, mais `{{script}}`/`{{script.champ}}` (ou `{{pre_script...}}`/`{{post_script...}}`, selon le bloc en échec) produisent un texte **vide**. Rien n'indique au client HTTP qu'un problème est survenu : un script cassé ne doit jamais se transformer en panne totale du mock. L'erreur est tout de même écrite dans le journal du serveur.
+**En production**, une erreur de script n'empêche jamais la requête d'être servie : la règle s'applique quand même, mais `{{script}}`/`{{script.champ}}` produisent un texte **vide**. Rien n'indique au client HTTP qu'un problème est survenu : un script cassé ne doit jamais se transformer en panne totale du mock. L'erreur est tout de même écrite dans le journal du serveur.
 
 **Avant d'enregistrer une règle**, deux vérifications sont possibles :
 1. **« Valider le script »**, sous chaque emplacement de script, vérifie la **syntaxe** (est-ce un programme Rhai valide ?). Il ne détecte PAS l'appel d'une fonction absente, ni une erreur qui ne survient qu'à l'exécution.

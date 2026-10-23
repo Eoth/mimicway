@@ -387,8 +387,6 @@ mod tests {
             request_body: EMPTY_BODY,
             seq_counter: 0,
             script_result: None,
-            pre_script_result: None,
-            post_script_result: None,
         }
     }
 

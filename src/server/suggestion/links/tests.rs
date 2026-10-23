@@ -79,8 +79,6 @@ fn render(response: &MockResponse, host: &str) -> String {
         request_body: b"",
         seq_counter: 0,
         script_result: None,
-        pre_script_result: None,
-        post_script_result: None,
     };
     TemplateRenderer::render_body(&response.body, &[], &ctx)
 }

@@ -141,7 +141,7 @@ Le même service se construit en une minute dans l'interface ; sur une instance 
 | Groupes | Préfixe d'URL commun, administrateurs et membres par groupe | [Groupes](docs/fr/groups.md) |
 | Règles de correspondance | Méthode, sous-chemin, conditions sur le chemin, la query, les en-têtes, le JSON, le XML/XPath, le formulaire ; ET/OU | [Règles de correspondance](docs/fr/matching-rules.md) |
 | Réponses | Templates, constructeur visuel JSON/XML, données factices, mode Chaos (latence, taux d'erreur) | [Réponses et templates](docs/fr/responses-and-templates.md) |
-| Scripts | Jusqu'à trois blocs Rhai en bac à sable par règle, valeurs déterministes par graine, dates, aides JSON/XML | [Scripts Rhai](docs/fr/rhai-scripts.md) |
+| Scripts | Un script Rhai en bac à sable par règle, valeurs déterministes par graine, dates, aides JSON/XML | [Scripts Rhai](docs/fr/rhai-scripts.md) |
 | Testeur de règle et conflits | Rejouer un brouillon de règle contre une requête capturée avec un verdict par condition ; avertissement quand une nouvelle règle en chevauche une autre | [Testeur de règle](docs/fr/rule-tester-and-conflicts.md) |
 | Journal des requêtes | Les 200 dernières requêtes : mode, règle correspondante (ou aucune), statut, et la requête capturée pour le testeur de règle | [Journal des requêtes](docs/fr/request-log.md) |
 | Observation de trafic | Observer un service relayé et transformer ce qu'il renvoie vraiment en règles | [Observation de trafic](docs/fr/traffic-observation.md) |
@@ -250,7 +250,7 @@ Pipes : `lower`, `upper`, `trim`, `capitalize`, `first(n)`, `last(n)`, `substr(s
 
 Types de données factices : `FirstName`, `LastName`, `Email`, `CompanyName`, `StreetName`, `DatePast`, `DateFuture`, `TimestampMs`, `BoolRandom`, `LoremSentence`, et des formats français (`PhoneNumberFR`, `CityFR`, `PostcodeFR`, `FullAddressFR`, `CountryFR`, `IbanFR`, `Siren`, `Siret`). Le constructeur visuel ajoute les entiers dans une plage (`Integer{min,max}`).
 
-Une règle peut aussi exécuter jusqu'à trois scripts [Rhai](https://rhai.rs) (`pre_script`, `script`, `post_script`) qui lisent la requête et renvoient une valeur ou un objet utilisé par le template. En plus du langage lui-même, ils disposent de `random_int`, `seeded_int`, `seeded_pick` (même entrée, même réponse), `uuid`, `fake`, `now_ms`, `now_iso`, `year`, `date_now`, `date_past`, `date_future`, `parse_date`, `parse_json`, `to_json`, `parse_xml_items` et `xml_element`. Les scripts s'exécutent dans un bac à sable : aucun accès aux fichiers ni au réseau, pas d'`eval` ; une exécution dispose d'au plus 10 000 opérations, 500 ms, 16 Mio de mémoire, 64 variables à la fois et 32 niveaux d'appel, et chaque valeur d'au plus 1 Mio de texte, 1 000 éléments de tableau et 500 entrées d'objet. Un script qui atteint une limite s'arrête sur une erreur qui la nomme. Référence complète avec exemples : [Scripts Rhai](docs/fr/rhai-scripts.md).
+Une règle peut aussi exécuter un script [Rhai](https://rhai.rs) qui lit la requête et renvoie une valeur ou un objet utilisé par le template. En plus du langage lui-même, il dispose de `random_int`, `seeded_int`, `seeded_pick` (même entrée, même réponse), `uuid`, `fake`, `now_ms`, `now_iso`, `year`, `date_now`, `date_past`, `date_future`, `parse_date`, `parse_json`, `to_json`, `parse_xml_items` et `xml_element`. Les scripts s'exécutent dans un bac à sable : aucun accès aux fichiers ni au réseau, pas d'`eval` ; une exécution dispose d'au plus 10 000 opérations, 500 ms, 16 Mio de mémoire, 64 variables à la fois et 32 niveaux d'appel, et chaque valeur d'au plus 1 Mio de texte, 1 000 éléments de tableau et 500 entrées d'objet. Un script qui atteint une limite s'arrête sur une erreur qui la nomme. Référence complète avec exemples : [Scripts Rhai](docs/fr/rhai-scripts.md).
 
 ## Déploiement
 
@@ -375,7 +375,7 @@ L'anglais est la langue source : chaque message est écrit une fois, en anglais,
 
 - [ROADMAP.md](ROADMAP.md) : ce qui est prévu, et dans quel ordre.
 - [ARCHITECTURE.md](ARCHITECTURE.md) : comment Mimicway est construit (en anglais).
-- [MIGRATING.md](MIGRATING.md) : mettre à jour une installation de lightMock.
+- [MIGRATING.md](MIGRATING.md) : mettre à jour une installation, depuis lightMock ou au-delà d'un changement qui demande une action de votre part.
 - [CHANGELOG.md](CHANGELOG.md) : les changements par version.
 - [SECURITY.md](SECURITY.md) : versions prises en charge et signalement privé des vulnérabilités.
 - [CONTRIBUTING.md](CONTRIBUTING.md) : proposer un changement, lancer les vérifications et ajouter une langue ; [code de conduite](CODE_OF_CONDUCT.md).

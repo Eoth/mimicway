@@ -106,8 +106,6 @@ pub fn template(data: &[u8]) {
         request_body: body,
         seq_counter: 0,
         script_result: None,
-        pre_script_result: None,
-        post_script_result: None,
     };
     let _ = render_template(&text(template), &ctx);
 }

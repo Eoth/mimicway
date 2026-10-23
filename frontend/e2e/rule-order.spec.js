@@ -12,9 +12,7 @@ function textRule(name, text, conditions = []) {
     method: 'GET',
     sub_path: null,
     action: 'mock',
-    pre_script: null,
     script: null,
-    post_script: null,
     conditions: { all_of: conditions, any_of: [] },
     response: {
       status: 200,

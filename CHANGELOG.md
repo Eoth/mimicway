@@ -6,6 +6,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Removed
+- **Breaking**: the `pre_script` and `post_script` blocks of a rule, with their template variables `{{pre_script…}}` and `{{post_script…}}`, and the "Advanced options" of the rule form that held them. They ran at the same moment as `script`, on the same request, without seeing each other's result, so they only repeated it, and "post" suggested a block run after the response, which none was. A configuration where they are empty loads as before. One where a block still holds code is refused at start, at import, at restore and through the API, with a message that names the rule and the block, rather than loaded without that code; [MIGRATING.md](MIGRATING.md#after-030-one-script-per-rule) explains how to move it into `script`. The rule tester (`POST /api/rule-test`) no longer takes these two blocks, and its `script_errors` and `script_results` items no longer have a `slot`.
+
 ## [0.3.0] - 2026-10-23
 
 ### Added

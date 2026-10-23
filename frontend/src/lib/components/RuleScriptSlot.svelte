@@ -1,8 +1,6 @@
 <script>
-  // One Rhai script slot: toggle, editor, validation and help. RuleResponseSection.svelte uses it three times
-  // (pre_script, script, post_script: same layout, run independently, no chaining). The caller passes the help through
-  // the `help` snippet, since it differs per slot: a short text shared by pre_script and post_script, examples and the
-  // list of functions for the main script.
+  // The rule's Rhai script: toggle, editor, validation and help. RuleResponseSection.svelte passes the help (examples
+  // and the list of functions) through the `help` snippet.
   import ToggleSwitch from './ToggleSwitch.svelte';
   import RhaiScriptEditor from './RhaiScriptEditor.svelte';
   import { t } from '../i18n.svelte.js';

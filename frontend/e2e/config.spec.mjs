@@ -67,6 +67,50 @@ test('a configuration is imported through the API', async ({ request }) => {
   expect(services[0].name).toBe('imported-svc');
 });
 
+// A file written for an earlier version may hold code in the removed pre_script and post_script blocks. Dropping that
+// code would change what the mock returns without anyone seeing it: the server refuses it, and the interface names
+// the rule and the block before sending anything.
+test('a configuration with code in a removed script block is refused, and nothing is replaced', async ({
+  page,
+  request,
+}) => {
+  await request.post(`${API}/services`, { data: validService('existing-svc') });
+  const rule = {
+    name: 'old-rule',
+    method: 'GET',
+    sub_path: null,
+    action: 'mock',
+    pre_script: null,
+    script: null,
+    post_script: '"total"',
+    conditions: { all_of: [], any_of: [] },
+    response: { status: 200, headers: [], body: [], chaos: null },
+  };
+  const config = { services: [validService('old-svc', { rules: [rule] })], groups: [] };
+
+  const res = await request.put(`${API}/config`, { data: config });
+  expect(res.status()).toBe(422);
+  expect(await res.text()).toContain('the rule "old-rule" has code in its post_script block');
+
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+  await page.getByTestId('app-import-file-input').setInputFiles({
+    name: 'mimicway-config.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify(config)),
+  });
+  await expect(page.getByTestId('notification')).toContainText(
+    'the rule "old-rule" of the service "old-svc" has code in its post_script block',
+  );
+  await expect(page.getByTestId('app-import-modal')).toBeHidden();
+  const services = await (await request.get(`${API}/services`)).json();
+  expect(services.map((s) => s.name)).toEqual(['existing-svc']);
+
+  // The same rule with empty blocks, as an export of an earlier version holds them, still loads.
+  const emptied = { ...config, services: [validService('old-svc', { rules: [{ ...rule, post_script: '' }] })] };
+  expect((await request.put(`${API}/config`, { data: emptied })).status()).toBe(200);
+});
+
 test('import asks whether to replace everything or merge, and merging keeps what exists', async ({ page, request }) => {
   // The file to import is a real export: a group and a service of that group.
   await request.post(`${API}/groups`, { data: { name: 'payments', code: '', admins: [], members: [] } });

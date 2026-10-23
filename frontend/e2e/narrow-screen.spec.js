@@ -9,9 +9,7 @@ const rule = (name, method, action) => ({
   method,
   sub_path: null,
   action,
-  pre_script: null,
   script: null,
-  post_script: null,
   conditions: { all_of: [], any_of: [] },
   response: {
     status: 200,

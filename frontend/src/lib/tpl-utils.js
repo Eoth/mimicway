@@ -254,7 +254,7 @@ function parseTplValue(key, raw) {
       pipes = '';
     }
     const { source, value } = varNameToSource(varName);
-    // An expression the builder has no source for (a text in quotes, now_epoch, pre_script.total...) stays as written:
+    // An expression the builder has no source for (a text in quotes, now_epoch...) stays as written:
     // a fixed value is inserted as it is, so the template keeps it whole instead of losing its braces and pipes.
     if (source === 'fixed') return { key, fieldType: 'value', source, value: inner, pipe: '', asNumber: !isQuoted };
     return { key, fieldType: 'value', source, value, pipe: pipes, asNumber: !isQuoted };

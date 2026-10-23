@@ -95,7 +95,7 @@ impl App {
             .map(|(i, rule)| {
                 json!({
                     "name": format!("suggested-{i}"), "method": rule["method"], "sub_path": rule["sub_path"],
-                    "action": "mock", "pre_script": null, "script": null, "post_script": null,
+                    "action": "mock", "script": null,
                     "conditions": {"all_of": rule["condition"].as_object().map_or(vec![], |_| vec![rule["condition"].clone()]), "any_of": []},
                     "response": rule["response"],
                 })

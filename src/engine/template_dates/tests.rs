@@ -11,8 +11,6 @@ fn render(template: &str, body: &str) -> String {
         request_body: body.as_bytes(),
         seq_counter: 0,
         script_result: None,
-        pre_script_result: None,
-        post_script_result: None,
     };
     render_template(template, &ctx)
 }

@@ -29,6 +29,6 @@ Un **journal des messages**, comme le [journal des requêtes](request-log.md) HT
 - **Nécessite une version de Mimicway compilée avec le support Kafka**, ce qui n'est pas le cas par défaut. Si « Messages Kafka » n'apparaît pas, votre installation ne l'inclut pas.
 - Nécessite aussi un serveur Kafka configuré et joignable (`KAFKA_BROKERS`, `KAFKA_LISTEN_TOPIC`… voir le README) : sans lui, même une version avec le support Kafka ne se met pas à l'écoute.
 - Un seul topic d'écoute global est géré (pas de topic par service) : un message entrant est comparé aux règles de **tous** les services, et la première qui correspond l'emporte.
-- Les [scripts Rhai](rhai-scripts.md) (pré-script, script, post-script) ne s'exécutent **pas** pour un message Kafka : ils sont réservés au trafic HTTP.
+- Les [scripts Rhai](rhai-scripts.md) ne s'exécutent **pas** pour un message Kafka : ils sont réservés au trafic HTTP.
 - Le journal des messages est borné en durée et en taille : les entrées les plus anciennes sont retirées (après `MESSAGE_LOG_TTL_MS`, 24 heures par défaut), et un message volumineux est tronqué dans le journal (`MESSAGE_LOG_MAX_BODY_SIZE`).
 - Avec l'authentification, consulter le journal des messages et simuler des messages est réservé aux super-admins.

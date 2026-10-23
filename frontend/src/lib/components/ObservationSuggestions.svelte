@@ -137,9 +137,7 @@
       method: rule.method,
       sub_path: rule.sub_path,
       action: 'mock',
-      pre_script: null,
       script: null,
-      post_script: null,
       response_mode: null,
       conditions: {
         all_of: rule.condition ? [rule.condition] : [],

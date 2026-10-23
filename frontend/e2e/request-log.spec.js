@@ -19,9 +19,7 @@ const ordersService = {
       method: 'GET',
       sub_path: null,
       action: 'mock',
-      pre_script: null,
       script: null,
-      post_script: null,
       conditions: {
         all_of: [{ source: { type: 'QueryParam', key: 'status' }, operator: { type: 'Eq', value: 'paid' } }],
         any_of: [],

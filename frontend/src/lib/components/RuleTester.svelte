@@ -2,7 +2,7 @@
   // Rule tester: replays the draft rule of RuleForm, read-only, against a request already captured in the service's
   // log. Nothing changes and nothing is proxied: one POST to /api/rule-test (stateless, src/server/api.rs) evaluates
   // the method, the sub-path and each condition (MatchEngine::evaluate_rule_test, src/engine/matcher.rs) and, when the
-  // rule matches and is not a proxy rule, runs its three script slots against that real request.
+  // rule matches and is not a proxy rule, runs its script against that real request.
   //
   // Why scripts run here: in production a failing script (unknown Rhai function, type error...) is swallowed
   // (run_rule_script in src/server/intercept.rs), so that a broken script never blocks a request; only a server log
@@ -15,7 +15,7 @@
   import { testRule } from '../api.js';
   import { formatDateTime } from '../format-date.js';
   import FormField from './FormField.svelte';
-  import { t, tCount, intlLocale } from '../i18n.svelte.js';
+  import { t, intlLocale } from '../i18n.svelte.js';
 
   let { serviceName, groupName = null, logs = [], getDraftRule } = $props();
 
@@ -78,9 +78,7 @@
         sub_path: draft.subPath || null,
         conditions: { all_of: draft.allOf, any_of: draft.anyOf },
         action: draft.action ?? 'mock',
-        pre_script: draft.preScript ?? null,
         script: draft.script ?? null,
-        post_script: draft.postScript ?? null,
         request: {
           method: log.method,
           remaining_path: log.captured.remaining_path,
@@ -107,19 +105,6 @@
     !!result?.body_truncated &&
       [...(result.all_of ?? []), ...(result.any_of ?? [])].some((e) => bodyBasedSource(e.condition.source.type)),
   );
-
-  function slotLabel(slot) {
-    switch (slot) {
-      case 'pre_script':
-        return t('Pre-script (preparation)');
-      case 'script':
-        return t('Custom script');
-      case 'post_script':
-        return t('Post-script (finalization)');
-      default:
-        return slot;
-    }
-  }
 </script>
 
 <section class="rule-tester" aria-label={t('Rule tester against a real request')}>
@@ -181,16 +166,14 @@
         {#if result.script_errors?.length > 0}
           <div class="callout callout-danger" role="alert" data-testid="rule-tester-script-errors">
             <p class="callout-title">
-              {tCount(
-                result.script_errors.length,
+              {t(
                 '⚠ A script failed to run: the response would be rendered with an empty result for this script (no error is returned to the client, as in production).',
-                '⚠ Scripts failed to run: the response would be rendered with an empty result for these scripts (no error is returned to the client, as in production).',
               )}
             </p>
             <ul class="script-error-list">
               {#each result.script_errors as err}
-                <li data-testid="rule-tester-script-error-{err.slot}">
-                  <strong>{t('{0}:', slotLabel(err.slot))}</strong> <code>{err.message}</code>
+                <li data-testid="rule-tester-script-error-script">
+                  <strong>{t('{0}:', t('Custom script'))}</strong> <code>{err.message}</code>
                 </li>
               {/each}
             </ul>
@@ -200,26 +183,22 @@
         {#if result.script_results?.length > 0}
           <div class="script-result-panel" data-testid="rule-tester-script-results">
             <p class="script-result-title">
-              {tCount(
-                result.script_results.length,
-                'Result of this script (no error, but check that these are the expected values):',
-                'Result of these scripts (no error, but check that these are the expected values):',
-              )}
+              {t('Result of this script (no error, but check that these are the expected values):')}
             </p>
             {#each result.script_results as sr}
-              <div class="script-result-slot" data-testid="rule-tester-script-result-{sr.slot}">
-                <strong>{slotLabel(sr.slot)}</strong>
+              <div class="script-result-slot" data-testid="rule-tester-script-result-script">
+                <strong>{t('Custom script')}</strong>
                 {#if Object.keys(sr.fields).length > 0}
                   <ul class="script-result-fields">
                     {#each Object.entries(sr.fields) as [key, value]}
                       <li>
-                        <code>{`{{${sr.slot}.${key}}}`}</code> = <code class="script-result-value">{value}</code>
+                        <code>{`{{script.${key}}}`}</code> = <code class="script-result-value">{value}</code>
                       </li>
                     {/each}
                   </ul>
                 {:else}
                   <p class="script-result-value-line">
-                    <code>{`{{${sr.slot}}}`}</code> = <code class="script-result-value">{sr.value}</code>
+                    <code>{'{{script}}'}</code> = <code class="script-result-value">{sr.value}</code>
                   </p>
                 {/if}
               </div>

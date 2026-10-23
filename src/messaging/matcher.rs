@@ -67,9 +67,7 @@ mod tests {
                 method: "ANY".into(),
                 sub_path: None,
                 action: RuleAction::default(),
-                pre_script: None,
                 script: None,
-                post_script: None,
                 response_mode: None,
                 conditions,
                 response: MockResponse {

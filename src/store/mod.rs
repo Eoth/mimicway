@@ -652,9 +652,7 @@ mod tests {
                     method: "GET".into(),
                     sub_path: None,
                     action: RuleAction::default(),
-                    pre_script: None,
                     script: None,
-                    post_script: None,
                     response_mode: None,
                     conditions: ConditionGroup::default(),
                     response: MockResponse {
@@ -691,6 +689,26 @@ mod tests {
         let loaded = store.snapshot().await;
         assert_eq!(loaded.services.len(), 1);
         assert_eq!(loaded.services[0].name, "svc-a");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[tokio::test]
+    async fn load_refuses_code_in_a_removed_script_block_and_leaves_the_file_as_it_was() {
+        let dir = temp_dir();
+        let file = MockStore::config_file(&dir);
+        let mut yaml = serde_yaml::to_string(&sample_config()).unwrap();
+        yaml = yaml.replace(
+            "  script: null\n",
+            "  script: null\n    pre_script: '1 + 1'\n",
+        );
+        assert!(yaml.contains("pre_script"), "{yaml}");
+        std::fs::write(&file, &yaml).unwrap();
+
+        let Err(error) = MockStore::load_or_init(&dir).await else {
+            panic!("a configuration whose code would be dropped must not load");
+        };
+        assert!(error.to_string().contains("pre_script"), "{error}");
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), yaml);
         std::fs::remove_dir_all(&dir).ok();
     }
 

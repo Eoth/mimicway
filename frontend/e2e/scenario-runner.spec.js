@@ -33,9 +33,7 @@ function validRule(name, overrides = {}) {
     method: 'GET',
     sub_path: null,
     action: 'mock',
-    pre_script: null,
     script: null,
-    post_script: null,
     conditions: { all_of: [], any_of: [] },
     response: {
       status: 200,
@@ -368,38 +366,14 @@ test.describe('Scenarios: purely mocked services', () => {
 
 // Folding is driven here in the JSON builder only. The XML builder has a fold of its own (both keep their folds with
 // fold-paths.js), covered by XmlResponseBuilder.test.js.
-test.describe('Scenarios: folded JSON objects and advanced options', () => {
+test.describe('Scenarios: folded JSON objects', () => {
   test.beforeEach(async ({ request }) => {
     await request.delete(`${API}/config/reset`);
     await request.post(`${API}/services`, {
       data: validService('fold-adv-svc', {
-        rules: [validRule('fold-adv-existing-rule', { post_script: '"deja configure"' })],
+        rules: [validRule('fold-adv-existing-rule')],
       }),
     });
-  });
-
-  test('the advanced options of a new rule start folded', async ({ page }) => {
-    await runScenario(page, loadScenario('rules.scenarios.json', 'The advanced options of a new rule start folded'));
-  });
-
-  test('the advanced options open by themselves when a post-script exists', async ({ page }) => {
-    await runScenario(
-      page,
-      loadScenario('rules.scenarios.json', 'The advanced options open by themselves for a rule that has a post-script'),
-    );
-  });
-
-  test('a pre-script survives folding the advanced options', async ({ page, request }) => {
-    await runScenario(
-      page,
-      loadScenario('rules.scenarios.json', 'Folding the advanced options keeps the pre-script typed in them'),
-    );
-
-    // The pre-script typed before folding was saved, not only shown again.
-    const resp = await request.get(`${API}/services/fold-adv-svc`);
-    const body = await resp.json();
-    const rule = body.rules.find((r) => r.name === 'fold-adv-rule');
-    expect(rule.pre_script).toBe('"greeting"');
   });
 
   test('folding a nested JSON object keeps its fields', async ({ page, request }) => {

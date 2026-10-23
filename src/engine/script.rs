@@ -5,7 +5,7 @@
 // `import` cannot load files (Rhai's default resolver reads `.rhai` files from the disk), `eval` is disabled so that
 // validating a script really validates all the code it runs, and `print`/`debug` go to the debug log instead of
 // the server's stdout. The native functions registered below never panic, whatever their arguments.
-// A rule has up to three script slots, run before its template is rendered; a script's result is available as
+// A rule has at most one script, run before its template is rendered; its result is available as
 // {{script}} when it is a string, or {{script.field}} when it is a map.
 //
 // parse_json/to_json/parse_xml_items/xml_element exist for one need that neither template variables nor conditions

@@ -16,9 +16,7 @@ const templateSvc = {
       method: 'GET',
       sub_path: null,
       action: 'mock',
-      pre_script: null,
       script: null,
-      post_script: null,
       conditions: { all_of: [], any_of: [] },
       response: {
         status: 200,
@@ -50,10 +48,8 @@ const seededSvc = {
       method: 'GET',
       sub_path: null,
       action: 'mock',
-      pre_script: null,
       script:
         '#{ name: seeded_pick(request.path.siret, ["Dupont SARL", "Martin SAS", "Petit EURL"]), score: seeded_int(request.path.siret, 0, 100) }',
-      post_script: null,
       conditions: { all_of: [], any_of: [] },
       response: {
         status: 200,

@@ -12,13 +12,11 @@ use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use std::collections::HashMap;
 
-/// Runs one of a rule's three script slots (pre_script, script, post_script). The slots are independent: same
-/// context, no chaining (see `Rule`). `None` when the slot is empty. A runtime error is logged and gives an empty
-/// result: a broken script never blocks the response.
+/// Runs a rule's script. `None` when the rule has none. A runtime error is logged and gives an empty result: a broken
+/// script never blocks the response.
 fn run_rule_script(
     engine: &ScriptEngine,
     rule_name: &str,
-    slot: &str,
     script: &Option<String>,
     ctx: &ScriptContext,
 ) -> Option<ScriptResult> {
@@ -26,7 +24,7 @@ fn run_rule_script(
     match engine.execute(script, ctx) {
         Ok(result) => Some(result),
         Err(e) => {
-            tracing::warn!(rule = rule_name, slot, error = %e, "script execution failed");
+            tracing::warn!(rule = rule_name, error = %e, "script execution failed");
             Some(ScriptResult::default())
         }
     }
@@ -427,13 +425,10 @@ async fn handle_service(
     let mut merged_params = path_params;
     merged_params.extend(sub_params);
 
-    // The three slots run independently (same context, no chaining, see `Rule`); a failing one is logged and never
-    // blocks the response. The body is copied into the context only for a rule that has a script: a copy of a 10 MiB
-    // body on every mocked request was memory held for nothing.
-    let has_script =
-        rule.pre_script.is_some() || rule.script.is_some() || rule.post_script.is_some();
+    // A failing script is logged and never blocks the response. The body is copied into the context only for a rule
+    // that has a script: a copy of a 10 MiB body on every mocked request was memory held for nothing.
     let script_ctx = ScriptContext {
-        body: if has_script {
+        body: if rule.script.is_some() {
             String::from_utf8_lossy(&request_data.body).into_owned()
         } else {
             String::new()
@@ -442,27 +437,8 @@ async fn handle_service(
         query_params: request_data.query_params.clone(),
         path_params: merged_params.clone(),
     };
-    let pre_script_result = run_rule_script(
-        &state.script_engine,
-        &rule.name,
-        "pre_script",
-        &rule.pre_script,
-        &script_ctx,
-    );
-    let script_result = run_rule_script(
-        &state.script_engine,
-        &rule.name,
-        "script",
-        &rule.script,
-        &script_ctx,
-    );
-    let post_script_result = run_rule_script(
-        &state.script_engine,
-        &rule.name,
-        "post_script",
-        &rule.post_script,
-        &script_ctx,
-    );
+    let script_result =
+        run_rule_script(&state.script_engine, &rule.name, &rule.script, &script_ctx);
 
     let ctx = TemplateContext {
         path_params: &merged_params,
@@ -471,8 +447,6 @@ async fn handle_service(
         request_body: &request_data.body,
         seq_counter: seq,
         script_result: script_result.as_ref(),
-        pre_script_result: pre_script_result.as_ref(),
-        post_script_result: post_script_result.as_ref(),
     };
 
     match apply_chaos_and_render(&rule.response, &path_segments, &ctx).await {
@@ -801,7 +775,7 @@ mod tests {
     #[test]
     fn run_rule_script_returns_none_when_no_script() {
         let engine = ScriptEngine::new();
-        let result = run_rule_script(&engine, "my-rule", "pre_script", &None, &empty_script_ctx());
+        let result = run_rule_script(&engine, "my-rule", &None, &empty_script_ctx());
         assert!(result.is_none());
     }
 
@@ -809,7 +783,7 @@ mod tests {
     fn run_rule_script_executes_and_returns_result() {
         let engine = ScriptEngine::new();
         let script = Some(r#""hello""#.to_string());
-        let result = run_rule_script(&engine, "my-rule", "script", &script, &empty_script_ctx());
+        let result = run_rule_script(&engine, "my-rule", &script, &empty_script_ctx());
         assert_eq!(result.unwrap().value, "hello");
     }
 
@@ -817,31 +791,9 @@ mod tests {
     fn run_rule_script_soft_fails_on_invalid_script() {
         let engine = ScriptEngine::new();
         let script = Some("this is not valid rhai (((".to_string());
-        let result = run_rule_script(
-            &engine,
-            "my-rule",
-            "post_script",
-            &script,
-            &empty_script_ctx(),
-        );
+        let result = run_rule_script(&engine, "my-rule", &script, &empty_script_ctx());
         // Never None, never a panic: an empty ScriptResult instead.
         assert_eq!(result.unwrap().value, "");
-    }
-
-    #[test]
-    fn pre_script_and_post_script_are_independent_slots() {
-        let engine = ScriptEngine::new();
-        let pre = Some(r#""PRE""#.to_string());
-        let post = Some(r#""POST""#.to_string());
-        let ctx = empty_script_ctx();
-
-        let pre_result = run_rule_script(&engine, "r", "pre_script", &pre, &ctx);
-        let post_result = run_rule_script(&engine, "r", "post_script", &post, &ctx);
-        let script_result = run_rule_script(&engine, "r", "script", &None, &ctx);
-
-        assert_eq!(pre_result.unwrap().value, "PRE");
-        assert_eq!(post_result.unwrap().value, "POST");
-        assert!(script_result.is_none());
     }
 
     // --- The proxy forwards query parameters, custom headers, the method and the body untouched. A fake TCP target
@@ -994,9 +946,7 @@ mod tests {
                         method: "POST".into(),
                         sub_path: None,
                         action: RuleAction::Proxy,
-                        pre_script: None,
                         script: None,
-                        post_script: None,
                         response_mode: None,
                         conditions: ConditionGroup::default(),
                         response: MockResponse {
@@ -1114,9 +1064,7 @@ mod tests {
                         method: "GET".into(),
                         sub_path: None,
                         action: RuleAction::Mock,
-                        pre_script: None,
                         script: None,
-                        post_script: None,
                         response_mode: None,
                         conditions: ConditionGroup::default(),
                         response: MockResponse {
@@ -1259,9 +1207,7 @@ mod tests {
             method: "POST".into(),
             sub_path: None,
             action: RuleAction::Mock,
-            pre_script: None,
             script: None,
-            post_script: None,
             response_mode: None,
             conditions: ConditionGroup::default(),
             response: MockResponse {
@@ -1302,9 +1248,7 @@ mod tests {
             method: "POST".into(),
             sub_path: None,
             action: RuleAction::Mock,
-            pre_script: None,
             script: None,
-            post_script: None,
             response_mode: None,
             conditions: ConditionGroup::default(),
             response: MockResponse {
@@ -1375,9 +1319,7 @@ mod tests {
             method: "GET".into(),
             sub_path: None,
             action: RuleAction::Proxy,
-            pre_script: None,
             script: None,
-            post_script: None,
             response_mode: None,
             conditions: ConditionGroup::default(),
             response: MockResponse {
@@ -1412,7 +1354,6 @@ mod tests {
             method: "POST".into(),
             sub_path: None,
             action: RuleAction::Mock,
-            pre_script: None,
             script: Some(
                 r#"
                     let req = parse_json(request.body);
@@ -1434,7 +1375,6 @@ mod tests {
                 "#
                 .into(),
             ),
-            post_script: None,
             response_mode: None,
             conditions: ConditionGroup::default(),
             response: MockResponse {
@@ -1522,7 +1462,6 @@ mod tests {
             method: "POST".into(),
             sub_path: None,
             action: RuleAction::Mock,
-            pre_script: None,
             script: Some(
                 r#"
                     let articles = parse_xml_items(request.body, "Envelope/Body/GetOrderTotalsRequest/articles/article");
@@ -1544,7 +1483,6 @@ mod tests {
                 "#
                 .into(),
             ),
-            post_script: None,
             response_mode: None,
             conditions: ConditionGroup::default(),
             response: MockResponse {
@@ -1643,7 +1581,6 @@ mod tests {
             method: "GET".into(),
             sub_path: Some("/lookup/{name}".into()),
             action: RuleAction::Mock,
-            pre_script: None,
             script: Some(
                 r#"
                     let mapping = #{
@@ -1659,7 +1596,6 @@ mod tests {
                 "#
                 .into(),
             ),
-            post_script: None,
             response_mode: None,
             conditions: ConditionGroup::default(),
             response: MockResponse {
@@ -1724,7 +1660,6 @@ mod tests {
                 method: "POST".into(),
                 sub_path: None,
                 action: RuleAction::Mock,
-                pre_script: None,
                 script: Some(
                     r#"
                         let items = parse_xml_items(request.body, "Envelope/Body/recherche");
@@ -1733,7 +1668,6 @@ mod tests {
                     "#
                     .into(),
                 ),
-                post_script: None,
                 response_mode: None,
                 conditions: ConditionGroup {
                     all_of: vec![Condition {
@@ -1756,9 +1690,7 @@ mod tests {
                 method: "POST".into(),
                 sub_path: None,
                 action: RuleAction::Mock,
-                pre_script: None,
                 script: None,
-                post_script: None,
                 response_mode: None,
                 conditions: ConditionGroup {
                     all_of: vec![Condition {

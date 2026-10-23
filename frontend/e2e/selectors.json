@@ -133,9 +133,7 @@
     "conflictCancelButton": "[data-testid=\"rule-form-conflict-cancel-button\"]",
     "staleProxyWarning": "[data-testid=\"rule-form-stale-proxy-warning\"]",
     "staleProxySaveAnywayButton": "[data-testid=\"rule-form-stale-proxy-save-anyway-button\"]",
-    "staleProxyCancelButton": "[data-testid=\"rule-form-stale-proxy-cancel-button\"]",
-    "advancedOptionsToggleButton": "[data-testid=\"rule-form-advanced-options-toggle-button\"]",
-    "advancedOptionsPanel": "[data-testid=\"rule-form-advanced-options-panel\"]"
+    "staleProxyCancelButton": "[data-testid=\"rule-form-stale-proxy-cancel-button\"]"
   },
 
   "conditionForm": {

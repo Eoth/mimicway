@@ -14,7 +14,7 @@ For each condition of the rule, the result says whether it matched and, above al
 
 ### Catch a broken script before saving
 
-When your rule holds [Rhai scripts](rhai-scripts.md), the tester really runs them against the selected request (only when the rule matches it, as in production). When a script fails, for instance because it calls a function that does not exist, an explicit message names the failing block (custom script, pre-script or post-script) and the exact error.
+When your rule holds a [Rhai script](rhai-scripts.md), the tester really runs it against the selected request (only when the rule matches it, as in production). When a script fails, for instance because it calls a function that does not exist, an explicit message gives the exact error.
 
 This matters because once the rule is saved, a script error **never blocks the response**: the request is still served, with an empty result for the failing script, and nothing visible for whoever receives the response. The tester is where such a problem becomes visible again, before saving; see [Rhai scripts: when a script fails](rhai-scripts.md#when-a-script-fails).
 

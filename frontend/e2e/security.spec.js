@@ -150,9 +150,7 @@ test.describe('Rule name uniqueness', () => {
       method: 'GET',
       sub_path: null,
       action: 'mock',
-      pre_script: null,
       script: null,
-      post_script: null,
       conditions: { all_of: [], any_of: [] },
       response: { status: 200, headers: [], body: [{ type: 'Literal', value: 'ok' }], chaos: null },
     };
@@ -229,9 +227,7 @@ test.describe('A page answered by a service cannot act as the interface', () => 
             method: 'GET',
             sub_path: null,
             action: 'mock',
-            pre_script: null,
             script: null,
-            post_script: null,
             conditions: { all_of: [], any_of: [] },
             response: {
               status: 200,

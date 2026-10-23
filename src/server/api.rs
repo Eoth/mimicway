@@ -1681,23 +1681,18 @@ struct RuleTestRequest {
     method: String,
     sub_path: Option<String>,
     conditions: ConditionGroup,
-    // Optional, for UIs that do not send them. The scripts run under the production conditions (the rule matches and
+    // Optional, for UIs that do not send them. The script runs under the production conditions (the rule matches and
     // is not a proxy rule, see run_rule_script in intercept.rs) and against the captured request itself, never an empty
     // one, so that a script such as `parse_json(request.body).len()` is not reported as failing for lack of a body.
     #[serde(default)]
     action: RuleAction,
     #[serde(default)]
-    pre_script: Option<String>,
-    #[serde(default)]
     script: Option<String>,
-    #[serde(default)]
-    post_script: Option<String>,
     request: RuleTestCapturedRequest,
 }
 
 #[derive(serde::Serialize)]
 struct ScriptExecutionError {
-    slot: &'static str,
     message: String,
 }
 
@@ -1706,7 +1701,6 @@ struct ScriptExecutionError {
 // tester shows the result so that this is seen before the rule is saved.
 #[derive(serde::Serialize)]
 struct ScriptExecutionResult {
-    slot: &'static str,
     value: String,
     fields: HashMap<String, String>,
 }
@@ -1720,11 +1714,11 @@ struct RuleTestResponse {
     body_truncated: bool,
     all_of: Vec<ConditionEvaluation>,
     any_of: Vec<ConditionEvaluation>,
-    // Script errors, replayed against the captured request; empty when the rule does not match (scripts do not run
-    // then, as in production) or has no script. In production a failing script never blocks the response: the error
+    // The script's error, replayed against the captured request (one item at most); empty when the rule does not match
+    // (the script does not run then, as in production) or has no script. In production a failing script never blocks the response: the error
     // only reaches the server log and the template gets an empty result. This field is where a user sees it.
     script_errors: Vec<ScriptExecutionError>,
-    // What the scripts that ran without error returned. A script slot appears either here or in script_errors.
+    // What the script returned when it ran without error: a script appears either here or in script_errors.
     script_results: Vec<ScriptExecutionResult>,
 }
 
@@ -1753,32 +1747,26 @@ async fn test_rule(
         &req,
     );
 
-    // As in production: scripts run only when the rule matches and is not a proxy rule (a proxied request renders no
-    // template).
+    // As in production: the script runs only when the rule matches and is not a proxy rule (a proxied request renders
+    // no template).
     let mut script_errors = Vec::new();
     let mut script_results = Vec::new();
-    if outcome.overall_matched && payload.action != RuleAction::Proxy {
+    if let Some(code) = &payload.script
+        && outcome.overall_matched
+        && payload.action != RuleAction::Proxy
+    {
         let script_ctx = ScriptContext {
             body: String::from_utf8_lossy(&req.body).into_owned(),
             headers: req.headers.clone(),
             query_params: req.query_params.clone(),
             path_params: outcome.path_params.clone(),
         };
-        for (slot, script) in [
-            ("pre_script", &payload.pre_script),
-            ("script", &payload.script),
-            ("post_script", &payload.post_script),
-        ] {
-            if let Some(code) = script {
-                match state.script_engine.execute(code, &script_ctx) {
-                    Err(message) => script_errors.push(ScriptExecutionError { slot, message }),
-                    Ok(result) => script_results.push(ScriptExecutionResult {
-                        slot,
-                        value: result.value,
-                        fields: result.fields,
-                    }),
-                }
-            }
+        match state.script_engine.execute(code, &script_ctx) {
+            Err(message) => script_errors.push(ScriptExecutionError { message }),
+            Ok(result) => script_results.push(ScriptExecutionResult {
+                value: result.value,
+                fields: result.fields,
+            }),
         }
     }
 
@@ -2387,35 +2375,11 @@ mod tests {
         .await;
         assert!(result.overall_matched);
         assert_eq!(result.script_errors.len(), 1);
-        assert_eq!(result.script_errors[0].slot, "script");
         assert!(
             result.script_errors[0]
                 .message
                 .contains("totally_undefined_fn")
         );
-    }
-
-    #[tokio::test]
-    async fn test_rule_reports_errors_for_all_three_script_slots_independently() {
-        let payload = RuleTestRequest {
-            method: "GET".into(),
-            sub_path: None,
-            conditions: ConditionGroup::default(),
-            pre_script: Some("broken_pre()".into()),
-            script: Some("\"ok\"".into()),
-            post_script: Some("broken_post()".into()),
-            request: empty_captured("GET", "/x"),
-            ..Default::default()
-        };
-        let Json(result) = test_rule(
-            State(test_state().await),
-            Extension(anon_user()),
-            Json(payload),
-        )
-        .await;
-        assert!(result.overall_matched);
-        let slots: Vec<&str> = result.script_errors.iter().map(|e| e.slot).collect();
-        assert_eq!(slots, vec!["pre_script", "post_script"]);
     }
 
     #[tokio::test]
@@ -2453,7 +2417,6 @@ mod tests {
             action: crate::models::RuleAction::Proxy,
             script: Some("totally_undefined_fn(1, 2)".into()),
             request: empty_captured("GET", "/x"),
-            ..Default::default()
         };
         let Json(result) = test_rule(
             State(test_state().await),
@@ -2527,7 +2490,6 @@ mod tests {
         assert!(result.script_errors.is_empty());
         assert_eq!(result.script_results.len(), 1);
         let script_result = &result.script_results[0];
-        assert_eq!(script_result.slot, "script");
         assert!(
             !script_result.fields.is_empty(),
             "the fields of the picked city must be shown"
@@ -2590,12 +2552,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_rule_script_results_and_errors_are_mutually_exclusive_per_slot() {
+    async fn test_rule_script_result_is_reported_without_an_error() {
         let payload = RuleTestRequest {
             method: "GET".into(),
             sub_path: None,
             conditions: ConditionGroup::default(),
-            pre_script: Some("broken_pre()".into()),
             script: Some(r#"#{ ok: "yes" }"#.into()),
             request: empty_captured("GET", "/x"),
             ..Default::default()
@@ -2606,10 +2567,8 @@ mod tests {
             Json(payload),
         )
         .await;
-        assert_eq!(result.script_errors.len(), 1);
-        assert_eq!(result.script_errors[0].slot, "pre_script");
+        assert!(result.script_errors.is_empty());
         assert_eq!(result.script_results.len(), 1);
-        assert_eq!(result.script_results[0].slot, "script");
         assert_eq!(result.script_results[0].fields.get("ok").unwrap(), "yes");
     }
 

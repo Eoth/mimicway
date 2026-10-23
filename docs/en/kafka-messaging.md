@@ -29,6 +29,6 @@ A **message log**, like the HTTP [request log](request-log.md), shows the messag
 - **Needs a Mimicway build with Kafka support**, which is not the default. If "Kafka messages" does not appear, your installation does not include it.
 - Also needs a Kafka server configured and reachable (`KAFKA_BROKERS`, `KAFKA_LISTEN_TOPIC`… see the README): without it, even a build with Kafka support does not start listening.
 - A single global listening topic is handled (no topic per service): an incoming message is compared with the rules of **every** service, and the first match wins.
-- [Rhai scripts](rhai-scripts.md) (pre-script, script, post-script) do **not** run for a Kafka message: they are for HTTP traffic.
+- [Rhai scripts](rhai-scripts.md) do **not** run for a Kafka message: they are for HTTP traffic.
 - The message log is bounded in time and size: the oldest entries are removed (after `MESSAGE_LOG_TTL_MS`, 24 hours by default), and a large message is truncated in the log (`MESSAGE_LOG_MAX_BODY_SIZE`).
 - With authentication on, reading the message log and simulating messages are reserved to super-admins.

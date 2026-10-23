@@ -437,7 +437,7 @@ Size M
 
 **Why.** Kafka rules cannot run scripts, and a single global topic is listened to.
 
-**What.** Run the three script slots for messages, and allow a topic per service.
+**What.** Run the rule's script for messages, and allow a topic per service.
 
 **Done when.** A Kafka rule can compute its reply with a script, tested with the simulator.
 

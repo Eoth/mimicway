@@ -82,7 +82,7 @@ Example: `{"siret":"{{path.siret}}"}` returns the `siret` path parameter of the 
 | `uuid` | A generated unique identifier |
 | `now_ms` / `now_iso` / `now_epoch` | The current date and time, in several formats |
 | `seq` | A call counter |
-| `script` / `pre_script` / `post_script` | The result of a [Rhai script](rhai-scripts.md) of the rule, if you wrote one |
+| `script` | The result of the rule's [Rhai script](rhai-scripts.md), if you wrote one |
 
 In the builder (both levels, JSON and XML), each variable is an option of the **source** menu of each field: "URL parameter {param}", "Query param", "HTTP header", "Script result", and so on. A few deserve a word:
 

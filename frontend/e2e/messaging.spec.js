@@ -31,9 +31,7 @@ function messagingService(name, overrides = {}) {
         method: 'POST',
         sub_path: null,
         action: 'mock',
-        pre_script: null,
         script: null,
-        post_script: null,
         conditions: {
           all_of: [{ source: { type: 'JsonPointer', key: '/type' }, operator: { type: 'Eq', value: 'order.created' } }],
           any_of: [],

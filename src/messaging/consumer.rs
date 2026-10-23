@@ -115,10 +115,8 @@ pub async fn process_message(
         request_body: payload,
         // Messaging has no per-rule counter: {{seq}} is always 0 for a message.
         seq_counter: 0,
-        // Scripts do not run for Kafka messages: {{script}}, {{pre_script}} and {{post_script}} render empty.
+        // Scripts do not run for Kafka messages: {{script}} renders empty.
         script_result: None,
-        pre_script_result: None,
-        post_script_result: None,
     };
     let rendered = TemplateRenderer::render_body(&m.rule.response.body, &[], &ctx);
 
@@ -238,9 +236,7 @@ mod tests {
                     method: "ANY".into(),
                     sub_path: None,
                     action: RuleAction::default(),
-                    pre_script: None,
                     script: None,
-                    post_script: None,
                     response_mode: None,
                     conditions,
                     response: MockResponse {

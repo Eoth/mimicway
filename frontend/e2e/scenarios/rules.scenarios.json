@@ -136,51 +136,6 @@
       ]
     },
     {
-      "scenario": "The advanced options of a new rule start folded",
-      "steps": [
-        { "action": "goto", "page": "services" },
-        { "action": "click", "target": "serviceGroup.header", "params": { "groupId": "ungrouped" } },
-        { "action": "click", "target": "serviceCard.configureButton", "params": { "name": "fold-adv-svc" } },
-        { "action": "click", "target": "ruleList.addButton" },
-        { "action": "assertVisible", "target": "ruleForm.advancedOptionsToggleButton" },
-        { "action": "assertHidden", "target": "ruleForm.advancedOptionsPanel" },
-        { "action": "click", "target": "ruleForm.advancedOptionsToggleButton" },
-        { "action": "click", "target": "ruleForm.advancedOptionsToggleButton" },
-        { "action": "assertHidden", "target": "ruleForm.advancedOptionsPanel" },
-        { "action": "screenshot", "file": "rule-advanced-options-folded.png", "target": "ruleForm.advancedOptionsToggleButton" }
-      ]
-    },
-    {
-      "scenario": "The advanced options open by themselves for a rule that has a post-script",
-      "steps": [
-        { "action": "goto", "page": "services" },
-        { "action": "click", "target": "serviceGroup.header", "params": { "groupId": "ungrouped" } },
-        { "action": "click", "target": "serviceCard.configureButton", "params": { "name": "fold-adv-svc" } },
-        { "action": "click", "target": "ruleList.editButton", "params": { "name": "fold-adv-existing-rule" } },
-        { "action": "assertVisible", "target": "ruleForm.advancedOptionsPanel" }
-      ]
-    },
-    {
-      "scenario": "Folding the advanced options keeps the pre-script typed in them",
-      "steps": [
-        { "action": "goto", "page": "services" },
-        { "action": "click", "target": "serviceGroup.header", "params": { "groupId": "ungrouped" } },
-        { "action": "click", "target": "serviceCard.configureButton", "params": { "name": "fold-adv-svc" } },
-        { "action": "click", "target": "ruleList.addButton" },
-        { "action": "fill", "target": "ruleForm.nameInput", "value": "fold-adv-rule" },
-        { "action": "selectOption", "target": "ruleForm.methodSelect", "value": "POST" },
-        { "action": "click", "target": "ruleForm.advancedOptionsToggleButton" },
-        { "action": "click", "target": "toggleSwitch.switch", "params": { "name": "rule-pre-script" } },
-        { "action": "fill", "target": "rhaiScriptEditor.textarea", "params": { "id": "rule-pre-script" }, "value": "\"greeting\"" },
-        { "action": "click", "target": "ruleForm.advancedOptionsToggleButton" },
-        { "action": "assertHidden", "target": "rhaiScriptEditor.textarea", "params": { "id": "rule-pre-script" } },
-        { "action": "click", "target": "ruleForm.advancedOptionsToggleButton" },
-        { "action": "assertVisible", "target": "rhaiScriptEditor.textarea", "params": { "id": "rule-pre-script" } },
-        { "action": "click", "target": "ruleForm.submitButton" },
-        { "action": "assertVisible", "target": "ruleList.item", "params": { "name": "fold-adv-rule" } }
-      ]
-    },
-    {
       "scenario": "Folding a nested JSON object hides its fields and keeps their content",
       "steps": [
         { "action": "goto", "page": "services" },

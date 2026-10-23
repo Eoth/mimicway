@@ -28,6 +28,7 @@
   import ConfirmDialog from './lib/components/ConfirmDialog.svelte';
   import { t, getLocale, setLocale, LOCALES } from './lib/i18n.svelte.js';
   import { applyTheme, initialTheme, saveTheme } from './lib/theme.js';
+  import { findRemovedScriptBlock } from './lib/removed-script-blocks.js';
 
   let services = $state([]);
   let resetPending = $state(false);
@@ -65,10 +66,8 @@
         method: 'GET',
         sub_path: null,
         action: 'mock',
-        pre_script: null,
         script:
           'let role = if random_int(1,5) <= 4 { "user" } else { "admin" };\n#{ role: role, since: date_past(random_int(1, 1825)) }',
-        post_script: null,
         conditions: { all_of: [], any_of: [] },
         response: {
           status: 200,
@@ -88,9 +87,7 @@
         method: 'GET',
         sub_path: null,
         action: 'proxy',
-        pre_script: null,
         script: null,
-        post_script: null,
         conditions: {
           all_of: [{ source: { type: 'Header', key: 'x-real-backend' }, operator: { type: 'Eq', value: 'true' } }],
           any_of: [],
@@ -299,6 +296,17 @@
         throw new Error(t('Invalid format: "services" expected'));
       }
       if (!config.groups) config.groups = [];
+      const removed = findRemovedScriptBlock(config);
+      if (removed) {
+        throw new Error(
+          t(
+            'the rule "{0}" of the service "{1}" has code in its {2} block, which Mimicway no longer runs: move that code into the rule\'s script, then import the file again',
+            removed.rule,
+            removed.service,
+            removed.block,
+          ),
+        );
+      }
       const canReplace = !auth.enabled || auth.isSuperAdmin;
       if (canReplace) {
         importPending = config;

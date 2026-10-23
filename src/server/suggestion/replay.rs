@@ -20,9 +20,7 @@ fn as_rule(i: usize, suggested: &SuggestedRule) -> Rule {
         method: suggested.method.clone(),
         sub_path: (!suggested.sub_path.is_empty()).then(|| suggested.sub_path.clone()),
         action: RuleAction::Mock,
-        pre_script: None,
         script: None,
-        post_script: None,
         response_mode: None,
         conditions: ConditionGroup {
             all_of: suggested.condition.iter().cloned().collect(),
@@ -57,8 +55,6 @@ fn answer(
         request_body: &req.body,
         seq_counter: 0,
         script_result: None,
-        pre_script_result: None,
-        post_script_result: None,
     };
     let body = TemplateRenderer::render_body(&rule.response.body, &[], &ctx);
     Some((rule.response.status, body))

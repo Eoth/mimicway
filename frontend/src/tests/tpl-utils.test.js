@@ -693,9 +693,9 @@ describe('templateToXmlFields', () => {
 });
 
 // ── Expressions the builders have no source for ─────────────────────
-// A text in quotes transformed by a pipe (a date converted to epoch seconds), now_epoch, the fields of pre_script and
-// post_script: the builders offer no source for them, and reading a template back used to turn each into its bare
-// name, which the next save wrote as plain text, the expression lost.
+// A text in quotes transformed by a pipe (a date converted to epoch seconds), now_epoch, a name of an earlier version
+// (pre_script, post_script): the builders offer no source for them, and reading a template back used to turn each into
+// its bare name, which the next save wrote as plain text, the expression lost.
 
 describe('templates that the builders read back without a source', () => {
   const unmodelled = [

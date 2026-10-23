@@ -599,8 +599,6 @@ pub(crate) fn check(endpoints: &[(ObservationKey, Vec<ObservedExchange>)]) -> Re
         request_body: b"",
         seq_counter: 0,
         script_result: None,
-        pre_script_result: None,
-        post_script_result: None,
     };
     for suggestion in &suggestions {
         if let Suggestion::Unconditional { rule } = &suggestion.outcome {

@@ -128,7 +128,7 @@ describe('what French writes its own way', () => {
       body_truncated: false,
       all_of: [],
       any_of: [],
-      script_errors: [{ slot: 'script', message: 'boom' }],
+      script_errors: [{ message: 'boom' }],
     });
     const log = {
       timestamp: 1,

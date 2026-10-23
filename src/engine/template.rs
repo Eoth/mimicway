@@ -1,7 +1,7 @@
 // Response templates: replaces {{var}} and {{var | pipe}} in the text. Single braces are ordinary characters (JSON,
 // XML); double braces hold an expression.
 // Variables: path.*, query.*, header.*, body.* (JSON pointer), xpath.* (simplified path, XML/SOAP), fake.*, uuid,
-//   now_ms, now_iso, now_epoch, seq, script.*, pre_script.*, post_script.*, and a text in double quotes ("2026-12-31"),
+//   now_ms, now_iso, now_epoch, seq, script.*, and a text in double quotes ("2026-12-31"),
 //   for a value written in the template but transformed by pipes
 // Pipes: lower, upper, trim, capitalize, length, first(N), last(N), substr(s,l), default("v"), replace("a","b"),
 //   prepend("p"), append("s"), and for dates (template_dates.rs) epoch_ms, epoch_seconds, epoch_minutes, date("p")
@@ -17,10 +17,6 @@ pub struct TemplateContext<'a> {
     pub request_body: &'a [u8],
     pub seq_counter: u64,
     pub script_result: Option<&'a ScriptResult>,
-    // The pre_script and post_script slots run independently of `script` (same context, no chaining, see `Rule`) and
-    // are available as {{pre_script}}, {{pre_script.field}}, {{post_script}} and {{post_script.field}}.
-    pub pre_script_result: Option<&'a ScriptResult>,
-    pub post_script_result: Option<&'a ScriptResult>,
 }
 
 pub fn render_template(template: &str, ctx: &TemplateContext) -> String {
@@ -125,30 +121,6 @@ fn resolve_variable(name: &str, ctx: &TemplateContext) -> String {
     if let Some(field) = name.strip_prefix("script.") {
         return ctx
             .script_result
-            .and_then(|r| r.fields.get(field).cloned())
-            .unwrap_or_default();
-    }
-    if name == "pre_script" {
-        return ctx
-            .pre_script_result
-            .map(|r| r.value.clone())
-            .unwrap_or_default();
-    }
-    if let Some(field) = name.strip_prefix("pre_script.") {
-        return ctx
-            .pre_script_result
-            .and_then(|r| r.fields.get(field).cloned())
-            .unwrap_or_default();
-    }
-    if name == "post_script" {
-        return ctx
-            .post_script_result
-            .map(|r| r.value.clone())
-            .unwrap_or_default();
-    }
-    if let Some(field) = name.strip_prefix("post_script.") {
-        return ctx
-            .post_script_result
             .and_then(|r| r.fields.get(field).cloned())
             .unwrap_or_default();
     }
@@ -441,8 +413,6 @@ mod tests {
             request_body: body,
             seq_counter: seq,
             script_result: None,
-            pre_script_result: None,
-            post_script_result: None,
         }
     }
 
@@ -455,7 +425,6 @@ mod tests {
     }
 
     // One argument per field of the context, so that each test shows what it sets.
-    #[allow(clippy::too_many_arguments)]
     fn make_ctx_full<'a>(
         path: &'a HashMap<String, String>,
         query: &'a HashMap<String, String>,
@@ -463,8 +432,6 @@ mod tests {
         body: &'a [u8],
         seq: u64,
         script_result: Option<&'a ScriptResult>,
-        pre_script_result: Option<&'a ScriptResult>,
-        post_script_result: Option<&'a ScriptResult>,
     ) -> TemplateContext<'a> {
         TemplateContext {
             path_params: path,
@@ -473,8 +440,6 @@ mod tests {
             request_body: body,
             seq_counter: seq,
             script_result,
-            pre_script_result,
-            post_script_result,
         }
     }
 
@@ -485,7 +450,7 @@ mod tests {
             value: "hello".into(),
             fields: HashMap::new(),
         };
-        let ctx = make_ctx_full(&p, &q, &h, b"", 0, Some(&sr), None, None);
+        let ctx = make_ctx_full(&p, &q, &h, b"", 0, Some(&sr));
         assert_eq!(render_template("{{script}}", &ctx), "hello");
     }
 
@@ -498,51 +463,24 @@ mod tests {
             value: String::new(),
             fields,
         };
-        let ctx = make_ctx_full(&p, &q, &h, b"", 0, Some(&sr), None, None);
+        let ctx = make_ctx_full(&p, &q, &h, b"", 0, Some(&sr));
         assert_eq!(render_template("{{script.role}}", &ctx), "admin");
     }
 
     #[test]
-    fn pre_script_variable_resolves_independently() {
+    fn the_removed_script_blocks_render_empty_like_any_unknown_name() {
+        // A template written for the former pre_script and post_script blocks still renders: those blocks were empty
+        // (a block with code is refused when the configuration loads), and so are their variables.
         let (p, q, h) = empty_ctx();
         let sr = ScriptResult {
-            value: "pre-val".into(),
+            value: "S".into(),
             fields: HashMap::new(),
         };
-        let ctx = make_ctx_full(&p, &q, &h, b"", 0, None, Some(&sr), None);
-        assert_eq!(render_template("{{pre_script}}", &ctx), "pre-val");
-    }
-
-    #[test]
-    fn post_script_field_variable_resolves_independently() {
-        let (p, q, h) = empty_ctx();
-        let mut fields = HashMap::new();
-        fields.insert("total".to_string(), "42".to_string());
-        let sr = ScriptResult {
-            value: String::new(),
-            fields,
-        };
-        let ctx = make_ctx_full(&p, &q, &h, b"", 0, None, None, Some(&sr));
-        assert_eq!(render_template("{{post_script.total}}", &ctx), "42");
-    }
-
-    #[test]
-    fn pre_script_and_post_script_do_not_leak_into_each_other() {
-        let (p, q, h) = empty_ctx();
-        let pre = ScriptResult {
-            value: "PRE".into(),
-            fields: HashMap::new(),
-        };
-        let post = ScriptResult {
-            value: "POST".into(),
-            fields: HashMap::new(),
-        };
-        let ctx = make_ctx_full(&p, &q, &h, b"", 0, None, Some(&pre), Some(&post));
+        let ctx = make_ctx_full(&p, &q, &h, b"", 0, Some(&sr));
         assert_eq!(
-            render_template("{{pre_script}}-{{post_script}}", &ctx),
-            "PRE-POST"
+            render_template("[{{pre_script}}|{{post_script.total}}|{{script}}]", &ctx),
+            "[||S]"
         );
-        assert_eq!(render_template("{{script}}", &ctx), "");
     }
 
     #[test]

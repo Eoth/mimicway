@@ -141,7 +141,7 @@ The same service can be built in the UI in a minute; on an empty instance, the h
 | Groups | Shared URL prefix, per-group admins and members | [Groups](docs/en/groups.md) |
 | Matching rules | Method, sub-path, conditions on path, query, headers, JSON, XML/XPath, form; AND/OR | [Matching rules](docs/en/matching-rules.md) |
 | Responses | Templates, visual JSON/XML builder, fake data, chaos mode (latency, error rate) | [Responses and templates](docs/en/responses-and-templates.md) |
-| Scripts | Up to three sandboxed Rhai blocks per rule, deterministic values per seed, dates, JSON/XML helpers | [Rhai scripts](docs/en/rhai-scripts.md) |
+| Scripts | A sandboxed Rhai script per rule, deterministic values per seed, dates, JSON/XML helpers | [Rhai scripts](docs/en/rhai-scripts.md) |
 | Rule tester and conflicts | Replay a draft rule against a captured request with a per-condition verdict; warning when a new rule overlaps another | [Rule tester](docs/en/rule-tester-and-conflicts.md) |
 | Request log | The last 200 requests: mode, matching rule (or none), status, and the captured request for the rule tester | [Request log](docs/en/request-log.md) |
 | Traffic observation | Watch a proxied service and turn what it really returns into rules | [Traffic observation](docs/en/traffic-observation.md) |
@@ -250,7 +250,7 @@ Pipes: `lower`, `upper`, `trim`, `capitalize`, `first(n)`, `last(n)`, `substr(st
 
 Fake data kinds: `FirstName`, `LastName`, `Email`, `CompanyName`, `StreetName`, `DatePast`, `DateFuture`, `TimestampMs`, `BoolRandom`, `LoremSentence`, and French formats (`PhoneNumberFR`, `CityFR`, `PostcodeFR`, `FullAddressFR`, `CountryFR`, `IbanFR`, `Siren`, `Siret`). The visual builder adds integers in a range (`Integer{min,max}`).
 
-A rule can also run up to three [Rhai](https://rhai.rs) scripts (`pre_script`, `script`, `post_script`) that read the request and return a value or a map used by the template. Besides the language itself they get `random_int`, `seeded_int`, `seeded_pick` (same input, same answer), `uuid`, `fake`, `now_ms`, `now_iso`, `year`, `date_now`, `date_past`, `date_future`, `parse_date`, `parse_json`, `to_json`, `parse_xml_items` and `xml_element`. Scripts run in a sandbox: no file or network access, no `eval`; a run gets at most 10,000 operations, 500 ms, 16 MiB of memory, 64 variables at once and 32 call levels, and each value at most 1 MiB of text, 1,000 array items and 500 map entries. A script that reaches a limit stops with an error that names it. Full reference with examples: [Rhai scripts](docs/en/rhai-scripts.md).
+A rule can also run a [Rhai](https://rhai.rs) script that reads the request and returns a value or a map used by the template. Besides the language itself it gets `random_int`, `seeded_int`, `seeded_pick` (same input, same answer), `uuid`, `fake`, `now_ms`, `now_iso`, `year`, `date_now`, `date_past`, `date_future`, `parse_date`, `parse_json`, `to_json`, `parse_xml_items` and `xml_element`. Scripts run in a sandbox: no file or network access, no `eval`; a run gets at most 10,000 operations, 500 ms, 16 MiB of memory, 64 variables at once and 32 call levels, and each value at most 1 MiB of text, 1,000 array items and 500 map entries. A script that reaches a limit stops with an error that names it. Full reference with examples: [Rhai scripts](docs/en/rhai-scripts.md).
 
 ## Deployment
 
@@ -375,7 +375,7 @@ English is the source language: every message is written once, in English, in th
 
 - [ROADMAP.md](ROADMAP.md): what is planned, and in which order.
 - [ARCHITECTURE.md](ARCHITECTURE.md): how Mimicway is built.
-- [MIGRATING.md](MIGRATING.md): upgrading an installation from lightMock.
+- [MIGRATING.md](MIGRATING.md): upgrading an installation, from lightMock or past a change that needs something from you.
 - [CHANGELOG.md](CHANGELOG.md): changes by release.
 - [SECURITY.md](SECURITY.md): supported versions and private vulnerability reporting.
 - [CONTRIBUTING.md](CONTRIBUTING.md): how to propose a change, run the checks and add a language; [code of conduct](CODE_OF_CONDUCT.md).

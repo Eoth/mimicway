@@ -3,7 +3,7 @@
   // flow (local checks, the warning for a stale proxy rule, the conflict check). Each section has its own component:
   //   - RuleActionSelector.svelte: mock or proxy;
   //   - RuleConditionsEditor.svelte: the AND and OR condition fieldsets;
-  //   - RuleResponseSection.svelte: the "Mocked response" fieldset (format, headers, body, the three script slots,
+  //   - RuleResponseSection.svelte: the "Mocked response" fieldset (format, headers, body, the script,
   //     chaos), read through getPayload() and validate();
   //   - RuleWarnings.svelte: the non-blocking warnings (stale proxy rule, conflicting rules);
   //   - RuleTester.svelte: replays the draft rule against a captured request.
@@ -103,15 +103,13 @@
 
   function buildRulePayload() {
     // Built whatever `ruleAction` is: a proxy rule keeps its response and scripts, ready if it becomes a mock again.
-    const { response, pre_script, script, post_script, response_mode } = responseSectionRef.getPayload();
+    const { response, script, response_mode } = responseSectionRef.getPayload();
     return {
       name: name.trim(),
       method: ruleMethod,
       sub_path: subPath.trim() || null,
       action: ruleAction,
-      pre_script,
       script,
-      post_script,
       response_mode,
       conditions: { all_of: allOf, any_of: anyOf },
       response,
@@ -270,8 +268,8 @@
       {groupName}
       logs={serviceLogs}
       getDraftRule={() => {
-        // The action and the three script slots too, not only method, sub-path and conditions: the tester runs the
-        // scripts against the chosen captured request. responseSectionRef is null until bind:this has run, which a
+        // The action and the script too, not only method, sub-path and conditions: the tester runs the
+        // script against the chosen captured request. responseSectionRef is null until bind:this has run, which a
         // click on "Test" cannot precede in practice; the guard costs nothing.
         const payload = responseSectionRef?.getPayload() ?? {};
         return {
@@ -280,9 +278,7 @@
           allOf,
           anyOf,
           action: ruleAction,
-          preScript: payload.pre_script ?? null,
           script: payload.script ?? null,
-          postScript: payload.post_script ?? null,
         };
       }}
     />

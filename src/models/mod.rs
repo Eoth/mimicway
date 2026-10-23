@@ -47,21 +47,15 @@ pub struct Service {
     pub rules: Vec<Rule>,
 }
 
-// pre_script and post_script run at the same point as `script` (intercept.rs, just before the template is rendered)
-// and are not chained: each gets the same context (the request only) and none sees another's result, which avoids
-// ordering and shared-state questions between scripts. "Pre" and "post" are a naming convention for whoever writes
-// the rule (preparing, then finishing data), not two phases. Their results are {{pre_script}}/{{pre_script.field}}
-// and {{post_script}}/{{post_script.field}}, next to {{script}}/{{script.field}}. As options, a missing key reads as
-// None.
+// Read through `RuleInput`, which also accepts the `pre_script` and `post_script` keys of earlier versions (see there).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(try_from = "RuleInput")]
 pub struct Rule {
     pub name: String,
     pub method: String,
     pub sub_path: Option<String>,
     pub action: RuleAction,
-    pub pre_script: Option<String>,
     pub script: Option<String>,
-    pub post_script: Option<String>,
     // For the editor only (matching and rendering never read it): which view of the rule form produced
     // `response.body` (json-paste, json-guided, xml-paste, xml-guided, text, advanced, empty), so that
     // RuleResponseSection.svelte reopens the same view instead of the advanced template. A missing key falls back to
@@ -70,6 +64,58 @@ pub struct Rule {
     pub response_mode: Option<ResponseEditorMode>,
     pub conditions: ConditionGroup,
     pub response: MockResponse,
+}
+
+/// A rule as a configuration file or the API gives it. Earlier versions had two more script blocks, `pre_script` and
+/// `post_script`, run at the same moment as `script`, on the same request, without seeing each other's result. A file
+/// written then still holds their keys: an empty block loads, while a block with code is refused with a message that
+/// names it, because dropping it would change what the mock returns without anyone seeing it. The other fields are
+/// those of `Rule`, with the same defaults.
+#[derive(Deserialize)]
+struct RuleInput {
+    name: String,
+    method: String,
+    sub_path: Option<String>,
+    action: RuleAction,
+    pre_script: Option<String>,
+    script: Option<String>,
+    post_script: Option<String>,
+    #[serde(default)]
+    response_mode: Option<ResponseEditorMode>,
+    conditions: ConditionGroup,
+    response: MockResponse,
+}
+
+impl TryFrom<RuleInput> for Rule {
+    type Error = String;
+
+    fn try_from(input: RuleInput) -> Result<Self, String> {
+        for (block, code) in [
+            ("pre_script", &input.pre_script),
+            ("post_script", &input.post_script),
+        ] {
+            if code.as_deref().is_some_and(|c| !c.trim().is_empty()) {
+                return Err(removed_block_message(&input.name, block));
+            }
+        }
+        Ok(Rule {
+            name: input.name,
+            method: input.method,
+            sub_path: input.sub_path,
+            action: input.action,
+            script: input.script,
+            response_mode: input.response_mode,
+            conditions: input.conditions,
+            response: input.response,
+        })
+    }
+}
+
+fn removed_block_message(rule: &str, block: &str) -> String {
+    format!(
+        "the rule \"{rule}\" has code in its {block} block, which Mimicway no longer runs: move that code into the \
+         rule's script (MIGRATING.md explains how), then load the configuration again"
+    )
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
@@ -270,9 +316,7 @@ mod tests {
                     method: "GET".into(),
                     sub_path: None,
                     action: RuleAction::default(),
-                    pre_script: None,
                     script: None,
-                    post_script: None,
                     response_mode: None,
                     conditions: ConditionGroup {
                         all_of: vec![
@@ -454,6 +498,73 @@ groups: []
 "#;
         let config: MockConfig = serde_yaml::from_str(yaml).expect("deserialize");
         assert_eq!(config.services[0].rules[0].response_mode, None);
+    }
+
+    /// A configuration of one rule whose `pre_script` and `post_script` keys hold `pre` and `post`, as YAML.
+    fn rule_with_removed_blocks(pre: &str, post: &str) -> String {
+        format!(
+            r#"
+services:
+  - name: svc
+    listen_path: /svc/*
+    real_target_url: http://svc:80
+    is_mocked: true
+    group_name: ~
+    wsdl_mode: auto
+    rules:
+      - name: old-rule
+        method: GET
+        sub_path: ~
+        action: mock
+        pre_script: {pre}
+        script: '"kept"'
+        post_script: {post}
+        conditions: {{ all_of: [], any_of: [] }}
+        response: {{ body: [] }}
+groups: []
+"#
+        )
+    }
+
+    #[test]
+    fn empty_removed_script_blocks_load_and_are_not_written_back() {
+        for (pre, post) in [("~", "~"), ("''", "'   '"), ("~", "''")] {
+            let config: MockConfig = serde_yaml::from_str(&rule_with_removed_blocks(pre, post))
+                .unwrap_or_else(|e| panic!("{pre} / {post}: {e}"));
+            assert_eq!(
+                config.services[0].rules[0].script.as_deref(),
+                Some("\"kept\"")
+            );
+            let written = serde_yaml::to_string(&config).unwrap();
+            assert!(
+                !written.contains("pre_script") && !written.contains("post_script"),
+                "{written}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_removed_script_block_with_code_is_refused_with_its_rule_and_name() {
+        for (pre, post, block) in [
+            ("'40 + 2'", "~", "pre_script"),
+            ("~", "'#{ a: 1 }'", "post_script"),
+        ] {
+            let error = serde_yaml::from_str::<MockConfig>(&rule_with_removed_blocks(pre, post))
+                .expect_err("a block with code must not be dropped")
+                .to_string();
+            assert!(
+                error.contains("\"old-rule\"") && error.contains(block),
+                "{error}"
+            );
+        }
+        // The API reads the same type from JSON.
+        let error = serde_json::from_str::<Rule>(
+            r#"{"name":"r","method":"GET","sub_path":null,"action":"mock","post_script":"1",
+                "conditions":{"all_of":[],"any_of":[]},"response":{"body":[]}}"#,
+        )
+        .expect_err("refused from JSON too")
+        .to_string();
+        assert!(error.contains("post_script"), "{error}");
     }
 
     #[test]

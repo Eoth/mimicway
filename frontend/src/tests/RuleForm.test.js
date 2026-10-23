@@ -86,120 +86,28 @@ describe('RuleForm: rule name uniqueness', () => {
   });
 });
 
-describe('RuleForm: pre_script / post_script', () => {
-  it('sends pre_script and post_script as null when the toggles stay off', async () => {
+describe('RuleForm: one script per rule', () => {
+  it('shows a single script toggle and no folded script blocks', () => {
+    const { getAllByRole, queryByRole } = render(RuleForm);
+    expect(getAllByRole('switch', { name: /script/i })).toHaveLength(1);
+    expect(queryByRole('button', { name: /Advanced options/ })).not.toBeInTheDocument();
+  });
+
+  it('sends the script and none of the removed blocks', async () => {
     checkRuleConflicts.mockResolvedValue({ conflicts: [] });
     const onSave = vi.fn();
-    const { getByLabelText, container } = render(RuleForm, { props: { onSave } });
+    const { getByLabelText, getByRole, container } = render(RuleForm, { props: { onSave } });
 
     await setInput(getByLabelText('Rule name'), 'r1');
+    await fireEvent.click(getByRole('switch', { name: 'Custom script' }));
+    await setInput(container.querySelector('#rule-script'), '"only"');
     await submitForm(container);
 
     await waitFor(() => expect(onSave).toHaveBeenCalled());
     const [payload] = onSave.mock.calls[0];
-    expect(payload.pre_script).toBeNull();
-    expect(payload.post_script).toBeNull();
-  });
-
-  it('the pre-script and post-script toggles start folded under "Advanced options"', () => {
-    const { getByRole, queryByRole } = render(RuleForm);
-    expect(getByRole('button', { name: /Advanced options/, expanded: false })).toBeInTheDocument();
-    expect(queryByRole('switch', { name: 'Pre-script (preparation)' })).not.toBeInTheDocument();
-    expect(queryByRole('switch', { name: 'Post-script (finalization)' })).not.toBeInTheDocument();
-  });
-
-  it('unfolding "Advanced options" shows the pre-script and post-script toggles', async () => {
-    const { getByRole } = render(RuleForm);
-    await fireEvent.click(getByRole('button', { name: /Advanced options/ }));
-    expect(getByRole('switch', { name: 'Pre-script (preparation)' })).toBeInTheDocument();
-    expect(getByRole('switch', { name: 'Post-script (finalization)' })).toBeInTheDocument();
-  });
-
-  it('includes pre_script and post_script in the payload once enabled and filled', async () => {
-    checkRuleConflicts.mockResolvedValue({ conflicts: [] });
-    const onSave = vi.fn();
-    const { getByLabelText, getByRole, container } = render(RuleForm, { props: { onSave } });
-
-    await setInput(getByLabelText('Rule name'), 'r2');
-    await fireEvent.click(getByRole('button', { name: /Advanced options/ }));
-    await fireEvent.click(getByRole('switch', { name: 'Pre-script (preparation)' }));
-    await fireEvent.click(getByRole('switch', { name: 'Post-script (finalization)' }));
-
-    const preTextarea = container.querySelector('#rule-pre-script');
-    const postTextarea = container.querySelector('#rule-post-script');
-    expect(preTextarea).toBeInTheDocument();
-    expect(postTextarea).toBeInTheDocument();
-
-    await setInput(preTextarea, '"pre-result"');
-    await setInput(postTextarea, '"post-result"');
-    await submitForm(container);
-
-    await waitFor(() => expect(onSave).toHaveBeenCalled());
-    const [payload] = onSave.mock.calls[0];
-    expect(payload.pre_script).toBe('"pre-result"');
-    expect(payload.post_script).toBe('"post-result"');
-  });
-
-  it('sends a null pre_script when its toggle is on but its field is empty', async () => {
-    checkRuleConflicts.mockResolvedValue({ conflicts: [] });
-    const onSave = vi.fn();
-    const { getByLabelText, getByRole, container } = render(RuleForm, { props: { onSave } });
-
-    await setInput(getByLabelText('Rule name'), 'r3');
-    await fireEvent.click(getByRole('button', { name: /Advanced options/ }));
-    await fireEvent.click(getByRole('switch', { name: 'Pre-script (preparation)' }));
-    await submitForm(container);
-
-    await waitFor(() => expect(onSave).toHaveBeenCalled());
-    const [payload] = onSave.mock.calls[0];
-    expect(payload.pre_script).toBeNull();
-  });
-});
-
-describe('RuleForm: "Advanced options" opening by itself', () => {
-  const baseRule = {
-    name: 'existing',
-    action: 'mock',
-    conditions: { all_of: [], any_of: [] },
-    response: { status: 200, headers: [], body: [{ type: 'Literal', value: 'ok' }], chaos: null },
-  };
-
-  it('stays folded for a rule with neither pre_script nor post_script', () => {
-    const { getByRole, queryByRole } = render(RuleForm, { props: { rule: baseRule } });
-    expect(getByRole('button', { name: /Advanced options/, expanded: false })).toBeInTheDocument();
-    expect(queryByRole('switch', { name: 'Pre-script (preparation)' })).not.toBeInTheDocument();
-  });
-
-  it('opens by itself when post_script already has content', () => {
-    const rule = { ...baseRule, post_script: '"already set"' };
-    const { getByRole } = render(RuleForm, { props: { rule } });
-    expect(getByRole('button', { name: /Advanced options/, expanded: true })).toBeInTheDocument();
-    expect(getByRole('switch', { name: 'Post-script (finalization)' })).toBeInTheDocument();
-  });
-
-  it('opens by itself when pre_script already has content', () => {
-    const rule = { ...baseRule, pre_script: '"already set"' };
-    const { getByRole } = render(RuleForm, { props: { rule } });
-    expect(getByRole('button', { name: /Advanced options/, expanded: true })).toBeInTheDocument();
-    expect(getByRole('switch', { name: 'Pre-script (preparation)' })).toBeInTheDocument();
-  });
-
-  it('folding and unfolding "Advanced options" keeps the typed content', async () => {
-    const { getByRole, container } = render(RuleForm);
-
-    await fireEvent.click(getByRole('button', { name: /Advanced options/ }));
-    await fireEvent.click(getByRole('switch', { name: 'Pre-script (preparation)' }));
-    const preTextarea = container.querySelector('#rule-pre-script');
-    await setInput(preTextarea, '"contenu saisi"');
-
-    // Folding only sets `hidden` on the panel and does not unmount it, so the content is not reset.
-    await fireEvent.click(getByRole('button', { name: /Advanced options/ }));
-    expect(container.querySelector('#rule-pre-script').value).toBe('"contenu saisi"');
-
-    await fireEvent.click(getByRole('button', { name: /Advanced options/ }));
-    expect(getByRole('switch', { name: 'Pre-script (preparation)' })).toBeInTheDocument();
-    expect(container.querySelector('#rule-pre-script')).toBeVisible();
-    expect(container.querySelector('#rule-pre-script').value).toBe('"contenu saisi"');
+    expect(payload.script).toBe('"only"');
+    expect(payload).not.toHaveProperty('pre_script');
+    expect(payload).not.toHaveProperty('post_script');
   });
 });
 

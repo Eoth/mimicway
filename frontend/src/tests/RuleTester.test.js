@@ -109,7 +109,7 @@ describe('RuleTester: API call and result display', () => {
     expect(payload.request.remaining_path).toBe('/orders/42');
   });
 
-  it('sends the action and the 3 script slots of the draft, not only the matching', async () => {
+  it('sends the action and the script of the draft, not only the matching', async () => {
     testRule.mockResolvedValue({
       method_matches: true,
       sub_path_matches: true,
@@ -127,9 +127,7 @@ describe('RuleTester: API call and result display', () => {
         logs: [logWithDetail],
         getDraftRule: draft({
           action: 'mock',
-          preScript: 'let x = 1;',
           script: '"hello"',
-          postScript: null,
         }),
       },
     });
@@ -142,9 +140,9 @@ describe('RuleTester: API call and result display', () => {
     // of an earlier test.
     const [payload] = testRule.mock.calls.at(-1);
     expect(payload.action).toBe('mock');
-    expect(payload.pre_script).toBe('let x = 1;');
     expect(payload.script).toBe('"hello"');
-    expect(payload.post_script).toBeNull();
+    expect(payload).not.toHaveProperty('pre_script');
+    expect(payload).not.toHaveProperty('post_script');
   });
 
   it('shows the result of each condition in words, not only by color, with its hint', async () => {
@@ -219,9 +217,7 @@ describe('RuleTester: API call and result display', () => {
       body_truncated: false,
       all_of: [],
       any_of: [],
-      script_errors: [
-        { slot: 'script', message: 'Function not found: totally_undefined_fn (i64, i64) (line 1, position 1)' },
-      ],
+      script_errors: [{ message: 'Function not found: totally_undefined_fn (i64, i64) (line 1, position 1)' }],
     });
 
     const { getByLabelText, getByRole, getByTestId, getByText } = render(RuleTester, {
@@ -281,7 +277,7 @@ describe('RuleTester: API call and result display', () => {
       all_of: [],
       any_of: [],
       script_errors: [],
-      script_results: [{ slot: 'script', value: '', fields: { name: 'Lyon', cp: '69000', insee: '69123' } }],
+      script_results: [{ value: '', fields: { name: 'Lyon', cp: '69000', insee: '69123' } }],
     });
 
     const { getByLabelText, getByRole, getByTestId, getByText } = render(RuleTester, {
@@ -317,7 +313,6 @@ describe('RuleTester: API call and result display', () => {
       script_errors: [],
       script_results: [
         {
-          slot: 'script',
           value: '',
           fields: { ville: '{"cp":"69000","insee":"69123","name":"Lyon"}', id: 'fixed-id' },
         },
@@ -340,7 +335,7 @@ describe('RuleTester: API call and result display', () => {
     expect(getByText('{"cp":"69000","insee":"69123","name":"Lyon"}')).toBeInTheDocument();
   });
 
-  it('shows the plain value ({{slot}}) when the script returns a scalar, not a map', async () => {
+  it('shows the plain value ({{script}}) when the script returns a scalar, not a map', async () => {
     testRule.mockResolvedValue({
       method_matches: true,
       sub_path_matches: true,
@@ -350,7 +345,7 @@ describe('RuleTester: API call and result display', () => {
       all_of: [],
       any_of: [],
       script_errors: [],
-      script_results: [{ slot: 'script', value: 'hello', fields: {} }],
+      script_results: [{ value: 'hello', fields: {} }],
     });
 
     const { getByLabelText, getByRole, getByTestId, getByText } = render(RuleTester, {
@@ -404,7 +399,7 @@ describe('RuleTester: script errors', () => {
       body_truncated: false,
       all_of: [],
       any_of: [],
-      script_errors: [{ slot: 'script', message: 'boom' }],
+      script_errors: [{ message: 'boom' }],
     });
     const { container, getByTestId } = render(RuleTester, {
       props: { serviceName: 'svc-a', logs: [logWithDetail], getDraftRule: draft({ script: 'boom()' }) },
@@ -417,7 +412,7 @@ describe('RuleTester: script errors', () => {
     return getByTestId('rule-tester-script-error-script').textContent.trim();
   }
 
-  it('punctuates the slot and its error as English does', async () => {
+  it('punctuates the script label and its error as English does', async () => {
     expect(await scriptErrorText()).toBe('Custom script: boom');
   });
 });
