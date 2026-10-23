@@ -23,7 +23,7 @@ Each item has an identifier that never changes, a size (S: a day or less, M: a f
 3. [Make it indispensable](#3-make-it-indispensable): U1, U2, then U3 to U16, in the listed order.
 4. [Engineering backlog](#4-engineering-backlog): taken alongside, when they unblock an item above.
 
-Hardening comes before all of these: E29 and E30 first, then E23, E24, E25 and T15.
+Hardening comes before all of these: E23, E24, E25 and T15.
 
 ## 1. Ready for an international launch
 
@@ -233,7 +233,7 @@ Size S
 
 **Why.** With authentication on, any signed-in user may create groups, and their admins services, without limit (`create_group`, `create_service` in `src/server/api.rs`); every change rewrites the whole configuration file, and a backup at most once a minute. A full reset keeps a protected copy for 30 days whatever the number of resets. One user can grow the configuration, the disk and the time of every write.
 
-**What.** Configurable caps: groups per user, services and rules per group, size of the configuration, protected backups kept; a write over a cap is refused with a message that names it.
+**What.** Configurable caps: groups per user, services and rules per group, size of the configuration, protected backups kept; a write over a cap is refused with a message that names it. A reset also stops adding an ordinary backup identical to its protected copy (measured: the reset of a 1,108-byte configuration left the same bytes in both), which takes one of the five places for nothing.
 
 **Done when.** Each cap has a test that is refused one past it, and the defaults are documented with the reason for their value.
 
@@ -591,22 +591,32 @@ Size S
 
 **Done when.** A JSON body of 1,000 objects of three fields parses and is written back within the time and memory budget of a run, the regression test of the budget still passes, and the documented limits say that they count a whole value.
 
-### E29. One script per rule
-
-Size M
-
-**Why.** A rule has three script blocks, `pre_script`, `script` and `post_script`, and all three run at the same moment, on the same request, without seeing each other's result (`Rule` in `src/models/mod.rs`, `run_rule_script` in `src/server/intercept.rs`). Two of them repeat the third, and the name "post" suggests a block that runs after the response, which none does. No user is known to rely on them.
-
-**What.** Remove `pre_script` and `post_script` from the model, the API (rule test and validation included), the execution, the template variables `{{pre_script…}}` and `{{post_script…}}`, the rule form, the guide in both languages and the README. A configuration that still holds them loads when they are empty. A non-empty block is refused, at start, import and restore, with a message that names the rule and the block, rather than dropped: dropping it would change what the mock returns without anyone seeing it. Breaking entry in the changelog, migration note in `MIGRATING.md`.
-
-**Done when.** No code, page or screenshot shows the two blocks; a configuration with `pre_script: ~` loads, and one with a non-empty `post_script` is refused with a message that names it, each shown by a test.
-
-### E30. Backups that keep more than a minute of history
+### E31. Guide screenshots that show a removed line
 
 Size S
 
-**Why.** Every change copies the configuration into `backups/`, which keeps the newest five (`prepare_and_backup` in `src/store/mod.rs`). Measured in the interface: merging an import of two groups and six services sends eight requests and makes eight backups within 30 ms, so the five kept all hold that one import; saving a rule makes one even when nothing changed. Four of nineteen backups of the measured run held the same empty configuration.
+**Why.** `docs/*/screenshots/rule-create-form.png` still shows "Directory URL rewriting" on the service page, a line removed in 0.3.0: the screenshots are kept only when their content changes, and none was taken again after that removal.
 
-**What.** A change that leaves the configuration as it is writes nothing. Changes coming in a burst share one backup, taken before the first of them; a restore, an import that replaces everything and a reset still back up first. A backup identical to the newest one is not written again. The pre-reset copies are untouched.
+**What.** Regenerate the screenshots of the service page in both languages, keep those whose content changes, and add to the review of a removed interface text a search of the screenshots that showed it.
 
-**Done when.** A test that fails on the current code shows a burst of changes making one backup, and the rule is documented in the README, in both languages.
+**Done when.** No screenshot shows a text that the interface no longer has, checked against the list of removed catalogue entries.
+
+### E32. The reason of a refused request body, shown by the interface
+
+Size S
+
+**Why.** A request body that does not match the expected type is refused by axum with a 422 and a plain-text reason; `request()` in `frontend/src/lib/api.js` reads only a JSON `error`, so the interface shows "422 Unprocessable Entity" and nothing of the reason (an import with a missing field, for instance). The import of a removed script block is checked by the interface first for this reason.
+
+**What.** Errors of the management API as JSON `{ "error": … }` for a refused body too, worded in the language of the request, and the interface showing them.
+
+**Done when.** An import with a missing field shows which field, in both languages, shown by an end-to-end test.
+
+### E33. End-to-end tests that cannot reach a server holding real data
+
+Size S
+
+**Why.** The end-to-end suite resets the configuration of whatever answers on `localhost:7342`, and `frontend/e2e/README.md` starts that server with `DATA_PATH=./data`, the default data directory of a Mimicway run from the repository, where a contributor keeps their own mocks. Two specs also fall back to `../data` when `DATA_PATH` is unset. A contributor's running instance, or the suite started next to it, loses its configuration (a protected copy is kept 30 days).
+
+**What.** The documented and CI runs use a temporary data directory; the suite refuses to start unless the server it reaches says it was started for tests (an environment variable reported by `/api/health`, for instance), and no spec falls back to a directory of the repository.
+
+**Done when.** Running the suite against a server started without that variable fails before any request that writes, shown by a test.
