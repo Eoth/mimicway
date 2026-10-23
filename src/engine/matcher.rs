@@ -375,10 +375,8 @@ impl MatchEngine {
     }
 
     fn extract_json_pointer(body: &[u8], pointer: &str) -> Option<String> {
-        let value: serde_json::Value = serde_json::from_slice(body).ok()?;
-        let found = value.pointer(pointer)?;
-        match found {
-            serde_json::Value::String(s) => Some(s.clone()),
+        match crate::engine::json_pointer::value_at(body, pointer)? {
+            serde_json::Value::String(s) => Some(s),
             other => Some(other.to_string()),
         }
     }

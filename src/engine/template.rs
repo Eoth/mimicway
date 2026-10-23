@@ -181,11 +181,8 @@ fn extract_body_json(body: &[u8], pointer: &str) -> String {
     } else {
         format!("/{pointer}")
     };
-    let Ok(value) = serde_json::from_slice::<serde_json::Value>(body) else {
-        return String::new();
-    };
-    match value.pointer(&pointer) {
-        Some(serde_json::Value::String(s)) => s.clone(),
+    match crate::engine::json_pointer::value_at(body, &pointer) {
+        Some(serde_json::Value::String(s)) => s,
         Some(other) => other.to_string(),
         None => String::new(),
     }
