@@ -102,6 +102,25 @@ Une variable peut être transformée avant d'être insérée : `lower`, `upper`,
 
 Exemple : `{{path.siret | first(9)}}` garde les 9 premiers caractères du SIRET reçu.
 
+### Dates dans une autre unité ou un autre format
+
+Un champ qui attend une date en millisecondes, en secondes ou en minutes depuis 1970 (un horodatage Unix), ou dans un format donné, la prend d'une date ISO 8601, sans conversion à la main :
+
+| Expression | Résultat |
+|---|---|
+| `{{"2026-12-31T10:00:00Z" \| epoch_ms}}` | `1798711200000` |
+| `{{"2026-12-31T10:00:00Z" \| epoch_seconds}}` | `1798711200` |
+| `{{"2026-12-31T10:00:00Z" \| epoch_minutes}}` | `29978520` |
+| `{{"2026-12-31T10:00:00Z" \| date("yyyy-MM-dd")}}` | `2026-12-31` |
+| `{{now_iso \| epoch_minutes}}` | L'heure actuelle, en minutes |
+| `{{body.created \| date("dd/MM/yyyy")}}` | La date `created` d'une requête JSON, en jour/mois/année |
+
+- La date est un texte entre guillemets doubles écrit dans le template, ou toute variable qui en contient une (`now_iso`, `body.*`, `query.*`, `script.*`…).
+- Formes acceptées : `2026-12-31`, `2026-12-31T10:00`, `2026-12-31T10:00:00`, avec une fraction (`.250`) et un décalage (`Z`, `+02:00`, `-0500`) ; une espace peut remplacer le `T`. Sans décalage, la date est en UTC, comme `now_iso`.
+- `date("…")` remplace `yyyy`, `MM`, `dd`, `HH`, `mm`, `ss` et `SSS` (millisecondes) et garde le reste : `date("dd/MM/yyyy HH:mm")` donne `31/12/2026 10:00`.
+- Une valeur qui n'est pas une telle date (`31/12/2026`, un nombre) ressort telle quelle : l'erreur se voit dans la réponse au lieu d'un nombre faux.
+- Dans le constructeur visuel, écrivez l'expression entière dans la valeur d'un champ fixe, ou choisissez un pipe dans la liste d'un champ dont la source est une variable.
+
 ### Données factices (`fake.*`)
 
 Pour remplir une réponse avec des données d'apparence réaliste sans les saisir : prénom, nom, e-mail, numéro de téléphone français, entreprise, rue, ville, code postal, SIREN/SIRET, adresse complète, date passée ou future, horodatage, booléen aléatoire, phrase de remplissage (« lorem »), pays, IBAN français. Le constructeur propose aussi un entier dans une plage (`Integer{min,max}`). Plusieurs types suivent aujourd'hui des formats français ; des données factices adaptées à chaque langue sont prévues (voir la [feuille de route](../../ROADMAP.md)).

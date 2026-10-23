@@ -727,5 +727,9 @@
   "Value for the attribute {0} ({1})": "Valeur pour l'attribut {0} ({1})",
   "parent node ({0})": "noeud parent ({0})",
   "Go into this node": "Naviguer dans ce noeud",
-  "Fake data kind for {0}": "Type fictif pour {0}"
+  "Fake data kind for {0}": "Type fictif pour {0}",
+  "epoch_ms — ISO date to milliseconds since 1970": "epoch_ms — date ISO en millisecondes depuis 1970",
+  "epoch_seconds — ISO date to seconds since 1970": "epoch_seconds — date ISO en secondes depuis 1970",
+  "epoch_minutes — ISO date to minutes since 1970": "epoch_minutes — date ISO en minutes depuis 1970",
+  "date(\"yyyy-MM-dd\") — ISO date in another format": "date(\"yyyy-MM-dd\") — date ISO dans un autre format"
 }

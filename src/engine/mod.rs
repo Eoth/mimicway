@@ -7,6 +7,7 @@ pub mod script;
 mod script_budget;
 mod script_json;
 pub mod template;
+mod template_dates;
 
 pub use matcher::{MatchEngine, RequestData};
 pub use proxy::{PingStatus, ProxyClient};

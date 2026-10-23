@@ -244,8 +244,9 @@ Un corps de réponse est fait de fragments. Dans un fragment `Template`, les acc
 | `{{fake.Email}}` | Une donnée factice |
 | `{{uuid}}`, `{{now_ms}}`, `{{now_iso}}`, `{{now_epoch}}`, `{{seq}}` | Des valeurs générées |
 | `{{script.total}}` | Une valeur renvoyée par le script de la règle |
+| `{{"2026-12-31T10:00:00Z" \| epoch_seconds}}`, `{{now_iso \| date("yyyy-MM-dd")}}` | `1798711200`, la date du jour : une date ISO, écrite dans le template ou prise dans la requête, dans une autre unité ou un autre format |
 
-Pipes : `lower`, `upper`, `trim`, `capitalize`, `first(n)`, `last(n)`, `substr(start, len)`, `default("x")`, `replace("a", "b")`, `prepend("x")`, `append("x")`, `length`.
+Pipes : `lower`, `upper`, `trim`, `capitalize`, `first(n)`, `last(n)`, `substr(start, len)`, `default("x")`, `replace("a", "b")`, `prepend("x")`, `append("x")`, `length`, et pour une date ISO 8601 `epoch_ms`, `epoch_seconds`, `epoch_minutes`, `date("dd/MM/yyyy HH:mm")`.
 
 Types de données factices : `FirstName`, `LastName`, `Email`, `CompanyName`, `StreetName`, `DatePast`, `DateFuture`, `TimestampMs`, `BoolRandom`, `LoremSentence`, et des formats français (`PhoneNumberFR`, `CityFR`, `PostcodeFR`, `FullAddressFR`, `CountryFR`, `IbanFR`, `Siren`, `Siret`). Le constructeur visuel ajoute les entiers dans une plage (`Integer{min,max}`).
 

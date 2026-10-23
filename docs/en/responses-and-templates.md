@@ -102,6 +102,25 @@ A variable can be transformed before it is inserted: `lower`, `upper`, `trim`, `
 
 Example: `{{path.siret | first(9)}}` keeps the first 9 characters of the SIRET received.
 
+### Dates in another unit or format
+
+A field that expects a date as a number of milliseconds, seconds or minutes since 1970 (a Unix timestamp), or in a given format, takes it from an ISO 8601 date, without converting it by hand:
+
+| Expression | Result |
+|---|---|
+| `{{"2026-12-31T10:00:00Z" \| epoch_ms}}` | `1798711200000` |
+| `{{"2026-12-31T10:00:00Z" \| epoch_seconds}}` | `1798711200` |
+| `{{"2026-12-31T10:00:00Z" \| epoch_minutes}}` | `29978520` |
+| `{{"2026-12-31T10:00:00Z" \| date("yyyy-MM-dd")}}` | `2026-12-31` |
+| `{{now_iso \| epoch_minutes}}` | The current time, in minutes |
+| `{{body.created \| date("dd/MM/yyyy")}}` | The date `created` of a JSON request, as day/month/year |
+
+- The date is a text in double quotes written in the template, or any variable that holds one (`now_iso`, `body.*`, `query.*`, `script.*`…).
+- Accepted forms: `2026-12-31`, `2026-12-31T10:00`, `2026-12-31T10:00:00`, with a fraction (`.250`) and an offset (`Z`, `+02:00`, `-0500`); a space may replace the `T`. Without an offset, the date is UTC, like `now_iso`.
+- `date("…")` replaces `yyyy`, `MM`, `dd`, `HH`, `mm`, `ss` and `SSS` (milliseconds) and keeps the rest: `date("dd/MM/yyyy HH:mm")` gives `31/12/2026 10:00`.
+- A value that is not such a date (`31/12/2026`, a number) comes out unchanged: the mistake shows in the response instead of a wrong number.
+- In the visual builder, write the whole expression in the value of a fixed field, or pick a pipe in the list of a field whose source is a variable.
+
 ### Fake data (`fake.*`)
 
 To fill a response with realistic-looking data without typing it: first name, last name, email, French phone number, company, street, city, postcode, SIREN/SIRET, full address, past or future date, timestamp, random boolean, filler sentence ("lorem"), country, French IBAN. The builder also offers an integer in a range (`Integer{min,max}`). Several kinds follow French formats today; locale-aware fake data is planned (see the [roadmap](../../ROADMAP.md)).

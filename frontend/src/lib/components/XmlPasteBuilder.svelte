@@ -143,6 +143,10 @@
     { value: 'replace("a","b")', label: 'replace("a","b")' },
     { value: 'prepend("prefix")', label: 'prepend("prefix")' },
     { value: 'append("suffix")', label: 'append("suffix")' },
+    { value: 'epoch_ms', label: 'epoch_ms' },
+    { value: 'epoch_seconds', label: 'epoch_seconds' },
+    { value: 'epoch_minutes', label: 'epoch_minutes' },
+    { value: 'date("yyyy-MM-dd")', label: 'date("yyyy-MM-dd")' },
     { value: 'length', label: 'length' },
     { value: 'trim', label: 'trim' },
   ];

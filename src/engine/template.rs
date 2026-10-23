@@ -1,9 +1,10 @@
 // Response templates: replaces {{var}} and {{var | pipe}} in the text. Single braces are ordinary characters (JSON,
 // XML); double braces hold an expression.
 // Variables: path.*, query.*, header.*, body.* (JSON pointer), xpath.* (simplified path, XML/SOAP), fake.*, uuid,
-//   now_ms, now_iso, now_epoch, seq, script.*, pre_script.*, post_script.*
+//   now_ms, now_iso, now_epoch, seq, script.*, pre_script.*, post_script.*, and a text in double quotes ("2026-12-31"),
+//   for a value written in the template but transformed by pipes
 // Pipes: lower, upper, trim, capitalize, length, first(N), last(N), substr(s,l), default("v"), replace("a","b"),
-//   prepend("p"), append("s")
+//   prepend("p"), append("s"), and for dates (template_dates.rs) epoch_ms, epoch_seconds, epoch_minutes, date("p")
 use crate::engine::renderer::TemplateRenderer;
 use std::collections::HashMap;
 
@@ -65,16 +66,32 @@ fn find_closing_double_brace(chars: &[char], start: usize) -> Option<usize> {
 }
 
 fn eval_expression(expr: &str, ctx: &TemplateContext) -> String {
-    let parts: Vec<&str> = expr.splitn(2, '|').collect();
-    let var_name = parts[0].trim();
+    // The first `|` outside double quotes ends the variable: a text in quotes may hold one.
+    let mut in_quotes = false;
+    let split = expr.char_indices().find(|&(_, c)| {
+        if c == '"' {
+            in_quotes = !in_quotes;
+        }
+        c == '|' && !in_quotes
+    });
+    let (var_name, pipes) = match split {
+        Some((at, _)) => (expr[..at].trim(), Some(&expr[at + 1..])),
+        None => (expr.trim(), None),
+    };
     let raw_value = resolve_variable(var_name, ctx);
-    if parts.len() == 1 {
-        return raw_value;
+    match pipes {
+        Some(pipes) => apply_pipes(&raw_value, pipes, ctx),
+        None => raw_value,
     }
-    apply_pipes(&raw_value, parts[1], ctx)
 }
 
 fn resolve_variable(name: &str, ctx: &TemplateContext) -> String {
+    if let Some(text) = name
+        .strip_prefix('"')
+        .and_then(|rest| rest.strip_suffix('"'))
+    {
+        return text.replace("\\\"", "\"");
+    }
     if let Some(key) = name.strip_prefix("path.") {
         return ctx.path_params.get(key).cloned().unwrap_or_default();
     }
@@ -243,6 +260,17 @@ fn apply_single_pipe(value: &str, pipe: &str, _ctx: &TemplateContext) -> String 
             }
         }
         "length" => value.chars().count().to_string(),
+        "epoch_ms" | "epoch_seconds" | "epoch_minutes" => {
+            match crate::engine::template_dates::iso_to_millis(value) {
+                Some(millis) => match pipe {
+                    "epoch_ms" => millis,
+                    "epoch_seconds" => millis.div_euclid(1000),
+                    _ => millis.div_euclid(60_000),
+                }
+                .to_string(),
+                None => value.to_string(),
+            }
+        }
         _ => {
             if let Some(arg) = extract_fn_arg(pipe, "first") {
                 let n: usize = arg.parse().unwrap_or(0);
@@ -276,6 +304,12 @@ fn apply_single_pipe(value: &str, pipe: &str, _ctx: &TemplateContext) -> String 
             } else if let Some(arg) = extract_fn_arg(pipe, "append") {
                 let suffix = arg.trim_matches('"').trim_matches('\'');
                 format!("{value}{suffix}")
+            } else if let Some(arg) = extract_fn_arg(pipe, "date") {
+                let pattern = arg.trim_matches('"').trim_matches('\'');
+                match crate::engine::template_dates::iso_to_millis(value) {
+                    Some(millis) => crate::engine::template_dates::format_millis(millis, pattern),
+                    None => value.to_string(),
+                }
             } else {
                 value.to_string()
             }

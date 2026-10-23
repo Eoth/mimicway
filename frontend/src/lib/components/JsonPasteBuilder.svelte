@@ -205,6 +205,30 @@
         return t('length — number of characters');
       },
     },
+    {
+      value: 'epoch_ms',
+      get label() {
+        return t('epoch_ms — ISO date to milliseconds since 1970');
+      },
+    },
+    {
+      value: 'epoch_seconds',
+      get label() {
+        return t('epoch_seconds — ISO date to seconds since 1970');
+      },
+    },
+    {
+      value: 'epoch_minutes',
+      get label() {
+        return t('epoch_minutes — ISO date to minutes since 1970');
+      },
+    },
+    {
+      value: 'date("yyyy-MM-dd")',
+      get label() {
+        return t('date("yyyy-MM-dd") — ISO date in another format');
+      },
+    },
   ];
 
   function handleParse() {
