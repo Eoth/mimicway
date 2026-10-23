@@ -169,6 +169,8 @@ Tout se règle par des variables d'environnement ; aucune n'est obligatoire.
 | `BACKUP_MAX_COUNT` | `5` | Sauvegardes conservées dans `{DATA_PATH}/backups/` avant rotation. |
 | `API_BASE_URL` | *(vide)* | Où l'interface appelle l'API quand elles sont servies depuis des origines différentes ; voir [Interface et API séparées](#interface-et-api-séparées). |
 | `CORS_ALLOWED_ORIGINS` | *(vide)* | Origines, séparées par des virgules, autorisées à appeler l'API de gestion depuis un navigateur, en plus de l'origine de l'interface. Nécessaire seulement avec `API_BASE_URL`. Les services simulés répondent toujours à toute origine. |
+| `MAX_REQUESTS_IN_FLIGHT` | `1024` | Requêtes traitées en même temps ; la suivante reçoit aussitôt 503 avec `Retry-After: 1` au lieu d'attendre. `/api/health` n'est jamais refusé. |
+| `MAX_BUFFERED_BODY_SIZE` | `50331648` | Octets de corps de requête gardés en mémoire en même temps (48 Mio) par les services simulés, qui lisent jusqu'à 10 Mio pour évaluer leurs conditions, et par l'API de gestion ; au-delà, 503 aussitôt. Une requête relayée à son backend passe au fil de l'eau et ne compte pas. Laissez au processus environ trois fois cette valeur en mémoire (une requête avec un script garde son corps plus d'une fois), plus 20 Mio ; les manifestes Kubernetes lui donnent 256 Mio. |
 | `PROXY_READ_TIMEOUT_SECS` | `120` | Plus long silence accepté d'un backend relayé entre deux lectures ; au-delà, le client reçoit 504. |
 | `REDACT_HEADERS` | *(vide)* | Noms d'en-têtes supplémentaires (séparés par des virgules) dont les valeurs sont masquées dans les journaux, l'observation et les suggestions, en plus de `Authorization`, `Proxy-Authorization`, `Cookie`, `Set-Cookie`, `X-Api-Key`, `X-Auth-Token`, `X-Amz-Security-Token`. |
 | `REQUEST_LOG_MAX_BODY_SIZE` | `16384` | Octets de chaque corps conservés dans le journal des requêtes. |
@@ -361,6 +363,8 @@ L'anglais est la langue source : chaque message est écrit une fois, en anglais,
 | Le port 7342 est déjà utilisé | Fixez `PORT`, ou arrêtez l'autre processus. |
 | D'autres machines n'atteignent pas Mimicway | Il écoute sur `127.0.0.1` par défaut : fixez `BIND_ADDRESS=0.0.0.0` (et activez l'authentification, sauf sur un réseau de confiance). |
 | 403 « Requête inter-sites refusée » | L'interface est servie depuis une autre origine : ajoutez-la à `CORS_ALLOWED_ORIGINS`. |
+| 503 « Mimicway is handling too many requests at once » | `MAX_REQUESTS_IN_FLIGHT` ou `MAX_BUFFERED_BODY_SIZE` est atteint (le journal dit lequel, au plus toutes les 10 secondes) : réessayez, ou relevez la limite avec la mémoire qu'elle demande. |
+| 408 « The request body arrived too slowly » | Un corps de requête doit arriver à 16 Kio/s en moyenne après 10 secondes, et les en-têtes en 10 secondes. Ces bornes empêchent un client de garder des connexions en envoyant lentement. |
 | 403 « ce Mimicway ne répond pas au nom … » | Appelez-le via `localhost` ou une adresse IP, ou ajoutez ce nom à `ALLOWED_HOSTS`. |
 | Connexion refusée alors que le mot de passe est bon | Keycloak émet les jetons sous une autre URL que `KEYCLOAK_URL`, ou pour un autre client : fixez `KEYCLOAK_ISSUER`, vérifiez `KEYCLOAK_CLIENT_ID` (le journal du serveur nomme la cause). |
 | `link.exe not found` sous Windows | Installez les Visual Studio Build Tools avec la charge de travail C++. |

@@ -3,6 +3,7 @@
 //   intercept.rs     service traffic: matching, mock rendering, proxying
 //   browser_guard.rs what a web page may do with the management API (CORS, cross-site writes, DNS rebinding)
 //   validation.rs    names, reserved routes and paths, before anything is stored or forwarded
+//   limits.rs        how long a client may take and how much it may hold (connections, requests, bodies)
 //   request_log.rs   the last 200 requests, in memory, credentials redacted (redaction.rs)
 mod api;
 #[cfg(fuzzing)]
@@ -10,6 +11,7 @@ pub(crate) use api::accepted_import;
 pub mod browser_guard;
 pub(crate) mod codegen;
 mod intercept;
+pub mod limits;
 pub mod observation;
 pub mod ping;
 pub mod redaction;
@@ -97,6 +99,7 @@ pub fn build_router(state: AppState, static_dir: &std::path::Path) -> Router {
         state,
         ui_files::UiSource::Directory(static_dir.to_path_buf()),
         browser_guard::BrowserGuard::new(""),
+        limits::Limits::default(),
     )
 }
 
@@ -104,9 +107,10 @@ pub fn build_router_with(
     state: AppState,
     ui: ui_files::UiSource,
     guard: browser_guard::BrowserGuard,
+    limits: limits::Limits,
 ) -> Router {
     let cors = guard.cors_layer();
-    let api_routes = api::routes();
+    let api_routes = api::routes().layer(axum::middleware::from_fn(limits::buffer_api_body));
 
     let auth_config = state.auth_config.clone();
     let keycloak = state.keycloak.clone();
@@ -150,6 +154,7 @@ pub fn build_router_with(
         ))
         .layer(axum::middleware::from_fn(crate::i18n::language_scope))
         .with_state(state)
+        .layer(axum::middleware::from_fn_with_state(limits, limits::admit))
         .layer(cors)
 }
 

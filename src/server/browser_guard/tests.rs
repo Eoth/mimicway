@@ -85,6 +85,7 @@ async fn spawn_app() -> String {
         state,
         crate::server::ui_files::UiSource::Directory(data_dir.clone()),
         BrowserGuard::new(UI),
+        crate::server::limits::Limits::default(),
     ))
     .await
 }
@@ -296,6 +297,7 @@ async fn a_rebound_name_cannot_read_the_configuration_of_a_server_open_to_the_ne
         state,
         crate::server::ui_files::UiSource::Directory(data_dir.clone()),
         BrowserGuard::new("").with_host_check(None, false, false),
+        crate::server::limits::Limits::default(),
     ))
     .await;
     let client = reqwest::Client::new();
@@ -429,6 +431,7 @@ async fn mocked_and_proxied_pages_keep_their_own_policy_next_to_the_sandbox() {
         state,
         crate::server::ui_files::UiSource::Directory(data_dir.clone()),
         BrowserGuard::new(""),
+        crate::server::limits::Limits::default(),
     ))
     .await;
     for path in ["/page/x", "/web/x"] {

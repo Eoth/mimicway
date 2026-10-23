@@ -95,6 +95,7 @@ async fn the_embedded_ui_is_served_with_the_ui_protections_and_leaves_the_rest_a
         state,
         UiSource::Embedded(FILES),
         crate::server::browser_guard::BrowserGuard::new(""),
+        crate::server::limits::Limits::default(),
     ))
     .await;
     let client = reqwest::Client::new();

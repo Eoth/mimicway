@@ -121,7 +121,9 @@ async fn main() {
     );
     log_host_check(guard.host_names(), bind_ip.is_loopback(), auth_enabled);
     tracing::info!(ui = %ui.describe(), "serving the UI");
-    let app = build_router_with(state, ui, guard);
+    let limits = mimicway::server::limits::Limits::from_env();
+    tracing::info!(limits = %limits.describe(), "bounds on clients");
+    let app = build_router_with(state, ui, guard, limits.clone());
     let addr = std::net::SocketAddr::new(bind_ip, port);
 
     if bind_ip.is_loopback() {
@@ -141,12 +143,7 @@ async fn main() {
             ))
         });
 
-    if let Err(e) = axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
-        .await
-    {
-        tracing::error!(error = %e, "server stopped on an error");
-    }
+    mimicway::server::limits::serve(listener, app, &limits, shutdown_signal()).await;
 
     // Changes are written to disk in the background: drain that queue before exiting, so a normal stop keeps the last
     // changes. A SIGKILL or a crash can still lose the writes still queued.

@@ -15,8 +15,8 @@ Read along the path a request takes, from the outside in. Production code lives 
 
 | Order | File | What to check |
 |---|---|---|
-| 1 | `src/main.rs` | Configuration from the environment, bind address (loopback by default), graceful shutdown on SIGTERM. |
-| 2 | `src/server/mod.rs`, `src/server/ui_files.rs`, `build.rs` | Router and middleware order: CORS, security headers, browser guard, authentication, service interception, API routes; the UI files embedded at build time and served by exact name. |
+| 1 | `src/main.rs`, `src/server/limits.rs` | Configuration from the environment, bind address (loopback by default), graceful shutdown on SIGTERM; the connection loop with its header read timeout, the body deadline, the limits of requests in flight and of bodies held in memory. |
+| 2 | `src/server/mod.rs`, `src/server/ui_files.rs`, `build.rs` | Router and middleware order: CORS, admission, security headers, browser guard, authentication, service interception, API routes; the UI files embedded at build time and served by exact name. |
 | 3 | `src/server/browser_guard.rs` | CORS per path, refusal of cross-site writes, DNS-rebinding guard, response headers. |
 | 4 | `src/auth/middleware.rs`, `src/auth/keycloak.rs` | Which paths require a token; local JWT validation (algorithms, issuer, expiry, client); key-set refresh limits. |
 | 5 | `src/server/api.rs` | Authorization of each endpoint (matrix below); validation of every mutation, done under the store's write lock (`try_update`). |

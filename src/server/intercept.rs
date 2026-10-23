@@ -344,15 +344,31 @@ async fn handle_service(
     let headers = extract_headers(req.headers());
     let content_type = headers.get("content-type").cloned();
 
-    let body_bytes = match axum::body::to_bytes(req.into_body(), 10 * 1024 * 1024).await {
-        Ok(b) => b,
-        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+    let budget = req
+        .extensions()
+        .get::<crate::server::limits::BodyBudget>()
+        .cloned();
+    let content_length = req
+        .headers()
+        .get(axum::http::header::CONTENT_LENGTH)
+        .cloned();
+    // `_held` keeps this body's share of the memory budget until the response is built.
+    let (body_bytes, _held) = match crate::server::limits::read_body(
+        req.into_body(),
+        content_length.as_ref(),
+        crate::server::limits::MAX_SERVICE_BODY,
+        budget.as_ref(),
+    )
+    .await
+    {
+        Ok(read) => read,
+        Err(e) => return e.into_response(),
     };
 
     let request_data = RequestData {
         query_params,
         headers,
-        body: body_bytes.to_vec(),
+        body: body_bytes,
         content_type,
         path_params: path_params.clone(),
         method: method_str.clone(),
@@ -390,7 +406,7 @@ async fn handle_service(
             rule = %rule.name, mode = "proxy",
             "rule matched with action=proxy"
         );
-        let proxy_req = rebuild_request_for_proxy(&method_str, &uri, &request_data, &body_bytes);
+        let proxy_req = rebuild_request_for_proxy(&method_str, &uri, &request_data);
         return do_proxy(
             state,
             service,
@@ -412,9 +428,16 @@ async fn handle_service(
     merged_params.extend(sub_params);
 
     // The three slots run independently (same context, no chaining, see `Rule`); a failing one is logged and never
-    // blocks the response.
+    // blocks the response. The body is copied into the context only for a rule that has a script: a copy of a 10 MiB
+    // body on every mocked request was memory held for nothing.
+    let has_script =
+        rule.pre_script.is_some() || rule.script.is_some() || rule.post_script.is_some();
     let script_ctx = ScriptContext {
-        body: String::from_utf8_lossy(&request_data.body).into_owned(),
+        body: if has_script {
+            String::from_utf8_lossy(&request_data.body).into_owned()
+        } else {
+            String::new()
+        },
         headers: request_data.headers.clone(),
         query_params: request_data.query_params.clone(),
         path_params: merged_params.clone(),
@@ -499,7 +522,6 @@ fn rebuild_request_for_proxy(
     method: &str,
     uri: &axum::http::Uri,
     data: &RequestData,
-    body_bytes: &[u8],
 ) -> Request<Body> {
     let mut builder = axum::http::Request::builder()
         .method(method)
@@ -510,7 +532,7 @@ fn rebuild_request_for_proxy(
         }
     }
     builder
-        .body(Body::from(body_bytes.to_vec()))
+        .body(Body::from(data.body.clone()))
         .unwrap_or_else(|_| Request::new(Body::empty()))
 }
 

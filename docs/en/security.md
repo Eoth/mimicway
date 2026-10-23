@@ -40,7 +40,9 @@ Because an editor chooses proxy targets, Mimicway will send HTTP requests to any
 
 **Rule scripts** (Rhai) are written by editors and run on every matching request, in a sandbox: at most 10,000 operations, bounded call depth, string, array and map sizes, no file access (`import` resolves nothing), no `eval`, no network, and output of `print`/`debug` sent to the debug log. The native functions never panic, whatever their arguments (`src/engine/script.rs`, tests next to it).
 
-**Service traffic** (paths, headers, bodies sent by the applications under test) is untrusted input: bodies are limited to 10 MiB, XML is parsed without DTDs or entity expansion, regular expressions of the rules are compiled once with a size limit, and path parameters are decoded as UTF-8.
+**Service traffic** (paths, headers, bodies sent by the applications under test) is untrusted input: bodies are limited to 10 MiB, JSON conditions and `{{body.…}}` variables read the value they point to without building the document, XML is parsed without DTDs or entity expansion, regular expressions of the rules are compiled once with a size limit, and path parameters are decoded as UTF-8.
+
+**Every client** is bounded in time and memory (`src/server/limits.rs`): request headers within 10 seconds (which also closes a keep-alive connection idle that long), request bodies at 16 KiB/s on average after 10 seconds of grace (else 408), at most `MAX_REQUESTS_IN_FLIGHT` requests at once (1,024) and `MAX_BUFFERED_BODY_SIZE` bytes of request bodies held in memory (48 MiB); past either, 503 at once rather than a queue. Measured with 10 MiB bodies sent in parallel to a mocked service whose rule has a JSON condition, a script and a `{{body.…}}` variable: the process peaks at 130 MB, within the 256 MiB of the Kubernetes manifests (it reached 2.5 GB for ten such requests before these bounds).
 
 **Proxied backends** are untrusted too: their responses are streamed back as they come; only traffic observation, when a user enables it for a service, buffers bounded copies.
 

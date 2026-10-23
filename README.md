@@ -169,6 +169,8 @@ Everything is set through environment variables; none is required.
 | `BACKUP_MAX_COUNT` | `5` | Backups kept in `{DATA_PATH}/backups/` before rotation. |
 | `API_BASE_URL` | *(empty)* | Where the UI calls the API when they are served from different origins; see [Split UI and API](#split-ui-and-api). |
 | `CORS_ALLOWED_ORIGINS` | *(empty)* | Comma-separated origins allowed to call the management API from a browser, besides the UI's own origin. Needed only with `API_BASE_URL`. Mocked services always answer any origin. |
+| `MAX_REQUESTS_IN_FLIGHT` | `1024` | Requests handled at once; the next one gets 503 with `Retry-After: 1` at once instead of waiting. `/api/health` is never refused. |
+| `MAX_BUFFERED_BODY_SIZE` | `50331648` | Bytes of request bodies held in memory at once (48 MiB) by mocked services, which read up to 10 MiB to evaluate their conditions, and by the management API; past it, 503 at once. A request proxied to its backend is streamed and counts nothing. Leave the process about three times this value of memory (a request with a script holds its body more than once), plus 20 MiB; the Kubernetes manifests give it 256 MiB. |
 | `PROXY_READ_TIMEOUT_SECS` | `120` | Longest silence accepted from a proxied backend between two reads; past it the client gets 504. |
 | `REDACT_HEADERS` | *(empty)* | Extra header names (comma-separated) whose values are hidden in logs, observation and suggestions, on top of `Authorization`, `Proxy-Authorization`, `Cookie`, `Set-Cookie`, `X-Api-Key`, `X-Auth-Token`, `X-Amz-Security-Token`. |
 | `REQUEST_LOG_MAX_BODY_SIZE` | `16384` | Bytes of each body kept in the request log. |
@@ -361,6 +363,8 @@ English is the source language: every message is written once, in English, in th
 | Port 7342 already in use | Set `PORT`, or stop the other process. |
 | Other machines cannot reach Mimicway | It listens on `127.0.0.1` by default: set `BIND_ADDRESS=0.0.0.0` (and turn authentication on, unless the network is trusted). |
 | 403 "Cross-site request refused" | The UI is served from another origin: add it to `CORS_ALLOWED_ORIGINS`. |
+| 503 "Mimicway is handling too many requests at once" | `MAX_REQUESTS_IN_FLIGHT` or `MAX_BUFFERED_BODY_SIZE` is reached (the log says which, at most every 10 seconds): retry, or raise the limit with the memory it needs. |
+| 408 "The request body arrived too slowly" | A request body must arrive at 16 KiB/s on average after 10 seconds; request headers within 10 seconds. These bounds stop a client from holding connections by sending slowly. |
 | 403 "this Mimicway does not answer to the name …" | Call it through `localhost` or an IP address, or add that name to `ALLOWED_HOSTS`. |
 | Login refused although the password is right | Keycloak issues tokens under another URL than `KEYCLOAK_URL`, or for another client: set `KEYCLOAK_ISSUER`, check `KEYCLOAK_CLIENT_ID` (the server log names the cause). |
 | `link.exe not found` on Windows | Install the Visual Studio Build Tools with the C++ workload. |

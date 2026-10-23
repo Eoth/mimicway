@@ -44,7 +44,12 @@ uuid = { version = "1", features = ["v4", "fast-rng"] }
 
 # HTTP types
 http = "1"
+http-body = "1"
 http-body-util = "0.1"
+
+# The connection loop of server::limits, which gives hyper the timer its header read timeout needs (axum::serve
+# does not). Already in the graph through axum, with these features: nothing new to build.
+hyper-util = { version = "0.1", features = ["http1", "server", "service", "tokio"] }
 
 # Stream adapters (transitive dep, no binary increase)
 futures-util = "0.3"
