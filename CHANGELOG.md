@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-23
+
 ### Added
 - Dates in another unit, without converting them by hand: in a response template, `{{"2026-12-31T10:00:00Z" | epoch_seconds}}` gives `1798711200`, and the pipes `epoch_ms`, `epoch_minutes` and `date("dd/MM/yyyy HH:mm")` give the other units and any format. The date is an ISO 8601 text written in the template between double quotes, or any variable that holds one (`now_iso`, `body.created`…); a value that is not such a date comes out unchanged. The builders offer these pipes in their list.
 - The script editor completes the keywords of the language (`let`, `if`, `else`, `for`, `while`, `switch`, `fn`, `return`, `try`…) before Mimicway's functions, and inserts each as a skeleton with the part to replace selected.
@@ -137,6 +139,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - Optional Kafka support (Cargo feature `messaging-kafka`, not compiled by default).
 - Accessible Svelte 5 interface (WCAG 2.1 AA), dark mode.
 
-[Unreleased]: https://github.com/Eoth/mimicway/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/Eoth/mimicway/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/Eoth/mimicway/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/Eoth/mimicway/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Eoth/mimicway/releases/tag/v0.1.0

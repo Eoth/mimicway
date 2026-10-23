@@ -62,8 +62,8 @@ Each [release](https://github.com/Eoth/mimicway/releases) ships one single-file 
 | Windows x86_64 | `mimicway-<version>-x86_64-pc-windows-msvc.zip` |
 
 ```bash
-tar xzf mimicway-0.2.0-x86_64-unknown-linux-musl.tar.gz    # unzip the .zip on Windows
-cd mimicway-0.2.0-x86_64-unknown-linux-musl && ./mimicway   # mimicway.exe on Windows
+tar xzf mimicway-0.3.0-x86_64-unknown-linux-musl.tar.gz    # unzip the .zip on Windows
+cd mimicway-0.3.0-x86_64-unknown-linux-musl && ./mimicway   # mimicway.exe on Windows
 ```
 
 Each archive holds the binary, the license, this README and the changelog. The release also carries, for every archive, its checksum (`SHA256SUMS`), its signature (`.sigstore.json`) and its build provenance (`.intoto.jsonl`), and the two SBOMs: [verifying a release](SECURITY.md#verifying-a-release) shows how to check them before running anything. The macOS binaries are not notarized: a copy downloaded by a browser is quarantined, and `xattr -d com.apple.quarantine mimicway` lets it run; one downloaded with `curl` is not.
