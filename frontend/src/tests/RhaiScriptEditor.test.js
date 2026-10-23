@@ -1,7 +1,7 @@
 import { render, fireEvent } from '@testing-library/svelte';
 import { describe, it, expect } from 'vitest';
 import RhaiScriptEditorHarness from './helpers/RhaiScriptEditorHarness.svelte';
-import { RHAI_FUNCTIONS } from '../lib/rhai-functions.js';
+import { RHAI_FUNCTIONS, RHAI_KEYWORDS } from '../lib/rhai-functions.js';
 
 // Types `text` with the caret at its end, like real typing: on input, the component reads both the value and the
 // `selectionStart` of the textarea, so both are set before the event fires.
@@ -47,7 +47,7 @@ describe('RhaiScriptEditor: completion of the Rhai functions', () => {
     await fireEvent.keyDown(textarea, { key: ' ', code: 'Space', ctrlKey: true });
 
     expect(getByRole('listbox')).toBeInTheDocument();
-    expect(getAllByRole('option')).toHaveLength(RHAI_FUNCTIONS.length);
+    expect(getAllByRole('option')).toHaveLength(RHAI_KEYWORDS.length + RHAI_FUNCTIONS.length);
   });
 
   it('Escape closes the list of suggestions', async () => {
@@ -117,5 +117,41 @@ describe('RhaiScriptEditor: completion of the Rhai functions', () => {
     await fireEvent.mouseDown(option);
 
     expect(textarea.value).toBe('let x = 1;\nseeded_int(seed, min, max)');
+  });
+});
+
+describe('RhaiScriptEditor: completion of the keywords of the language', () => {
+  it('offers the keywords that start with the typed prefix, before the functions', async () => {
+    const { container, getAllByRole } = render(RhaiScriptEditorHarness, { props: { id: 'sc' } });
+    const textarea = container.querySelector('#sc');
+
+    await typeAtEnd(textarea, 'f');
+
+    const names = getAllByRole('option').map((o) => o.querySelector('code').textContent);
+    expect(names.slice(0, 3)).toEqual(['for item in list { … }', 'fn name(parameter) { … }', 'false']);
+    expect(names).toEqual(expect.arrayContaining([expect.stringContaining('fake(')]));
+  });
+
+  it('inserts a skeleton with its placeholder selected, so that typing replaces it', async () => {
+    const { container, getAllByRole } = render(RhaiScriptEditorHarness, { props: { id: 'sc' } });
+    const textarea = container.querySelector('#sc');
+
+    await typeAtEnd(textarea, 'le');
+    await fireEvent.mouseDown(getAllByRole('option')[0]);
+
+    expect(textarea.value).toBe('let name = value;');
+    expect(textarea.value.slice(textarea.selectionStart, textarea.selectionEnd)).toBe('name');
+  });
+
+  it('puts the caret inside the block of a keyword without a placeholder', async () => {
+    const { container, getAllByRole } = render(RhaiScriptEditorHarness, { props: { id: 'sc' } });
+    const textarea = container.querySelector('#sc');
+
+    await typeAtEnd(textarea, 'if x > 0 { 1 }\nel');
+    await fireEvent.mouseDown(getAllByRole('option')[0]);
+
+    expect(textarea.value).toBe('if x > 0 { 1 }\nelse {\n    \n}');
+    expect(textarea.selectionStart).toBe('if x > 0 { 1 }\nelse {\n    '.length);
+    expect(textarea.selectionEnd).toBe(textarea.selectionStart);
   });
 });

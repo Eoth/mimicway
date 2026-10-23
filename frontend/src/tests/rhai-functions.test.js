@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { RHAI_FUNCTIONS, filterRhaiFunctions, tokenAtCursor, computeInsertSelection } from '../lib/rhai-functions.js';
+import {
+  RHAI_FUNCTIONS,
+  RHAI_KEYWORDS,
+  filterRhaiFunctions,
+  filterRhaiSuggestions,
+  tokenAtCursor,
+  computeInsertSelection,
+} from '../lib/rhai-functions.js';
 
 describe('RHAI_FUNCTIONS (single source)', () => {
   it('every function has a name, a signature, a description and an insertText', () => {
@@ -79,6 +86,35 @@ describe('filterRhaiFunctions', () => {
   });
 });
 
+describe('filterRhaiSuggestions', () => {
+  it('lists the keywords before the functions', () => {
+    expect(filterRhaiSuggestions('').map((s) => s.name)).toEqual([
+      ...RHAI_KEYWORDS.map((k) => k.name),
+      ...RHAI_FUNCTIONS.map((f) => f.name),
+    ]);
+    expect(filterRhaiSuggestions('re').map((s) => s.name)).toEqual([
+      'return',
+      'request.path',
+      'request.query',
+      'request.headers',
+      'request.body',
+    ]);
+  });
+
+  it('offers no keyword that the sandbox refuses', () => {
+    const names = RHAI_KEYWORDS.map((k) => k.name);
+    expect(names).not.toContain('eval');
+    expect(names).not.toContain('import');
+  });
+
+  it('gives every keyword a placeholder or a caret that its skeleton holds', () => {
+    for (const k of RHAI_KEYWORDS) {
+      if (k.select) expect(k.insertText, k.name).toContain(k.select);
+      if (k.caretAfter) expect(k.insertText, k.name).toContain(k.caretAfter);
+    }
+  });
+});
+
 describe('tokenAtCursor', () => {
   it('extracts the Rhai identifier right before the caret', () => {
     expect(tokenAtCursor('seed', 4)).toEqual({ token: 'seed', start: 0 });
@@ -107,6 +143,11 @@ describe('computeInsertSelection', () => {
   it('puts the caret at the end for a call without arguments', () => {
     const sel = computeInsertSelection('now_ms()');
     expect(sel).toEqual({ start: 8, end: 8 });
+  });
+
+  it("selects a keyword's placeholder, or puts the caret where its block starts", () => {
+    expect(computeInsertSelection('let name = value;', { select: 'name' })).toEqual({ start: 4, end: 8 });
+    expect(computeInsertSelection('else {\n    \n}', { caretAfter: '{\n    ' })).toEqual({ start: 11, end: 11 });
   });
 
   it('puts the caret at the end for a request accessor (no parentheses)', () => {

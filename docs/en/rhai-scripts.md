@@ -61,7 +61,7 @@ Like the functions below, these 4 accesses appear in the editor's autocompletion
 | `parse_xml_items(text, "path/to/item")` | Extracts every XML element repeated at a path as an array of Rhai maps (one level of child fields) |
 | `xml_element(tag, value)` | Builds an XML element `<tag>...</tag>` from a Rhai structure (recursively) |
 
-The editor lists these functions as soon as you start typing their name (or with `Ctrl+Space` for the full list), with their signature and description: no need to memorize this table.
+The editor lists these functions as soon as you start typing their name (or with `Ctrl+Space` for the full list), with their signature and description: no need to memorize this table. It lists the keywords of the language first (`let`, `if`, `else`, `for`, `while`, `switch`, `fn`, `return`, `try`…): picking one inserts its skeleton with the part to replace selected (`if condition { }` selects `condition`), or the caret inside its block.
 
 ![Autocompletion of Rhai functions while typing in the editor](screenshots/rhai-autocompletion.png)
 

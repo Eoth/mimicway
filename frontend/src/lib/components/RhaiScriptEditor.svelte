@@ -1,6 +1,6 @@
 <script>
-  // Rhai script editor with a light completion of Mimicway's native functions. The list of functions has one source,
-  // ../rhai-functions.js, which also feeds the help under the main script (RuleResponseSection.svelte).
+  // Rhai script editor with a light completion of the language's keywords and Mimicway's native functions. Both lists
+  // live in ../rhai-functions.js, whose functions also feed the help under the main script (RuleResponseSection.svelte).
   //
   // A plain <textarea> with a list placed under it, without following the caret's pixel position: the UI has no code
   // editor (CodeMirror, Monaco), and adding one for this alone would be out of proportion.
@@ -9,7 +9,7 @@
   // aria-activedescendant (no explicit role="combobox" needed). The highlighted suggestion is announced through
   // aria-activedescendant, which points to its option in the listbox, never by moving focus.
   import { tick, untrack } from 'svelte';
-  import { filterRhaiFunctions, tokenAtCursor, computeInsertSelection } from '../rhai-functions.js';
+  import { filterRhaiSuggestions, tokenAtCursor, computeInsertSelection } from '../rhai-functions.js';
   import { t } from '../i18n.svelte.js';
 
   let { id, value = '', onInput = () => {}, rows = 5, placeholder = '', ariaDescribedby = undefined } = $props();
@@ -28,7 +28,7 @@
       showSuggestions = false;
       return;
     }
-    const matches = filterRhaiFunctions(token);
+    const matches = filterRhaiSuggestions(token);
     if (matches.length === 0) {
       showSuggestions = false;
       return;
@@ -78,7 +78,7 @@
     const cursorPos = el.selectionStart;
     const { start } = tokenAtCursor(value, cursorPos);
     const newValue = value.slice(0, start) + fn.insertText + value.slice(cursorPos);
-    const sel = computeInsertSelection(fn.insertText);
+    const sel = computeInsertSelection(fn.insertText, fn);
     showSuggestions = false;
     onInput(newValue);
     // The textarea takes its text from the `value` prop (not bind:value): wait for the next tick before moving the
@@ -110,7 +110,7 @@
       class="rhai-suggestions"
       id={listboxId}
       role="listbox"
-      aria-label={t('Available Rhai functions')}
+      aria-label={t('Rhai keywords and functions')}
       data-testid="rhai-script-editor-suggestions-{id}"
     >
       {#each suggestions as fn, i (fn.name)}

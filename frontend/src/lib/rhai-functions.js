@@ -219,12 +219,94 @@ export const RHAI_FUNCTIONS = [
   },
 ];
 
+// The words of the language itself, offered by the autocompletion before the functions; the help lists Mimicway's
+// functions only, the language being Rhai's (rhai.rs). Each inserts a skeleton: `select` names the placeholder to
+// select, so that typing replaces it, and `caretAfter` the text right after which the caret goes, inside a block.
+// `import` and `eval` are left out: the sandbox refuses both.
+const keyword = (name, insertText, describe, place = {}) => ({
+  name,
+  signature: insertText.replace(/\n\s*/g, ' ').replace(/\{\s+\}/g, '{ … }'),
+  get description() {
+    return describe();
+  },
+  insertText,
+  ...place,
+});
+const BLOCK = '{\n    \n}';
+export const RHAI_KEYWORDS = [
+  keyword('let', 'let name = value;', () => t('Declares a variable.'), { select: 'name' }),
+  keyword('const', 'const NAME = value;', () => t('Declares a constant, whose value cannot change.'), {
+    select: 'NAME',
+  }),
+  keyword(
+    'if',
+    `if condition ${BLOCK}`,
+    () => t('Runs a block when the condition is true. Also gives a value: if x > 0 { "yes" } else { "no" }.'),
+    { select: 'condition' },
+  ),
+  keyword('else', `else ${BLOCK}`, () => t('The block that runs when the condition of the if before it is false.'), {
+    caretAfter: '{\n    ',
+  }),
+  keyword(
+    'switch',
+    'switch value {\n    "a" => 1,\n    _ => 0\n}',
+    () => t('Picks a result by value: the first branch that matches, _ for any other value.'),
+    { select: 'value' },
+  ),
+  keyword(
+    'for',
+    `for item in list ${BLOCK}`,
+    () => t('Repeats a block for each element of a list, or each number of a range (0..10).'),
+    { select: 'list' },
+  ),
+  keyword('in', 'in ', () => t('True when a value is in a list, a text or the keys of an object: "a" in list.')),
+  keyword('while', `while condition ${BLOCK}`, () => t('Repeats a block while the condition is true.'), {
+    select: 'condition',
+  }),
+  keyword('loop', 'loop {\n    \n    break;\n}', () => t('Repeats a block until break.'), { caretAfter: '{\n    ' }),
+  keyword(
+    'do',
+    'do {\n    \n} while condition;',
+    () => t('Runs a block once, then again while the condition is true.'),
+    { select: 'condition' },
+  ),
+  keyword('break', 'break;', () => t('Leaves the loop it is in.')),
+  keyword('continue', 'continue;', () => t('Goes on with the next turn of the loop.')),
+  keyword('return', 'return value;', () => t('Ends the function, or the script, with this value.'), {
+    select: 'value',
+  }),
+  keyword(
+    'fn',
+    `fn name(parameter) ${BLOCK}`,
+    () => t('Declares a function, called by its name. It sees its parameters only, not the variables of the script.'),
+    { select: 'name' },
+  ),
+  keyword(
+    'try',
+    'try {\n    \n} catch (error) {\n    \n}',
+    () =>
+      t('Runs a block and catches its errors in catch. A limit reached (operations, time, memory) is never caught.'),
+    { caretAfter: 'try {\n    ' },
+  ),
+  keyword('throw', 'throw "message";', () => t('Stops the script with an error; the rule tester shows its message.'), {
+    select: 'message',
+  }),
+  keyword('true', 'true', () => t('The boolean value true.')),
+  keyword('false', 'false', () => t('The boolean value false.')),
+];
+
 // The functions whose name starts with `query`, ignoring case; all of them when `query` is empty (Ctrl+Space before
 // anything is typed).
 export function filterRhaiFunctions(query) {
   if (!query) return RHAI_FUNCTIONS;
   const lower = query.toLowerCase();
   return RHAI_FUNCTIONS.filter((f) => f.name.toLowerCase().startsWith(lower));
+}
+
+// What the autocompletion offers for `query`: the keywords that start with it, then the functions.
+export function filterRhaiSuggestions(query) {
+  const lower = (query || '').toLowerCase();
+  return [...RHAI_KEYWORDS.filter((k) => k.name.startsWith(lower)), ...filterRhaiFunctions(query)];
 }
 
 // The Rhai identifier (letters, digits, underscores) right before `cursorPos` in `text`: both the prefix the
@@ -235,10 +317,18 @@ export function tokenAtCursor(text, cursorPos) {
   return match ? { token: match[0], start: cursorPos - match[0].length } : { token: '', start: cursorPos };
 }
 
-// What to select right after inserting `insertText` (offsets within it): the arguments between the parentheses, so
-// that typing replaces them ("random_int(min, max)" selects "min, max"); without arguments, the caret goes after the
-// call ("now_ms()").
-export function computeInsertSelection(insertText) {
+// What to select right after inserting `insertText` (offsets within it): a keyword's placeholder (`select`) or its
+// caret inside a block (`caretAfter`); otherwise the arguments between the parentheses, so that typing replaces them
+// ("random_int(min, max)" selects "min, max"); without arguments, the caret goes after the call ("now_ms()").
+export function computeInsertSelection(insertText, { select, caretAfter } = {}) {
+  if (select && insertText.includes(select)) {
+    const start = insertText.indexOf(select);
+    return { start, end: start + select.length };
+  }
+  if (caretAfter && insertText.includes(caretAfter)) {
+    const at = insertText.indexOf(caretAfter) + caretAfter.length;
+    return { start: at, end: at };
+  }
   const openIdx = insertText.indexOf('(');
   const closeIdx = insertText.lastIndexOf(')');
   if (openIdx === -1 || closeIdx === -1 || closeIdx <= openIdx + 1) {

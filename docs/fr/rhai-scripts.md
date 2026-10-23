@@ -61,7 +61,7 @@ Comme les fonctions ci-dessous, ces 4 accès apparaissent dans l'autocomplétion
 | `parse_xml_items(text, "chemin/vers/element")` | Extrait chaque élément XML répété à un chemin, sous forme de tableau d'objets Rhai (un niveau de champs enfants) |
 | `xml_element(tag, value)` | Construit un élément XML `<tag>...</tag>` à partir d'une structure Rhai (récursivement) |
 
-L'éditeur liste ces fonctions dès que vous commencez à taper leur nom (ou avec `Ctrl+Espace` pour la liste complète), avec leur signature et leur description : inutile de retenir ce tableau.
+L'éditeur liste ces fonctions dès que vous commencez à taper leur nom (ou avec `Ctrl+Espace` pour la liste complète), avec leur signature et leur description : inutile de retenir ce tableau. Il liste d'abord les mots-clés du langage (`let`, `if`, `else`, `for`, `while`, `switch`, `fn`, `return`, `try`…) : en choisir un insère son squelette avec la partie à remplacer sélectionnée (`if condition { }` sélectionne `condition`), ou le curseur dans son bloc.
 
 ![Autocomplétion des fonctions Rhai pendant la frappe dans l'éditeur](screenshots/rhai-autocompletion.png)
 
