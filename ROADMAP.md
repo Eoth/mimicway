@@ -23,7 +23,7 @@ Each item has an identifier that never changes, a size (S: a day or less, M: a f
 3. [Make it indispensable](#3-make-it-indispensable): U1, U2, then U3 to U16, in the listed order.
 4. [Engineering backlog](#4-engineering-backlog): taken alongside, when they unblock an item above.
 
-Hardening comes before all of these: T13, T14, E22 and E26, then E23, E24, E25 and T15.
+Hardening comes before all of these: T14, E22 and E26, then E23, E24, E25, E27 and T15.
 
 ## 1. Ready for an international launch
 
@@ -226,16 +226,6 @@ Size L, to split (the second listener first, then the interface's URLs, then the
 **What.** A `SERVICES_PORT` setting: the mocked and proxied services answer on that port, the interface and the management API on `PORT`; their responses then keep their own origin, without the sandbox. The interface shows service URLs with the right port, and the overlays route a second host to it.
 
 **Done when.** With `SERVICES_PORT` set, an end-to-end test browses a proxied page that uses its own storage, and finds the interface unreachable from it; without it, nothing changes.
-
-### T13. Bounded connections
-
-Size M
-
-**Why.** Nothing bounds how long a client may take or how many requests run at once. `axum::serve` in `src/main.rs` runs hyper without a timer, so hyper's 30-second limit on reading request headers never applies: a client that sends its headers one byte at a time holds a connection forever (slowloris), and a body sent drop by drop has no deadline either. Each service request buffers its body up to 10 MiB to evaluate conditions (`to_bytes` in `src/server/intercept.rs`): about 25 of them at once exceed the 256 MiB the Kubernetes manifests give the pod, which is then killed, while the security model promises that untrusted input cannot exhaust its memory.
-
-**What.** Serve through hyper-util with a timer and a header read timeout; a deadline on reading request bodies; a global limit of requests in flight (and of buffered body bytes), past which Mimicway answers 503 at once rather than queue.
-
-**Done when.** Tests show a connection that trickles its headers closed after the timeout, a trickled body cut off, and the request over the limit refused with 503 while those in flight complete; a load test of large bodies keeps the process under the manifests' memory limit.
 
 ### T14. A memory and time budget for scripts
 
@@ -620,3 +610,13 @@ Size S
 **What.** When `Sec-Fetch-Site` is missing, refuse a state-changing API request whose `Origin` is present and is neither the request's own origin nor listed in `CORS_ALLOWED_ORIGINS`.
 
 **Done when.** Unit tests refuse such a request with a foreign `Origin` and accept it without `Origin` (non-browser clients) or with the request's own.
+
+### E27. Raw TCP mocks changed under one lock, with trimmed names
+
+Size S
+
+**Why.** `create_tcp_service`, `update_tcp_service` and `delete_tcp_service` (`src/server/api.rs`) read a snapshot of the TCP configuration, check the change against it, then replace the whole configuration: two changes at the same time are both checked against the old snapshot, and the second replaces the first, which is lost without an error. `validate_tcp_service` (`src/tcp/validation.rs`) also checks the trimmed name but the name is stored as sent, so `svc ` sits next to `svc`. The HTTP services had both defects and no longer do.
+
+**What.** A `try_update` on the TCP runtime that checks and applies a change under one lock, as the HTTP store does; names trimmed before they are checked and stored.
+
+**Done when.** A test sends two creations at once and finds both, or one refused with its reason; a test refuses `svc ` next to `svc`.
