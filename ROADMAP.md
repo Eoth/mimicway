@@ -23,7 +23,7 @@ Each item has an identifier that never changes, a size (S: a day or less, M: a f
 3. [Make it indispensable](#3-make-it-indispensable): U1, U2, then U3 to U16, in the listed order.
 4. [Engineering backlog](#4-engineering-backlog): taken alongside, when they unblock an item above.
 
-Hardening comes before all of these: T14, then E23, E24, E25 and T15.
+Hardening comes before all of these: E23, E24, E25 and T15.
 
 ## 1. Ready for an international launch
 
@@ -226,22 +226,6 @@ Size L, to split (the second listener first, then the interface's URLs, then the
 **What.** A `SERVICES_PORT` setting: the mocked and proxied services answer on that port, the interface and the management API on `PORT`; their responses then keep their own origin, without the sandbox. The interface shows service URLs with the right port, and the overlays route a second host to it.
 
 **Done when.** With `SERVICES_PORT` set, an end-to-end test browses a proxied page that uses its own storage, and finds the interface unreachable from it; without it, nothing changes.
-
-### T14. A memory budget for a whole script run
-
-Size M. **Decision needed.**
-
-**Why.** A run stops after 500 ms and at 64 variables, each value is bounded (1 MiB of text, 1,000 items, 500 entries), and no single operation builds more than that before the check (`src/engine/script_budget.rs`). What stays open is the memory a run holds through many values at once outside its variables, which Rhai does not count, measured on a release build: the arguments of one call (3,400 texts of 1 MiB: 1.7 GB when the time limit stops it), the keys of a map (330 MiB), `map` over an array (1 GB), function pointers with curried arguments (850 MiB), values held by nested calls in a recursion (265 MiB). Any signed-in user may run such a script through the rule tester, and the Kubernetes manifests give the pod 256 MiB.
-
-**What.** One of:
-
-1. **Count what a run allocates.** A global allocator that adds the bytes allocated and freed by the thread running a script; the progress callback stops the run past a budget (16 MiB, say). It covers every case above, and any other way of holding values, in about forty lines. But implementing an allocator is `unsafe` in Rust: it breaks "no `unsafe` code" (REVIEWING.md) unless it lives in a separate crate of its own, checked under Miri, and the promise is reworded to name it.
-2. **Bound the shape of a script.** Analyse the compiled script (Rhai's `internals` feature) to bound the values that argument lists and nested calls hold at once, count the size of the variables at every access, and wrap `map`, `zip` and every other Rhai function that gathers values. No `unsafe`, but hundreds of lines tied to Rhai's internal syntax tree, and one gathering function missed is a hole.
-3. **Reserve scripts to super-admins** when authentication is on. Nothing to measure, but group admins lose scripts, and a super-admin's mistake still takes the server down.
-
-Recommendation: 1, the only one that measures what is really allocated rather than what the code is believed to allocate.
-
-**Done when.** `tests/script_budget.rs` also sends the five scripts above, and the memory peak of the process stays within the stated budget.
 
 ### T15. Limits on what users create and keep
 
