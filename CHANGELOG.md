@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-24
+
 ### Removed
 - **Breaking**: the `pre_script` and `post_script` blocks of a rule, with their template variables `{{pre_script…}}` and `{{post_script…}}`, and the "Advanced options" of the rule form that held them. They ran at the same moment as `script`, on the same request, without seeing each other's result, so they only repeated it, and "post" suggested a block run after the response, which none was. A configuration where they are empty loads as before. One where a block still holds code is refused at start, at import, at restore and through the API, with a message that names the rule and the block, rather than loaded without that code; [MIGRATING.md](MIGRATING.md#after-030-one-script-per-rule) explains how to move it into `script`. The rule tester (`POST /api/rule-test`) no longer takes these two blocks, and its `script_errors` and `script_results` items no longer have a `slot`.
 
@@ -149,7 +151,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - Optional Kafka support (Cargo feature `messaging-kafka`, not compiled by default).
 - Accessible Svelte 5 interface (WCAG 2.1 AA), dark mode.
 
-[Unreleased]: https://github.com/Eoth/mimicway/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/Eoth/mimicway/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/Eoth/mimicway/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/Eoth/mimicway/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/Eoth/mimicway/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Eoth/mimicway/releases/tag/v0.1.0

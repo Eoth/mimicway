@@ -1,6 +1,6 @@
 {
   "name": "mimicway-frontend",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Web interface of Mimicway, served as static files by its binary",
   "private": true,
   "license": "MIT",

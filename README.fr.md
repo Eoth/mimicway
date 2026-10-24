@@ -62,8 +62,8 @@ Chaque [version](https://github.com/Eoth/mimicway/releases) fournit un binaire e
 | Windows x86_64 | `mimicway-<version>-x86_64-pc-windows-msvc.zip` |
 
 ```bash
-tar xzf mimicway-0.3.0-x86_64-unknown-linux-musl.tar.gz    # sous Windows, décompressez le .zip
-cd mimicway-0.3.0-x86_64-unknown-linux-musl && ./mimicway   # mimicway.exe sous Windows
+tar xzf mimicway-0.4.0-x86_64-unknown-linux-musl.tar.gz    # sous Windows, décompressez le .zip
+cd mimicway-0.4.0-x86_64-unknown-linux-musl && ./mimicway   # mimicway.exe sous Windows
 ```
 
 Chaque archive contient le binaire, la licence, ce README et le journal des changements. La version publie aussi, pour chaque archive, sa somme de contrôle (`SHA256SUMS`), sa signature (`.sigstore.json`) et sa provenance de compilation (`.intoto.jsonl`), ainsi que les deux SBOM : [vérifier une version](SECURITY.md#verifying-a-release) montre comment les contrôler avant de lancer quoi que ce soit. Les binaires macOS ne sont pas notarisés : une copie téléchargée par un navigateur est mise en quarantaine, et `xattr -d com.apple.quarantine mimicway` la laisse s'exécuter ; une copie téléchargée avec `curl` ne l'est pas.

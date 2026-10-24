@@ -48,17 +48,17 @@ Every release is built by [the release workflow](.github/workflows/release.yml) 
 
 ```bash
 # An archive: signature (cosign), provenance (GitHub CLI, from GitHub or offline from the release's bundle), checksum
-cosign verify-blob mimicway-0.3.0-x86_64-unknown-linux-musl.tar.gz \
-  --bundle mimicway-0.3.0-x86_64-unknown-linux-musl.tar.gz.sigstore.json \
+cosign verify-blob mimicway-0.4.0-x86_64-unknown-linux-musl.tar.gz \
+  --bundle mimicway-0.4.0-x86_64-unknown-linux-musl.tar.gz.sigstore.json \
   --certificate-identity-regexp '^https://github.com/Eoth/mimicway/.github/workflows/release.yml@refs/tags/v' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
-gh attestation verify mimicway-0.3.0-x86_64-unknown-linux-musl.tar.gz --repo Eoth/mimicway
-gh attestation verify mimicway-0.3.0-x86_64-unknown-linux-musl.tar.gz --repo Eoth/mimicway --bundle mimicway-0.3.0.intoto.jsonl
+gh attestation verify mimicway-0.4.0-x86_64-unknown-linux-musl.tar.gz --repo Eoth/mimicway
+gh attestation verify mimicway-0.4.0-x86_64-unknown-linux-musl.tar.gz --repo Eoth/mimicway --bundle mimicway-0.4.0.intoto.jsonl
 sha256sum --ignore-missing -c SHA256SUMS
 
 # The image: provenance and signature
-gh attestation verify oci://ghcr.io/eoth/mimicway:0.3.0 --repo Eoth/mimicway
-cosign verify ghcr.io/eoth/mimicway:0.3.0 \
+gh attestation verify oci://ghcr.io/eoth/mimicway:0.4.0 --repo Eoth/mimicway
+cosign verify ghcr.io/eoth/mimicway:0.4.0 \
   --certificate-identity-regexp '^https://github.com/Eoth/mimicway/.github/workflows/release.yml@refs/tags/v' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
@@ -70,10 +70,10 @@ The Linux binaries and their archives are reproducible: built again from the sam
 To check a release yourself, on Linux with Docker:
 
 ```bash
-git clone https://github.com/Eoth/mimicway && cd mimicway && git checkout v0.3.0
+git clone https://github.com/Eoth/mimicway && cd mimicway && git checkout v0.4.0
 docker build --platform linux/amd64 --target binary --output type=local,dest=out .
-bash scripts/release-archive.sh out/mimicway x86_64-unknown-linux-musl 0.3.0 dist
-sha256sum dist/*   # the same line as mimicway-0.3.0-x86_64-unknown-linux-musl.tar.gz in SHA256SUMS
+bash scripts/release-archive.sh out/mimicway x86_64-unknown-linux-musl 0.4.0 dist
+sha256sum dist/*   # the same line as mimicway-0.4.0-x86_64-unknown-linux-musl.tar.gz in SHA256SUMS
 ```
 
 For `aarch64-unknown-linux-musl`, run the same commands on an arm64 machine with `--platform linux/arm64`. The macOS and Windows binaries are built with the same Rust version, but no second build checks them.
