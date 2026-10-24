@@ -65,6 +65,8 @@ jobs:
         run: node scripts/check-french-comments.mjs
       - name: No tracked file names the former design system
         run: node scripts/check-former-design-system.mjs
+      - name: No workflow leaves a token in a checkout or publishes outside a protected environment
+        run: node scripts/check-workflows.mjs
 
   secrets:
     name: Secret scan

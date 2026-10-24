@@ -13,6 +13,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - The backups of the configuration hold more than the last minute. Each change made one, and five are kept: merging an import of two groups and six services made eight within 30 ms, so the five left held that import alone, and saving a rule unchanged made one too. Changes made in a burst now share one backup, taken before the first of them: a change backs up only when the last backup is a minute old (new setting `BACKUP_MIN_INTERVAL_SECS`, 60 by default, `0` for the former behavior). Restoring, importing a file that replaces everything and resetting still back up every time. A change that leaves the configuration as it is writes nothing, and a backup identical to the newest one is not made again. Measured on the same ten actions of the interface: 17 backups (23,645 bytes) before, 4 (3,348 bytes) after.
 - The backup a restore, an import or a reset takes of the state it overwrites now holds the last change: a change made a moment before was still on its way to the disk, and the backup held the state before it.
 
+### Security
+- A release is published only once a maintainer approves it: the jobs that create the GitHub release and push the image run in the protected `release` environment, so a pushed tag alone no longer publishes. No checkout of the release workflow keeps the job's token in the cloned repository any more (six did, among them those of the two publishing jobs, where any later step could read it); `scripts/check-workflows.mjs`, run by the CI, refuses a checkout that keeps it and a publishing job outside an environment, in every workflow.
+
 ## [0.3.0] - 2026-10-23
 
 ### Added

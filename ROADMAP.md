@@ -23,7 +23,7 @@ Each item has an identifier that never changes, a size (S: a day or less, M: a f
 3. [Make it indispensable](#3-make-it-indispensable): U1, U2, then U3 to U16, in the listed order.
 4. [Engineering backlog](#4-engineering-backlog): taken alongside, when they unblock an item above.
 
-Hardening comes before all of these: E23, E24, E25 and T15.
+Hardening comes before all of these: E24, E25 and T15.
 
 ## 1. Ready for an international launch
 
@@ -550,16 +550,6 @@ Size S
 **What.** Check again what the signed-in user may open after signing in and after signing out, and show each button only to the users the server lets use its page.
 
 **Done when.** A unit test of the application signs in on an instance with authentication and finds, without reloading, the buttons the server allows to that user, and none after signing out.
-
-### E23. Release jobs without stored credentials
-
-Size S
-
-**Why.** In `.github/workflows/release.yml`, six checkouts keep the job's token in the cloned repository's Git configuration (`persist-credentials` left on), among them those of the `release` job, which may write the repository's contents, and of the `image` job, which may publish packages: any step of those jobs can read it from disk. The publishing jobs run without a protected environment, so a pushed tag publishes without anyone's approval.
-
-**What.** `persist-credentials: false` on every checkout, and the `release` and `image` jobs in an environment that the maintainers protect with a required reviewer.
-
-**Done when.** actionlint and a check of the workflow show no checkout that keeps its credentials, and a test tag waits for an approval before publishing.
 
 ### E24. Vulnerability gates that see every high and age their exceptions
 
