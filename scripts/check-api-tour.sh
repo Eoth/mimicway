@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Replays the tour of the README against a real Mimicway, as a reader pastes it, and fails as soon as the README stops
-# telling the truth:
+# Replays "The API in five steps" of the guide against a real Mimicway, as a reader pastes it, and fails as soon as
+# the page stops telling the truth:
 #
-#   scripts/check-readme-tour.sh [binary]      (default: target/debug/mimicway; run from anywhere)
+#   scripts/check-api-tour.sh [binary]      (default: target/debug/mimicway; run from anywhere)
 #
-# The tour is every ```bash block between the `<!-- tour:start -->` and `<!-- tour:end -->` lines of README.md.
-# README.fr.md must hold the same blocks, byte for byte: the French page translates the prose around the commands,
-# never the commands. The commands run in order in one bash, so that variables, functions and the background job carry
+# The tour is every ```bash block between the `<!-- tour:start -->` and `<!-- tour:end -->` lines of
+# docs/en/api-tour.md. docs/fr/api-tour.md must hold the same blocks, byte for byte: the French page translates the
+# prose around the commands, never the commands. The commands run in order in one bash, so that variables, functions and the background job carry
 # from one block to the next. What each command prints must match the `# ` lines written under it, `…` standing for
 # any text (fake data, long values), and a command without such lines must print nothing.
 #
@@ -37,23 +37,25 @@ tour_of() {
   ' "$1"
 }
 
-if ! tour=$(tour_of "$root/README.md"); then
-  echo "README.md: expected one <!-- tour:start --> line, one <!-- tour:end --> line and bash blocks between them" >&2
-  exit 1
-fi
-if ! french=$(tour_of "$root/README.fr.md"); then
-  echo "README.fr.md: expected one <!-- tour:start --> line, one <!-- tour:end --> line and bash blocks between them" >&2
-  exit 1
-fi
+english_page=docs/en/api-tour.md
+french_page=docs/fr/api-tour.md
+for page in "$english_page" "$french_page"; do
+  if ! tour_of "$root/$page" >/dev/null; then
+    echo "$page: expected one <!-- tour:start --> line, one <!-- tour:end --> line and bash blocks between them" >&2
+    exit 1
+  fi
+done
+tour=$(tour_of "$root/$english_page")
+french=$(tour_of "$root/$french_page")
 if [ "$tour" != "$french" ]; then
-  echo "The commands of the tour differ between README.md and README.fr.md (- English, + French):" >&2
+  echo "The commands of the tour differ between $english_page and $french_page (- English, + French):" >&2
   diff -u <(printf '%s\n' "$tour") <(printf '%s\n' "$french") | tail -n +3 >&2
   exit 1
 fi
 
 # What the tour may do, checked on the text as written.
 refuse() {
-  echo "README.md, tour: $1" >&2
+  echo "$english_page: $1" >&2
   exit 1
 }
 if grep -qE 'BIND_ADDRESS|0\.0\.0\.0|\[::\]' <<<"$tour"; then refuse "it must listen on 127.0.0.1 only"; fi
@@ -179,7 +181,7 @@ trimmed() { sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' "$@"; }
 
 fail() {
   local i=$1
-  echo "README tour, command $((i + 1)) of ${#commands[@]}: $2" >&2
+  echo "$english_page, command $((i + 1)) of ${#commands[@]}: $2" >&2
   printf '%s' "${commands[i]}" | sed 's/^/  $ /' >&2
   if [ -n "${3:-}" ]; then printf '%s\n' "$3" >&2; fi
   if [ -s "$work/out/$start" ]; then
@@ -204,12 +206,12 @@ for i in "${!commands[@]}"; do
     if [ -n "$ok" ] && ! matches "${got[j]-}" "${want[j]}"; then ok=; fi
   done
   if [ -z "$ok" ]; then
-    fail "$i" "the answer differs from the README" \
+    fail "$i" "the answer differs from the page" \
       "$(printf '  expected: %s\n' "${want[@]:-(nothing)}")"$'\n'"$(printf '  got:      %s\n' "${got[@]:-(nothing)}")"
   fi
 done
 if [ "$rc" != 0 ]; then
-  echo "README tour: the replay ended with exit status $rc" >&2
+  echo "$english_page: the replay ended with exit status $rc" >&2
   exit 1
 fi
 
@@ -220,11 +222,11 @@ for _ in $(seq 1 50); do
   sleep 0.1
 done
 if kill -0 "$pid" 2>/dev/null; then
-  echo "README tour: the instance (pid $pid) still runs after 'kill %1'" >&2
+  echo "$english_page: the instance (pid $pid) still runs after 'kill %1'" >&2
   exit 1
 fi
 
 elapsed=$((($(date +%s%N) - started) / 1000000))
 peak=$(awk '{ print $2 " " $3 }' "$work/out/vmhwm" 2>/dev/null || true)
-echo "README tour: ${#commands[@]} commands, the same in English and French, every answer as written" \
+echo "The API in five steps: ${#commands[@]} commands, the same in English and French, every answer as written" \
   "(${elapsed} ms; peak memory of the instance: ${peak:-not measured})"

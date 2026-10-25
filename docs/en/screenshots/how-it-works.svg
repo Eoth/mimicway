@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 330" width="820" height="330" role="img" aria-labelledby="t d" font-family="system-ui,-apple-system,'Segoe UI',sans-serif">
+<title id="t">How Mimicway works</title>
+<desc id="d">Your app calls Mimicway instead of the real API. A first request, with plan=vip in its query, matches rule 1, which answers with a mocked response. A second request matches rule 2, which forwards it to the real API and brings its answer back. The request log records both calls, one mocked and one proxied.</desc>
+<style>
+:root{--bg:#fbfcf9;--ink:#1a221c;--soft:#525e55;--line:#c9d0c6;--box:#eef0ea;--mock:#2d5e3e;--real:#6e4b2a;--hi:#e3eee2}
+@media (prefers-color-scheme:dark){:root{--bg:#121814;--ink:#eef0ea;--soft:#a3ada2;--line:#525e55;--box:#232c25;--mock:#8cc79a;--real:#e8c9a8;--hi:#1f3326}}
+.bg{fill:var(--bg)}text{fill:var(--ink);font-size:14px}.s{fill:var(--soft);font-size:12px}.b{font-weight:700;font-size:16px}
+.box{fill:var(--box);stroke:var(--line);stroke-width:1.5}.real{stroke:var(--real);stroke-width:2.5}.track{stroke:var(--line);stroke-width:1.5}
+.mock{stroke:var(--mock);stroke-width:2.5;stroke-dasharray:6 4;fill:none}.solid{stroke:var(--real);stroke-width:2.5;fill:none}
+.dot{fill:var(--ink)}.rule{fill:var(--bg);stroke:var(--line)}
+.r1,.r2{fill:var(--hi);opacity:0;animation:9s infinite}.r1{animation-name:r1}.r2{animation-name:r2}
+.a{opacity:0;animation:9s linear infinite}
+.q1{animation-name:q1}.m1{animation-name:m1}.q2{animation-name:q2}.f2{animation-name:f2}.k2{animation-name:k2}.m2{animation-name:m2}.l1{animation-name:l1}.l2{animation-name:l2}
+@keyframes q1{0%{opacity:1;transform:translateX(0)}12%{opacity:1;transform:translateX(118px)}13%,100%{opacity:0;transform:translateX(118px)}}
+@keyframes r1{0%,12%{opacity:0}14%,30%{opacity:1}34%,100%{opacity:0}}
+@keyframes m1{0%,17%{opacity:0;transform:translateX(0)}18%{opacity:1;transform:translateX(0)}30%{opacity:1;transform:translateX(-118px)}31%,100%{opacity:0;transform:translateX(-118px)}}
+@keyframes l1{0%,30%{opacity:0}32%,95%{opacity:1}99%,100%{opacity:0}}
+@keyframes q2{0%,39%{opacity:0;transform:translateX(0)}40%{opacity:1;transform:translateX(0)}52%{opacity:1;transform:translateX(118px)}53%,100%{opacity:0;transform:translateX(118px)}}
+@keyframes r2{0%,52%{opacity:0}54%,84%{opacity:1}88%,100%{opacity:0}}
+@keyframes f2{0%,55%{opacity:0;transform:translateX(0)}56%{opacity:1;transform:translateX(0)}65%{opacity:1;transform:translateX(118px)}66%,100%{opacity:0;transform:translateX(118px)}}
+@keyframes k2{0%,67%{opacity:0;transform:translateX(0)}68%{opacity:1;transform:translateX(0)}77%{opacity:1;transform:translateX(-118px)}78%,100%{opacity:0;transform:translateX(-118px)}}
+@keyframes m2{0%,77%{opacity:0;transform:translateX(0)}78%{opacity:1;transform:translateX(0)}88%{opacity:1;transform:translateX(-118px)}89%,100%{opacity:0;transform:translateX(-118px)}}
+@keyframes l2{0%,88%{opacity:0}90%,95%{opacity:1}99%,100%{opacity:0}}
+@media (prefers-reduced-motion:reduce){.a,.r1,.r2{animation:none}.a{opacity:0}.l1,.l2{opacity:1}}
+</style>
+<rect class="bg" width="820" height="330" rx="12"/>
+<line class="mock" x1="40" y1="24" x2="70" y2="24"/><text class="s" x="78" y="28">mocked answer</text>
+<line class="solid" x1="200" y1="24" x2="230" y2="24"/><text class="s" x="238" y="28">answer of the real API</text>
+<rect class="box" x="20" y="110" width="150" height="80" rx="10"/><text class="b" x="95" y="156" text-anchor="middle">Your app</text>
+<line class="track" x1="172" y1="136" x2="298" y2="136"/><line class="track" x1="172" y1="166" x2="298" y2="166"/>
+<rect class="box" x="300" y="60" width="220" height="180" rx="12"/><text class="b" x="410" y="88" text-anchor="middle">Mimicway</text>
+<rect class="rule" x="316" y="104" width="188" height="52" rx="6"/><rect class="r1" x="316" y="104" width="188" height="52" rx="6"/>
+<text x="328" y="126">rule 1: if ?plan=vip</text><text class="s" x="328" y="146">answers with a mock</text>
+<rect class="rule" x="316" y="166" width="188" height="52" rx="6"/><rect class="r2" x="316" y="166" width="188" height="52" rx="6"/>
+<text x="328" y="188">rule 2: everything else</text><text class="s" x="328" y="208">forwards to the real API</text>
+<line class="track" x1="522" y1="196" x2="648" y2="196"/><line class="track" x1="522" y1="222" x2="648" y2="222"/>
+<rect class="box real" x="650" y="170" width="150" height="80" rx="10"/><text class="b" x="725" y="216" text-anchor="middle">Real API</text>
+<rect class="box" x="300" y="258" width="220" height="62" rx="10"/><text class="s" x="316" y="278">Request log</text>
+<text class="a l1" x="316" y="296">GET /users/42 · rule 1 · mock</text><text class="a l2" x="316" y="313">GET /users/7 · proxy</text>
+<g class="a q1"><circle class="dot" cx="178" cy="136" r="6"/><text class="s" x="170" y="126">?plan=vip</text></g>
+<g class="a m1"><circle class="mock" cx="292" cy="166" r="6"/><line class="mock" x1="250" y1="180" x2="292" y2="180"/></g>
+<g class="a q2"><circle class="dot" cx="178" cy="136" r="6"/><text class="s" x="170" y="126">/users/7</text></g>
+<g class="a f2"><circle class="dot" cx="528" cy="196" r="6"/></g>
+<g class="a k2"><circle class="solid" cx="642" cy="222" r="6"/></g>
+<g class="a m2"><circle class="solid" cx="292" cy="166" r="6"/><line class="solid" x1="250" y1="180" x2="292" y2="180"/></g>
+</svg>

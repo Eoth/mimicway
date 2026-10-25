@@ -47,4 +47,5 @@ This page is a **quick overview**: a line or two per feature, with a link to the
 |---|---|
 | [Authentication](authentication.md) | Optional: Mimicway can require a login (Keycloak), with different rights per user and group. |
 | [Kafka messaging](kafka-messaging.md) | Optional: beyond HTTP, Mimicway can also answer Kafka messages (needs a build that includes it). |
+| [The API in five steps](api-tour.md) | Everything the interface does, scripted with `curl`: a mocked service, a condition, a forwarded rule, the request log. |
 | [Security model](security.md) | What Mimicway exposes, what it connects to, what it trusts, and how to harden a deployment. |

@@ -28,8 +28,10 @@ const LANGUAGES = [
 
 export const DOCS_SCREENSHOTS_ENABLED = !!process.env.DOCS_SCREENSHOTS;
 
-function target(language, filename) {
-  const dir = path.join(DOCS_DIR, language, 'screenshots');
+// docs/<language>/screenshots/, or <directory>/<language>/ for images that are only a step towards one of the guide
+// (the frames of the demo).
+function target(language, filename, directory) {
+  const dir = directory ? path.join(directory, language) : path.join(DOCS_DIR, language, 'screenshots');
   fs.mkdirSync(dir, { recursive: true });
   return path.join(dir, filename);
 }
@@ -40,9 +42,9 @@ const nextFrames = (page) =>
 // Transitions (a group's chevron, a button turning from primary to outline) are run to their end, and the pointer is
 // moved off the content: otherwise an image may catch a transition half-way, or a button hovered in one language only
 // (the texts, hence the layout, differ), and the two images of a pair would not show the same state.
-async function capture(page, language, filename) {
+async function capture(page, language, filename, directory) {
   await page.mouse.move(0, 0);
-  await page.screenshot({ path: target(language, filename), animations: 'disabled' });
+  await page.screenshot({ path: target(language, filename, directory), animations: 'disabled' });
 }
 
 // Whether an element shows in the captured viewport (an element scrolled out of it does not appear in the image).
@@ -142,7 +144,7 @@ async function switchLanguage(page, code) {
 // A screen without the navigation bar (the login screen) has no language selector: it is opened again at the same URL
 // in a browser set to the other language, which is how a visitor of that language first sees it. Only valid for a
 // screen that opening its URL reproduces; `waitFor` is the selector that shows it is ready.
-async function captureReopened(page, language, filename, subject, waitFor) {
+async function captureReopened(page, language, filename, subject, waitFor, directory) {
   const context = await page.context().browser().newContext({ locale: language.locale, viewport: page.viewportSize() });
   try {
     const other = await context.newPage();
@@ -151,7 +153,7 @@ async function captureReopened(page, language, filename, subject, waitFor) {
     await other.locator(waitFor).waitFor();
     await other.waitForLoadState('networkidle');
     await frameSubject(other, filename, subject, language.code);
-    await capture(other, language.code, filename);
+    await capture(other, language.code, filename, directory);
   } finally {
     await context.close();
   }
@@ -169,6 +171,7 @@ async function captureReopened(page, language, filename, subject, waitFor) {
  * - a notification holds a sentence chosen when it appeared: a visible one is an error (wait until it closes);
  * - a text worded by the server follows the language of the request that fetched it: `options.afterSwitch(page)` runs
  *   after every switch (back to English included) to fetch it again, as the user would by repeating the action.
+ * `options.directory`: writes <directory>/<language>/<filename> instead of the guide's screenshots.
  * `options.reopenWaitingFor`: for a screen without the language selector, the selector to wait for once the screen is
  * opened again in the other languages (see captureReopened); without it, a missing selector is an error.
  */
@@ -189,7 +192,7 @@ export async function docsScreenshot(page, filename, subject, options = {}) {
       `docsScreenshot(${filename}): a notification is in view and would keep its language; wait for it to close`,
     );
   }
-  await capture(page, source.code, filename);
+  await capture(page, source.code, filename, options.directory);
 
   const hasSelector = (await page.locator(LANGUAGE_SELECT).count()) > 0;
   if (!hasSelector && !options.reopenWaitingFor) {
@@ -206,9 +209,9 @@ export async function docsScreenshot(page, filename, subject, options = {}) {
     if (hasSelector) {
       await switchTo(language.code);
       await assertSubjectInView(page, filename, subject, language.code);
-      await capture(page, language.code, filename);
+      await capture(page, language.code, filename, options.directory);
     } else {
-      await captureReopened(page, language, filename, subject, options.reopenWaitingFor);
+      await captureReopened(page, language, filename, subject, options.reopenWaitingFor, options.directory);
     }
   }
   if (hasSelector) await switchTo(source.code);

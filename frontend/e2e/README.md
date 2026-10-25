@@ -35,6 +35,7 @@ e2e/
   *.spec.js / *.spec.mjs    classic specs
   docs-screenshot.js        frames the subject of a guide image; writes docs/<language>/screenshots/*.png when DOCS_SCREENSHOTS is set
   docs-screenshot.spec.js   checks that framing guard
+  demo-tour.spec.js         the demo at the top of the README, screen by screen
 ```
 
 ## Scenario files
@@ -109,3 +110,13 @@ npm run docs:screenshots   # from frontend/, with Mimicway running on :7342
 ```
 
 Images are written to `docs/en/screenshots/` and `docs/fr/screenshots/` under the names the pages reference. CI fails when a page references an image that does not exist (`node scripts/check-doc-links.mjs`), and when an image, a page, a heading or a language link exists in one language only (`node scripts/check-doc-translations.mjs`). The three Kafka images need a binary built with `--features messaging-kafka`. A state of the interface gets its image from the test that reaches it, next to the assertions on what the image shows: a page that describes a state no test reaches has no image to show.
+
+## The demo of the README
+
+The animated demo at the top of the README is made of real screens: `demo-tour.spec.js` goes through a first mock (services, the URL to call, a condition, the rule tester, fake data, the proxy choice, the request log) and checks each screen like a guide image, in every run. With `docsScreenshot(page, name, subject, { directory })`, its frames go to `test-results/demo-tour/<language>/` instead of the guide, and their captions to `captions.json`.
+
+```bash
+npm run docs:demo   # from frontend/, with Mimicway running on :7342 and Python's Pillow installed
+```
+
+`scripts/make-demo-tour.py` scales each frame to 960 px, prints its caption below it and writes `docs/<language>/screenshots/demo-tour.webp`, one screen every three seconds, and refuses a file over 150,000 bytes. CI refuses any image over that weight, any video or GIF, and an SVG that could run something or keeps moving for a reader who asked for less motion (`node scripts/check-images.mjs`). The frames show the address of a default installation, `http://localhost:7342`, whatever port the run uses.

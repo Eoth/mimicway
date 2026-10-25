@@ -67,20 +67,15 @@ test('a change of the code Prettier formats, or of what decides its format, runs
 });
 
 test('a change of documentation runs the always-on jobs only', () => {
-  const docs = [
-    'CONTRIBUTING.md',
-    'docs/en/matching-rules.md',
-    'docs/fr/screenshots/rule-form.png',
-    'frontend/README.md',
-  ];
+  const docs = ['README.md', 'docs/en/matching-rules.md', 'docs/fr/screenshots/rule-form.png', 'frontend/README.md'];
   assert.deepEqual(planFor('push', docs), { jobs: ['checks', 'secrets'], codeql: [] });
 });
 
-test('a change of the README, or of the check that replays its tour, runs the Rust job too', () => {
-  for (const file of ['README.md', 'README.fr.md', 'scripts/check-readme-tour.sh']) {
+test('a change of the API tour of the guide, or of the check that runs it, runs the Rust job too', () => {
+  for (const file of ['docs/en/api-tour.md', 'docs/fr/api-tour.md', 'scripts/check-api-tour.sh']) {
     assert.deepEqual(planFor('push', [file]), { jobs: ['checks', 'secrets', 'rust'], codeql: [] }, file);
   }
-  assert.ok(!jobsOf('push', ['docs/en/README.md']).includes('rust'));
+  assert.deepEqual(jobsOf('push', ['README.md', 'docs/en/api-tour.png']), ['checks', 'secrets']);
 });
 
 test('a pull request of documentation also has its workflows analysed by CodeQL, for the SAST check', () => {
@@ -137,7 +132,7 @@ test('what decides how the release binary is built runs the two builds compared,
 
 test('an unknown kind of file, the CI workflow or the plan itself runs every job', () => {
   for (const file of ['tool-of-tomorrow.toml', '.github/workflows/ci.yml', 'scripts/ci-plan.mjs']) {
-    assert.deepEqual(jobsOf('push', ['CONTRIBUTING.md', file]), BY_FILES, file);
+    assert.deepEqual(jobsOf('push', ['README.md', file]), BY_FILES, file);
   }
   assert.deepEqual(jobsOf('push', null), BY_FILES);
   assert.deepEqual(jobsOf('workflow_dispatch', []), BY_FILES);

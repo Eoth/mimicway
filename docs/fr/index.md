@@ -47,4 +47,5 @@ Cette page est une **vue d'ensemble rapide** : une ligne ou deux par fonctionnal
 |---|---|
 | [Authentification](authentication.md) | Optionnelle : Mimicway peut exiger une connexion (Keycloak), avec des droits différents selon l'utilisateur et le groupe. |
 | [Messagerie Kafka](kafka-messaging.md) | Optionnelle : au-delà du HTTP, Mimicway peut aussi répondre à des messages Kafka (nécessite une version compilée avec ce support). |
+| [L'API en cinq étapes](api-tour.md) | Tout ce que fait l'interface, scripté avec `curl` : un service simulé, une condition, une règle relayée, le journal des requêtes. |
 | [Modèle de sécurité](security.md) | Ce que Mimicway expose, à quoi il se connecte, à qui il fait confiance, et comment durcir un déploiement. |
