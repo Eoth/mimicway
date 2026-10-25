@@ -403,7 +403,7 @@ Size S per language
 
 Size L, in three parts
 
-**Why.** The README tour shows Mimicway to someone at a terminal. Someone who opens the interface first finds an empty home screen and a **Load an example** button, and nothing that walks them through the service form, a rule, a condition and the request log: the screens are learnt by trial.
+**Why.** The demo at the top of the README shows the screens of a first mock, but someone who then opens the interface finds an empty home screen and a **Load an example** button, and nothing that walks them through the service form, a rule, a condition and the request log on their own instance: the screens are learnt by trial.
 
 **What.** A tutorial panel, offered on the empty home screen and opened from the navigation bar, that walks through one scenario: create a service, call it, add a rule with a condition, see the answer change, read the request log. For every part:
 
