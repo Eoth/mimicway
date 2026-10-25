@@ -75,6 +75,15 @@
     return 'badge-error';
   }
 
+  // A stream of events is logged once, when it opens, and its entry fills as it sends (StreamProgress in
+  // src/server/request_log.rs): the panel shows how far it got when the log was read.
+  function streamOutcome(outcome) {
+    if (outcome === 'ended') return t('ended after its last event');
+    if (outcome === 'cut') return t('cut by its rule');
+    if (outcome === 'client-gone') return t('left by the client before the end');
+    return t('still open');
+  }
+
   function openDetail(log) {
     detailLog = log;
   }
@@ -304,7 +313,33 @@
             >
           </dd>
         </div>
+        {#if detailLog.stream}
+          <div class="detail-row">
+            <dt>{t('Event stream')}</dt>
+            <dd data-testid="request-log-detail-stream">
+              {t(
+                '{0} of {1} events sent, {2}',
+                detailLog.stream.sent_count,
+                detailLog.stream.planned,
+                streamOutcome(detailLog.stream.outcome),
+              )}
+            </dd>
+          </div>
+        {/if}
       </dl>
+      {#if detailLog.stream?.sent?.length > 0}
+        <ol class="sent-events" aria-label={t('Events sent')} data-testid="request-log-detail-stream-events">
+          {#each detailLog.stream.sent as sent}
+            <li>
+              {#if sent.event}<code class="dd-mono">{sent.event}</code>{/if}
+              <pre class="dd-mono dd-break">{sent.data}</pre>
+            </li>
+          {/each}
+        </ol>
+        {#if detailLog.stream.sent_truncated}
+          <p class="field-hint">{t('The next events are counted but not kept: their data would fill the log.')}</p>
+        {/if}
+      {/if}
       <div class="modal-footer">
         <button type="button" class="btn btn-sm btn-secondary" onclick={closeDetail}>{t('Close')}</button>
       </div>
@@ -491,5 +526,15 @@
   }
   .dd-break {
     word-break: break-all;
+  }
+  .sent-events {
+    margin: var(--space-2) 0 0;
+    padding-left: var(--space-5);
+    max-height: 16rem;
+    overflow-y: auto;
+  }
+  .sent-events pre {
+    margin: var(--space-0-5) 0 var(--space-1-5);
+    white-space: pre-wrap;
   }
 </style>

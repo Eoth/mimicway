@@ -20,6 +20,10 @@
 //!   a JSON condition, a script and a `{{body.…}}` variable peak at 130 MB with four of them admitted, within the
 //!   256 MiB the Kubernetes manifests give the pod. A request streamed to its backend (a proxied service) holds no
 //!   body, and counts nothing.
+//! - **256 event streams open at once** (`MAX_OPEN_STREAMS`): a rule that answers with server-sent events keeps its
+//!   connection until its last event, up to ten minutes, after its request has left the count of requests in
+//!   flight. The next stream is answered 503 at once, with `Retry-After`. A stream holds its connection and the
+//!   events it has rendered, at most 1 MiB (`server::event_stream`).
 use axum::Router;
 use axum::body::{Body, Bytes};
 use axum::extract::{Request, State};
@@ -40,6 +44,7 @@ const BODY_GRACE: Duration = Duration::from_secs(10);
 const BODY_MIN_RATE: u64 = 16 * 1024;
 const DEFAULT_MAX_REQUESTS_IN_FLIGHT: usize = 1024;
 const DEFAULT_MAX_BUFFERED_BODY_SIZE: usize = 48 * 1024 * 1024;
+const DEFAULT_MAX_OPEN_STREAMS: usize = 256;
 
 /// The largest body a mocked service reads to evaluate its conditions.
 pub(crate) const MAX_SERVICE_BODY: usize = 10 * 1024 * 1024;
@@ -53,6 +58,7 @@ const REFUSAL_LOG_INTERVAL_SECS: u64 = 10;
 pub struct Limits {
     requests: Arc<Semaphore>,
     body_bytes: Arc<Semaphore>,
+    streams: Arc<Semaphore>,
     header_timeout: Duration,
     body_grace: Duration,
     body_min_rate: u64,
@@ -69,7 +75,8 @@ impl Default for Limits {
 }
 
 impl Limits {
-    /// The limits the server runs with: the defaults, or `MAX_REQUESTS_IN_FLIGHT` and `MAX_BUFFERED_BODY_SIZE`.
+    /// The limits the server runs with: the defaults, or `MAX_REQUESTS_IN_FLIGHT`, `MAX_BUFFERED_BODY_SIZE` and
+    /// `MAX_OPEN_STREAMS`.
     pub fn from_env() -> Self {
         Self::from_lookup(crate::settings::env)
     }
@@ -87,6 +94,11 @@ impl Limits {
                 DEFAULT_MAX_BUFFERED_BODY_SIZE,
             ),
         )
+        .with_streams(crate::settings::number(
+            &lookup,
+            "MAX_OPEN_STREAMS",
+            DEFAULT_MAX_OPEN_STREAMS,
+        ))
     }
 
     /// Zero, which would refuse every request, reads as one; values past what a semaphore holds are cut to it.
@@ -95,11 +107,18 @@ impl Limits {
         Self {
             requests: Arc::new(Semaphore::new(permits(requests))),
             body_bytes: Arc::new(Semaphore::new(permits(body_bytes))),
+            streams: Arc::new(Semaphore::new(DEFAULT_MAX_OPEN_STREAMS)),
             header_timeout: HEADER_READ_TIMEOUT,
             body_grace: BODY_GRACE,
             body_min_rate: BODY_MIN_RATE,
             refusals: Arc::default(),
         }
+    }
+
+    /// Zero reads as one, as for the other limits.
+    pub(crate) fn with_streams(mut self, streams: usize) -> Self {
+        self.streams = Arc::new(Semaphore::new(streams.clamp(1, Semaphore::MAX_PERMITS)));
+        self
     }
 
     #[cfg(test)]
@@ -117,9 +136,10 @@ impl Limits {
 
     pub fn describe(&self) -> String {
         format!(
-            "{} requests in flight, {} bytes of request bodies held",
+            "{} requests in flight, {} bytes of request bodies held, {} event streams open",
             self.requests.available_permits(),
-            self.body_bytes.available_permits()
+            self.body_bytes.available_permits(),
+            self.streams.available_permits()
         )
     }
 }
@@ -222,6 +242,10 @@ pub async fn admit(State(limits): State<Limits>, mut req: Request, next: Next) -
         bytes: limits.body_bytes.clone(),
         refusals: limits.refusals.clone(),
     });
+    req.extensions_mut().insert(StreamBudget {
+        streams: limits.streams.clone(),
+        refusals: limits.refusals.clone(),
+    });
     let req = req.map(|body| {
         Body::new(DeadlineBody::new(
             body,
@@ -253,7 +277,7 @@ pub async fn buffer_api_body(req: Request, next: Next) -> Response {
     }
 }
 
-fn busy() -> Response {
+pub(crate) fn busy() -> Response {
     (
         StatusCode::SERVICE_UNAVAILABLE,
         [(header::RETRY_AFTER, HeaderValue::from_static("1"))],
@@ -289,6 +313,25 @@ impl Refusals {
                 "requests refused with 503: the server is at its limit"
             );
         }
+    }
+}
+
+/// The event streams that may still open, put in the extensions of a request by `admit`.
+#[derive(Clone)]
+pub(crate) struct StreamBudget {
+    streams: Arc<Semaphore>,
+    refusals: Arc<Refusals>,
+}
+
+impl StreamBudget {
+    /// A place for one more stream, held until the permit is dropped with the stream; `None` when every place is
+    /// taken, to be answered with `busy()`.
+    pub(crate) fn open(&self) -> Option<OwnedSemaphorePermit> {
+        let place = self.streams.clone().try_acquire_owned().ok();
+        if place.is_none() {
+            self.refusals.note("event streams open");
+        }
+        place
     }
 }
 

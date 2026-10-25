@@ -1,6 +1,7 @@
 // The Axum router and its middleware, in the order a request goes through them (see `build_router_with`).
 //   api.rs           management API handlers (/api/...), with the authorization of each endpoint
 //   intercept.rs     service traffic: matching, mock rendering, proxying
+//   event_stream.rs  mocked responses sent as server-sent events
 //   browser_guard.rs what a web page may do with the management API (CORS, cross-site writes, DNS rebinding)
 //   validation.rs    names, reserved routes and paths, before anything is stored or forwarded
 //   limits.rs        how long a client may take and how much it may hold (connections, requests, bodies)
@@ -10,6 +11,7 @@ mod api;
 pub(crate) use api::accepted_import;
 pub mod browser_guard;
 pub(crate) mod codegen;
+pub(crate) mod event_stream;
 mod intercept;
 pub mod limits;
 pub mod observation;

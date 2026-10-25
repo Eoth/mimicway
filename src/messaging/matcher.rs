@@ -37,7 +37,10 @@ pub fn match_message<'a>(
         if let Some(rule) = service
             .rules
             .iter()
-            .find(|r| MatchEngine::matches_group(&r.conditions, &req, None))
+            // A rule that answers with server-sent events has no single body to send back as a message.
+            .find(|r| {
+                r.response.events.is_none() && MatchEngine::matches_group(&r.conditions, &req, None)
+            })
         {
             return Some(MatchedMessage {
                 service_name: &service.name,
@@ -77,6 +80,7 @@ mod tests {
                         value: body_literal.into(),
                     }],
                     chaos: None,
+                    events: None,
                 },
             }],
         }
@@ -179,6 +183,21 @@ mod tests {
             m.is_some(),
             "method/sub_path must not gate message matching"
         );
+    }
+
+    #[test]
+    fn a_rule_that_answers_with_events_is_passed_over_for_messages() {
+        let mut streaming = service_with_rule("svc-a", ConditionGroup::default(), "");
+        streaming.rules[0].response.events = Some(crate::models::EventStream {
+            events: vec![],
+            cut_at: None,
+        });
+        let services = [
+            streaming,
+            service_with_rule("svc-b", ConditionGroup::default(), "b"),
+        ];
+        let m = match_message(&services, b"{}", &HashMap::new()).unwrap();
+        assert_eq!(m.service_name, "svc-b");
     }
 
     #[test]

@@ -309,6 +309,7 @@ fn build_response(exchange: &ObservedExchange) -> MockResponse {
             value: exchange.response_body.clone(),
         }],
         chaos: None,
+        events: None,
     }
 }
 
@@ -362,6 +363,7 @@ fn echo_response(
         headers,
         body,
         chaos: None,
+        events: None,
     })
 }
 

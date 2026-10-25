@@ -128,6 +128,7 @@ pub enum ResponseEditorMode {
     Text,
     Advanced,
     Empty,
+    Events,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
@@ -182,6 +183,34 @@ pub struct MockResponse {
     pub body: Vec<BodyFragment>,
     #[serde(default)]
     pub chaos: Option<ChaosConfig>,
+    /// When set, the response is this sequence of server-sent events instead of `body`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub events: Option<EventStream>,
+}
+
+/// A response sent as server-sent events (`text/event-stream`): each event after its delay, then the end of the
+/// response, or the connection dropped at `cut_at` for a client that must survive a stream cut in the middle.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct EventStream {
+    pub events: Vec<StreamEvent>,
+    /// Index of the event replaced by the cut: the events before it are sent, then, after its delay, the connection
+    /// is dropped with no end.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cut_at: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct StreamEvent {
+    /// The `event:` field; none sends a plain message.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub event: Option<String>,
+    /// A template, rendered like a body; each of its lines becomes a `data:` line.
+    #[serde(default)]
+    pub data: String,
+    /// Milliseconds to wait before the event, counted from the previous one (from the response headers for the
+    /// first).
+    #[serde(default)]
+    pub delay_ms: u64,
 }
 
 fn default_status() -> u16 {
@@ -368,6 +397,7 @@ mod tests {
                             error_rate: Some(0.1),
                             error_status: 503,
                         }),
+                        events: None,
                     },
                 }],
             }],

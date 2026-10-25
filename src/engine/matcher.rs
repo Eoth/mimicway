@@ -626,6 +626,7 @@ mod tests {
                 headers: vec![],
                 body: vec![BodyFragment::Literal { value: name.into() }],
                 chaos: None,
+                events: None,
             },
         }
     }

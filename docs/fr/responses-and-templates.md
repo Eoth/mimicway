@@ -155,10 +155,48 @@ Ces réglages apparaissent quand l'interrupteur **Mode Chaos** de la règle est 
 
 ![Mode Chaos activé : une latence entre 200 et 800 ms, et 20 % des requêtes reçoivent une erreur 503](screenshots/rule-chaos-settings.png)
 
+## Server-sent events : une réponse envoyée événement par événement
+
+Un client qui suit un journal ou une progression, comme une chaîne de déploiement, le lit en server-sent events (`text/event-stream`) : des lignes poussées une à une, souvent une marque de fin, et parfois un flux coupé en plein milieu. Le format **Flux d'événements** répond ainsi : au lieu d'un corps, la règle contient une liste d'événements.
+
+![Le formulaire de règle avec trois événements : un délai et des données pour chacun, et un nom pour le dernier](screenshots/rule-event-stream.png)
+
+- **Données** : un template, comme un corps, avec les mêmes variables et transformations ; chacune de leurs lignes devient une ligne `data:`.
+- **Nom de l'événement** (facultatif) : envoyé en `event:` avant les données. Une marque de fin est un événement comme un autre, en dernier dans la liste (`endofstream`, par exemple).
+- **Délai** : les millisecondes à attendre avant l'événement, comptées depuis le précédent, ou depuis les en-têtes de la réponse pour le premier.
+- **Fin du flux** : après le dernier événement, la réponse se termine. **Coupure à la place de l'événement N** envoie les événements avant N, attend le délai de N, puis ferme la connexion sans terminer la réponse : le client reçoit une erreur de transport, comme quand son serveur disparaît, ce qui teste sa façon de reprendre.
+
+Avec les événements de l'image, `GET /log/42` reçoit aussitôt `data: pulling image`, 400 ms plus tard `data: run 42` et `data: copied 3, failed: 0` (deux lignes d'un même événement), puis `event: endofstream` et ses données, et la réponse se termine.
+
+Dans un fichier de configuration ou par l'API, les événements sont dans les `events` de la réponse ; `cut_at`, compté depuis 0 et absent pour un flux qui se termine, est l'événement que la coupure remplace (ici le deuxième, donc le client reçoit `pulling image`, puis une erreur de transport) :
+
+```json
+"response": {
+  "status": 200,
+  "headers": [],
+  "body": [],
+  "events": {
+    "events": [
+      { "data": "pulling image" },
+      { "data": "run {{path.run}}\ncopied 3, failed: 0", "delay_ms": 400 },
+      { "event": "endofstream", "data": "endofstream" }
+    ],
+    "cut_at": 1
+  }
+}
+```
+
+- `Content-Type: text/event-stream` et `Cache-Control: no-cache` sont ajoutés si la règle ne les fixe pas ; le statut et les autres en-têtes sont ceux de la règle, [templates](#templates-dans-les-en-têtes-de-réponse) compris.
+- Les données de chaque événement sont rendues à l'arrivée de la requête : `{{now_iso}}` donne l'heure de la requête, pas celle de l'événement.
+- Le mode Chaos s'applique avant le premier événement : sa latence retarde tout le flux, et une erreur injectée répond à sa place.
+- Le [journal des requêtes](request-log.md#une-réponse-envoyée-en-server-sent-events) note le flux une fois, et montre les événements qu'il a envoyés et comment il s'est terminé.
+
 ## Prérequis et limites
 
 - Aucun prérequis : disponible dans toutes les installations.
 - Le niveau par l'exemple ne renomme, n'ajoute ni ne supprime de champ : cliquez sur « Modifier en détail » pour cela, sans perdre ce que vous avez saisi.
 - En XML, un espace de noms (`xmlns:...`) est conservé tel quel dans la balise ou l'attribut, sans résolution (voir « Par l'exemple » plus haut).
 - En XML toujours, un nœud qui mêle texte direct et éléments enfants (« contenu mixte ») n'est pas représenté fidèlement : les éléments enfants sont conservés, le texte direct est abandonné.
+- Un flux d'événements contient au plus 1 000 événements, chacun attend au plus 60 secondes et tous au plus 10 minutes ; ces bornes sont vérifiées à l'enregistrement de la règle. Ses événements rendus tiennent au plus 1 Mio, sinon la requête reçoit un 500. Au plus `MAX_OPEN_STREAMS` flux sont ouverts en même temps (256 par défaut) ; le suivant reçoit un 503.
+- Un message Kafka ne reçoit jamais la réponse d'une règle qui envoie des événements : une telle règle n'a pas de corps unique à renvoyer, et la règle suivante qui correspond répond à sa place.
 - Un corps JSON dont la racine est un tableau (possible seulement par l'exemple) ne peut pas être restauré dans une vue structurée à la réouverture de la règle (voir « Rouvrir une règle restaure sa vue » plus haut).

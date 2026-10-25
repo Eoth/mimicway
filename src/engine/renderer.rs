@@ -645,6 +645,7 @@ mod tests {
             }],
             body: vec![BodyFragment::Literal { value: "ok".into() }],
             chaos: None,
+            events: None,
         };
         let (status, headers, body) = apply_chaos_and_render(&response, &[], &default_ctx())
             .await
@@ -706,6 +707,7 @@ mod tests {
                 error_rate: Some(1.0),
                 error_status: 503,
             }),
+            events: None,
         };
         let result = apply_chaos_and_render(&response, &[], &default_ctx()).await;
         assert_eq!(result.unwrap_err(), StatusCode::SERVICE_UNAVAILABLE);

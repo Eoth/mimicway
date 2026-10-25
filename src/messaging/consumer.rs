@@ -246,6 +246,7 @@ mod tests {
                             value: response_literal.into(),
                         }],
                         chaos: None,
+                        events: None,
                     },
                 }],
             }],

@@ -65,6 +65,91 @@ pub struct LogEntry {
     pub target_url: Option<String>,
     pub status: u16,
     pub captured: Option<CapturedRequest>,
+    /// For a response sent as server-sent events: what the stream has sent so far, updated as it goes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stream: Option<StreamRecord>,
+}
+
+/// The part of a log entry that a stream of events fills while it runs: the entry is written once, when the stream
+/// opens, and reading the log shows how far it got.
+#[derive(Debug, Clone, Default)]
+pub struct StreamRecord(Arc<std::sync::Mutex<StreamProgress>>);
+
+#[derive(Debug, Default, Serialize)]
+pub struct StreamProgress {
+    /// The events of the rule, the cut included when there is one.
+    pub planned: usize,
+    pub sent_count: usize,
+    /// The events sent, in order, while their data fits in `max_body_size()` bytes; `sent_count` goes on counting.
+    pub sent: Vec<SentEvent>,
+    pub sent_truncated: bool,
+    pub outcome: StreamOutcome,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SentEvent {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub event: Option<String>,
+    pub data: String,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum StreamOutcome {
+    /// Events remain to be sent.
+    #[default]
+    Open,
+    /// Every event was sent and the response ended.
+    Ended,
+    /// The connection was dropped where the rule cuts the stream.
+    Cut,
+    /// The client went away before the end.
+    ClientGone,
+}
+
+impl StreamRecord {
+    pub fn new(planned: usize) -> Self {
+        Self(Arc::new(std::sync::Mutex::new(StreamProgress {
+            planned,
+            ..StreamProgress::default()
+        })))
+    }
+
+    pub fn sent(&self, event: Option<&str>, data: &str) {
+        let mut progress = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        progress.sent_count += 1;
+        let kept: usize = progress.sent.iter().map(|e| e.data.len()).sum();
+        if progress.sent_truncated || kept + data.len() > max_body_size() {
+            progress.sent_truncated = true;
+            return;
+        }
+        progress.sent.push(SentEvent {
+            event: event.map(str::to_string),
+            data: data.to_string(),
+        });
+    }
+
+    /// Records how the stream finished; the first outcome stays, so that the end seen by the stream wins over the
+    /// drop that follows it.
+    pub fn finish(&self, outcome: StreamOutcome) {
+        let mut progress = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        if progress.outcome == StreamOutcome::Open {
+            progress.outcome = outcome;
+        }
+    }
+
+    pub fn outcome(&self) -> StreamOutcome {
+        self.0.lock().unwrap_or_else(|e| e.into_inner()).outcome
+    }
+}
+
+impl Serialize for StreamRecord {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.0
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .serialize(serializer)
+    }
 }
 
 #[derive(Clone)]
@@ -119,7 +204,37 @@ impl RequestLog {
             target_url: None,
             status,
             captured,
+            stream: None,
         });
+    }
+
+    /// Logs a mocked request answered with a stream of events, once, and returns the record the stream fills.
+    #[allow(clippy::too_many_arguments)]
+    pub fn log_stream(
+        &self,
+        service: &crate::models::Service,
+        method: &str,
+        path: &str,
+        rule: &str,
+        status: u16,
+        captured: Option<CapturedRequest>,
+        planned: usize,
+    ) -> StreamRecord {
+        let record = StreamRecord::new(planned);
+        self.push(LogEntry {
+            timestamp: Self::now_ms(),
+            service_name: service.name.clone(),
+            group_name: service.group_name.clone(),
+            method: method.into(),
+            path: path.into(),
+            mode: "mock".into(),
+            rule_matched: Some(rule.into()),
+            target_url: None,
+            status,
+            captured,
+            stream: Some(record.clone()),
+        });
+        record
     }
 
     pub fn log_proxy(
@@ -142,6 +257,7 @@ impl RequestLog {
             target_url: Some(crate::server::redaction::redact_url_credentials(target)),
             status,
             captured,
+            stream: None,
         });
     }
 
@@ -163,6 +279,7 @@ impl RequestLog {
             target_url: None,
             status: 404,
             captured,
+            stream: None,
         });
     }
 }

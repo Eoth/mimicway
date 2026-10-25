@@ -114,7 +114,7 @@ Ouvrez <http://localhost:7342>. Sur une instance vide, le bouton **Charger un ex
 | Services et routage | Espace d'URL par service, REST ou SOAP (les requêtes WSDL peuvent contourner le mock) | [Services](docs/fr/services.md) |
 | Groupes | Préfixe d'URL commun, administrateurs et membres par groupe | [Groupes](docs/fr/groups.md) |
 | Règles de correspondance | Méthode, sous-chemin, conditions sur le chemin, la query, les en-têtes, le JSON, le XML/XPath, le formulaire ; ET/OU | [Règles de correspondance](docs/fr/matching-rules.md) |
-| Réponses | Templates, constructeur visuel JSON/XML, données factices, mode Chaos (latence, taux d'erreur) | [Réponses et templates](docs/fr/responses-and-templates.md) |
+| Réponses | Templates dans les corps et les en-têtes, constructeur visuel JSON/XML, données factices, mode Chaos (latence, taux d'erreur), server-sent events (délais, marque de fin, flux coupé) | [Réponses et templates](docs/fr/responses-and-templates.md) |
 | Scripts | Un script Rhai en bac à sable par règle, valeurs déterministes par graine, dates, aides JSON/XML | [Scripts Rhai](docs/fr/rhai-scripts.md) |
 | Testeur de règle et conflits | Rejouer un brouillon de règle contre une requête capturée avec un verdict par condition ; avertissement quand une nouvelle règle en chevauche une autre | [Testeur de règle](docs/fr/rule-tester-and-conflicts.md) |
 | Journal des requêtes | Les 200 dernières requêtes : mode, règle correspondante (ou aucune), statut, et la requête capturée pour le testeur de règle | [Journal des requêtes](docs/fr/request-log.md) |
@@ -145,6 +145,7 @@ Tout se règle par des variables d'environnement ; aucune n'est obligatoire.
 | `API_BASE_URL` | *(vide)* | Où l'interface appelle l'API quand elles sont servies depuis des origines différentes ; voir [Interface et API séparées](#interface-et-api-séparées). |
 | `CORS_ALLOWED_ORIGINS` | *(vide)* | Origines, séparées par des virgules, autorisées à appeler l'API de gestion depuis un navigateur, en plus de l'origine de l'interface. Nécessaire seulement avec `API_BASE_URL`. Les services simulés répondent toujours à toute origine. |
 | `MAX_REQUESTS_IN_FLIGHT` | `1024` | Requêtes traitées en même temps ; la suivante reçoit aussitôt 503 avec `Retry-After: 1` au lieu d'attendre. `/api/health` n'est jamais refusé. |
+| `MAX_OPEN_STREAMS` | `256` | Réponses en server-sent events ouvertes en même temps ; chacune garde sa connexion jusqu'à son dernier événement (dix minutes au plus). La suivante reçoit 503 avec `Retry-After: 1`. |
 | `MAX_BUFFERED_BODY_SIZE` | `50331648` | Octets de corps de requête gardés en mémoire en même temps (48 Mio) par les services simulés, qui lisent jusqu'à 10 Mio pour évaluer leurs conditions, et par l'API de gestion ; au-delà, 503 aussitôt. Une requête relayée à son backend passe au fil de l'eau et ne compte pas. Laissez au processus environ trois fois cette valeur en mémoire (une requête avec un script garde son corps plus d'une fois), plus 20 Mio ; les manifestes Kubernetes lui donnent 256 Mio. |
 | `PROXY_READ_TIMEOUT_SECS` | `120` | Plus long silence accepté d'un backend relayé entre deux lectures ; au-delà, le client reçoit 504. |
 | `REDACT_HEADERS` | *(vide)* | Noms d'en-têtes supplémentaires (séparés par des virgules) dont les valeurs sont masquées dans les journaux, l'observation et les suggestions, en plus de `Authorization`, `Proxy-Authorization`, `Cookie`, `Set-Cookie`, `X-Api-Key`, `X-Auth-Token`, `X-Amz-Security-Token`. |
@@ -209,7 +210,7 @@ Tout est sous `/api`, en JSON à l'entrée comme à la sortie. Les messages d'er
 
 ## Templates et scripts
 
-Un corps de réponse est fait de fragments. Dans un fragment `Template`, les accolades simples sont littérales (du JSON ou du XML ordinaire), et `{{ }}` contient une expression :
+Un corps de réponse est fait de fragments. Dans un fragment `Template`, les accolades simples sont littérales (du JSON ou du XML ordinaire), et `{{ }}` contient une expression ; une valeur d'en-tête de réponse avec `{{` est aussi un template, comme les données de chaque server-sent event :
 
 | Expression | Exemple de résultat |
 |---|---|
@@ -341,7 +342,7 @@ L'anglais est la langue source : chaque message est écrit une fois, en anglais,
 | Le port 7342 est déjà utilisé | Fixez `PORT`, ou arrêtez l'autre processus. |
 | D'autres machines n'atteignent pas Mimicway | Il écoute sur `127.0.0.1` par défaut : fixez `BIND_ADDRESS=0.0.0.0` (et activez l'authentification, sauf sur un réseau de confiance). |
 | 403 « Requête inter-sites refusée » | L'interface est servie depuis une autre origine : ajoutez-la à `CORS_ALLOWED_ORIGINS`. |
-| 503 « Mimicway is handling too many requests at once » | `MAX_REQUESTS_IN_FLIGHT` ou `MAX_BUFFERED_BODY_SIZE` est atteint (le journal dit lequel, au plus toutes les 10 secondes) : réessayez, ou relevez la limite avec la mémoire qu'elle demande. |
+| 503 « Mimicway is handling too many requests at once » | `MAX_REQUESTS_IN_FLIGHT`, `MAX_BUFFERED_BODY_SIZE` ou `MAX_OPEN_STREAMS` est atteint (le journal dit lequel, au plus toutes les 10 secondes) : réessayez, ou relevez la limite avec la mémoire qu'elle demande. |
 | 408 « The request body arrived too slowly » | Un corps de requête doit arriver à 16 Kio/s en moyenne après 10 secondes, et les en-têtes en 10 secondes. Ces bornes empêchent un client de garder des connexions en envoyant lentement. |
 | 403 « ce Mimicway ne répond pas au nom … » | Appelez-le via `localhost` ou une adresse IP, ou ajoutez ce nom à `ALLOWED_HOSTS`. |
 | Connexion refusée alors que le mot de passe est bon | Keycloak émet les jetons sous une autre URL que `KEYCLOAK_URL`, ou pour un autre client : fixez `KEYCLOAK_ISSUER`, vérifiez `KEYCLOAK_CLIENT_ID` (le journal du serveur nomme la cause). |

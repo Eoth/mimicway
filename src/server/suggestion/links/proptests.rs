@@ -114,6 +114,7 @@ fn literal(text: &str) -> MockResponse {
         headers: vec![],
         body: vec![BodyFragment::Literal { value: text.into() }],
         chaos: None,
+        events: None,
     }
 }
 

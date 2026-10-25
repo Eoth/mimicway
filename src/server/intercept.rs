@@ -346,6 +346,10 @@ async fn handle_service(
         .extensions()
         .get::<crate::server::limits::BodyBudget>()
         .cloned();
+    let stream_budget = req
+        .extensions()
+        .get::<crate::server::limits::StreamBudget>()
+        .cloned();
     let content_length = req
         .headers()
         .get(axum::http::header::CONTENT_LENGTH)
@@ -448,6 +452,21 @@ async fn handle_service(
         seq_counter: seq,
         script_result: script_result.as_ref(),
     };
+
+    if let Some(events) = &rule.response.events {
+        return crate::server::event_stream::respond(
+            state,
+            service,
+            rule,
+            &method_str,
+            path,
+            events,
+            &ctx,
+            captured,
+            stream_budget.as_ref(),
+        )
+        .await;
+    }
 
     match apply_chaos_and_render(&rule.response, &path_segments, &ctx).await {
         Ok((status, resp_headers, body)) => {
@@ -960,6 +979,7 @@ mod tests {
                             headers: vec![],
                             body: vec![],
                             chaos: None,
+                            events: None,
                         },
                     }],
                 }],
@@ -1078,6 +1098,7 @@ mod tests {
                             headers: vec![],
                             body: vec![BodyFragment::Literal { value: "ok".into() }],
                             chaos: None,
+                            events: None,
                         },
                     }],
                 }],
@@ -1221,6 +1242,7 @@ mod tests {
                 headers: vec![],
                 body: vec![],
                 chaos: None,
+                events: None,
             },
         };
         let (port, request_log_handle, data_dir) = spawn_test_server(MockConfig {
@@ -1273,6 +1295,7 @@ mod tests {
                 ],
                 body: vec![],
                 chaos: None,
+                events: None,
             },
         };
         let (port, _log, data_dir) = spawn_test_server(MockConfig {
@@ -1319,6 +1342,7 @@ mod tests {
                 headers: vec![],
                 body: vec![],
                 chaos: None,
+                events: None,
             },
         };
         let mut service = purely_mocked_service(vec![rule]);
@@ -1390,6 +1414,7 @@ mod tests {
                 headers: vec![],
                 body: vec![],
                 chaos: None,
+                events: None,
             },
         };
         let (port, _log, data_dir) = spawn_test_server(MockConfig {
@@ -1450,6 +1475,7 @@ mod tests {
                     template: r#"{"count":{{script.count}},"lines":{{script.lines_json}}}"#.into(),
                 }],
                 chaos: None,
+                events: None,
             },
         }
     }
@@ -1555,6 +1581,7 @@ mod tests {
                     template: r#"<?xml version="1.0"?><soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><GetOrderTotalsResponse><count>{{script.count}}</count><articles>{{script.articles_xml}}</articles></GetOrderTotalsResponse></soap:Body></soap:Envelope>"#.into(),
                 }],
                 chaos: None,
+                events: None,
             },
         }
     }
@@ -1668,6 +1695,7 @@ mod tests {
                     template: r#"<?xml version="1.0"?><serviceLookup><name>{{path.name}}</name><id>{{script.id}}</id><found>{{script.found}}</found></serviceLookup>"#.into(),
                 }],
                 chaos: None,
+                events: None,
             },
         }
     }
@@ -1746,6 +1774,7 @@ mod tests {
                         template: r#"<?xml version="1.0"?><rechercheResponse><siret>{{script.siret}}</siret></rechercheResponse>"#.into(),
                     }],
                     chaos: None,
+                    events: None,
                 },
             },
             Rule {
@@ -1769,6 +1798,7 @@ mod tests {
                         template: r#"<?xml version="1.0"?><modeResponse><ok>true</ok></modeResponse>"#.into(),
                     }],
                     chaos: None,
+                    events: None,
                 },
             },
         ]

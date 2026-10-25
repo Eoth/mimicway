@@ -15,6 +15,7 @@
   import XmlResponseBuilder from './XmlResponseBuilder.svelte';
   import XmlPasteBuilder from './XmlPasteBuilder.svelte';
   import RuleScriptSlot from './RuleScriptSlot.svelte';
+  import RuleEventsEditor from './RuleEventsEditor.svelte';
   import ToggleSwitch from './ToggleSwitch.svelte';
   import {
     fieldsToTemplate,
@@ -36,6 +37,10 @@
   let status = $state(init?.response?.status ?? 200);
   let respHeaders = $state(init?.response?.headers ?? []);
   let fragments = $state(init?.response?.body ?? [{ type: 'Literal', value: '' }]);
+  // Server-sent events: kept apart from the body, like the state of every other format, so that switching format and
+  // back loses nothing; only the format shown at save time goes into the payload.
+  let streamEvents = $state(init?.response?.events?.events ?? [{ event: null, data: '', delay_ms: 0 }]);
+  let cutAt = $state(init?.response?.events?.cut_at ?? null);
   let chaosEnabled = $state(!!init?.response?.chaos);
   let chaos = $state(
     init?.response?.chaos ?? { delay_ms: 0, delay_min_ms: null, delay_max_ms: null, error_rate: 0, error_status: 500 },
@@ -64,7 +69,10 @@
       return 'advanced';
     }
 
-    let mode = init?.response_mode ?? fallbackMode();
+    // A rule with events opens on them whatever its recorded view; a recorded "events" view without events (a
+    // configuration edited by hand) opens on the body instead.
+    let mode = init?.response?.events ? 'events' : (init?.response_mode ?? fallbackMode());
+    if (mode === 'events' && !init?.response?.events) mode = fallbackMode();
     const structured = {};
 
     if (STRUCTURED_MODES.includes(mode)) {
@@ -167,7 +175,7 @@
   }
 
   function buildFragmentsFromMode() {
-    if (responseMode === 'empty') return [];
+    if (responseMode === 'empty' || responseMode === 'events') return [];
     if (STRUCTURED_MODES.includes(responseMode)) {
       return [{ type: 'Template', template: structuredTemplate(responseMode) }];
     }
@@ -409,7 +417,7 @@
     }
   }
 
-  // The four structured modes make two format buttons (JSON, XML); text, advanced and empty are one mode each.
+  // The four structured modes make two format buttons (JSON, XML); text, advanced, events and empty are one mode each.
   function formatOfMode(mode) {
     if (mode === 'json-paste' || mode === 'json-guided') return 'json';
     if (mode === 'xml-paste' || mode === 'xml-guided') return 'xml';
@@ -430,6 +438,7 @@
     if (responseMode === 'xml-guided') return xmlFields.length > 0;
     if (responseMode === 'xml-paste') return xmlPasteFields.length > 0;
     if (responseMode === 'text') return textContent.trim().length > 0;
+    if (responseMode === 'events') return streamEvents.some((e) => e.data?.trim() || e.event);
     if (responseMode === 'advanced')
       return fragments.some((f) => {
         if (f.type === 'Template') return f.template?.trim();
@@ -660,6 +669,9 @@
   }
 
   export function validate() {
+    if (responseMode === 'events' && streamEvents.length === 0) {
+      return t('An event stream needs at least one event.');
+    }
     if (responseMode === 'json-paste') {
       const err = validateTemplateAsJson(structuredTemplate(responseMode));
       if (err) return t('Invalid example JSON: {0}', err);
@@ -709,6 +721,7 @@
         headers: finalHeaders,
         body: finalBody,
         chaos: chaosEnabled ? chaos : null,
+        events: responseMode === 'events' ? { events: streamEvents, cut_at: cutAt } : null,
       },
       script: scriptEnabled && scriptCode.trim() ? scriptCode.trim() : null,
       // Records the view, to reopen it next time. The values of `responseMode` are the kebab-case variants of
@@ -797,7 +810,7 @@
       below switches between them (revealDetailMode), so the selector stays a single row.
     -->
         <div class="mode-selector" role="radiogroup" aria-label={t('Response format')}>
-          {#each [['json', t('JSON')], ['xml', t('XML')], ['text', t('Text')], ['advanced', t('Advanced template')], ['empty', t('Empty (204)')]] as [val, label]}
+          {#each [['json', t('JSON')], ['xml', t('XML')], ['text', t('Text')], ['advanced', t('Advanced template')], ['events', t('Event stream')], ['empty', t('Empty (204)')]] as [val, label]}
             <button
               type="button"
               class="mode-btn"
@@ -891,6 +904,8 @@
           >
           {#if responseMode === 'json-guided' || responseMode === 'json-paste'}
             <span class="field-hint">{t('Content-Type: application/json is added automatically.')}</span>
+          {:else if responseMode === 'events'}
+            <span class="field-hint">{t('Content-Type: text/event-stream is added automatically.')}</span>
           {/if}
         </div>
       {/if}
@@ -1111,6 +1126,16 @@
             onclick={addFragment}
             data-testid="rule-form-fragment-add-button">{t('+ Add a fragment')}</button
           >
+        </div>
+      {:else if responseMode === 'events'}
+        <div class="sub-section">
+          <strong>{t('Events')}</strong>
+          <RuleEventsEditor
+            events={streamEvents}
+            {cutAt}
+            onUpdate={(v) => (streamEvents = v)}
+            onCutChange={(v) => (cutAt = v)}
+          />
         </div>
       {:else if responseMode === 'empty'}
         <p class="section-help" style="margin-top: var(--space-2)">

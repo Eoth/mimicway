@@ -155,10 +155,48 @@ These settings appear when the **Chaos mode** switch of the rule is on. When bot
 
 ![Chaos mode on: a latency between 200 and 800 ms, and 20% of the requests answered with a 503 error](screenshots/rule-chaos-settings.png)
 
+## Server-sent events: a response sent event by event
+
+A client that follows a log or a progress, such as a deployment pipeline, reads it as server-sent events (`text/event-stream`): lines pushed one at a time, often an end marker, and sometimes a stream cut in the middle. The **Event stream** format answers that way: instead of a body, the rule holds a list of events.
+
+![The rule form with three events: a delay and data for each, and a name for the last one](screenshots/rule-event-stream.png)
+
+- **Data**: a template, like a body, with the same variables and transformations; each of its lines becomes a `data:` line.
+- **Event name** (optional): sent as `event:` before the data. An end marker is an event like any other, last in the list (`endofstream`, for instance).
+- **Delay**: milliseconds to wait before the event, counted from the previous one, or from the response headers for the first.
+- **End of the stream**: after the last event, the response ends. **Cut instead of event N** sends the events before N, waits the delay of N, then drops the connection without ending the response: the client gets a transport error, as when its server goes away, which tests how it resumes.
+
+With the events of the picture, `GET /log/42` receives at once `data: pulling image`, 400 ms later `data: run 42` and `data: copied 3, failed: 0` (two lines of one event), then `event: endofstream` and its data, and the response ends.
+
+In a configuration file or through the API, the events sit in the `events` of the response; `cut_at`, counted from 0 and left out for a stream that ends, is the event the cut replaces (here the second, so the client gets `pulling image`, then a transport error):
+
+```json
+"response": {
+  "status": 200,
+  "headers": [],
+  "body": [],
+  "events": {
+    "events": [
+      { "data": "pulling image" },
+      { "data": "run {{path.run}}\ncopied 3, failed: 0", "delay_ms": 400 },
+      { "event": "endofstream", "data": "endofstream" }
+    ],
+    "cut_at": 1
+  }
+}
+```
+
+- `Content-Type: text/event-stream` and `Cache-Control: no-cache` are added unless the rule sets them; the status and the other headers are those of the rule, [templates](#templates-in-response-headers) included.
+- The data of every event is rendered when the request arrives: `{{now_iso}}` gives the time of the request, not the time of the event.
+- Chaos mode applies before the first event: its latency delays the whole stream, and an injected error answers instead of it.
+- The [request log](request-log.md#a-response-sent-as-server-sent-events) records the stream once, and shows the events it has sent and how it ended.
+
 ## Requirements and limits
 
 - No requirement: available in every installation.
 - The by-example level does not rename, add or remove fields: click "Edit in detail" for that, without losing what you entered.
 - In XML, a namespace (`xmlns:...`) is kept as it is in the tag or attribute, without resolution (see "By example" above).
 - In XML still, a node that mixes direct text and child elements ("mixed content") is not represented faithfully: the child elements are kept, the direct text is dropped.
+- An event stream holds at most 1,000 events, each waits at most 60 seconds and all of them at most 10 minutes; these bounds are checked when the rule is saved. Its rendered events hold at most 1 MiB, or the request gets a 500. At most `MAX_OPEN_STREAMS` streams are open at once (256 by default); the next one gets a 503.
+- A Kafka message never gets the answer of a rule that sends events: such a rule has no single body to send back, and the next matching rule answers instead.
 - A JSON body whose root is an array (only possible by example) cannot be restored in a structured view when the rule is reopened (see "Reopening a rule restores its view" above).

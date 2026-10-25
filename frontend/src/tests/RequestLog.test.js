@@ -58,3 +58,49 @@ describe('RequestLog date and time', () => {
     await waitFor(() => expect(getByText('Date/time')).toBeInTheDocument());
   });
 });
+
+describe('RequestLog: a response sent as server-sent events', () => {
+  const entry = (stream) => ({
+    timestamp: Date.now(),
+    service_name: 'feed',
+    method: 'GET',
+    path: '/feed/log/42',
+    mode: 'mock',
+    rule_matched: 'log',
+    target_url: null,
+    status: 200,
+    stream,
+  });
+
+  it('shows how far the stream got and the events it sent, in order', async () => {
+    getLogs.mockResolvedValue([
+      entry({
+        planned: 3,
+        sent_count: 2,
+        sent: [{ data: 'pulling image' }, { event: 'progress', data: 'copied 3\nfailed: 0' }],
+        sent_truncated: false,
+        outcome: 'cut',
+      }),
+    ]);
+    const { getByTestId } = render(RequestLog);
+    await waitFor(() => expect(getByTestId('request-log-detail-button-0')).toBeInTheDocument());
+    getByTestId('request-log-detail-button-0').click();
+
+    await waitFor(() => expect(getByTestId('request-log-detail-stream')).toBeInTheDocument());
+    expect(getByTestId('request-log-detail-stream')).toHaveTextContent('2 of 3 events sent, cut by its rule');
+    const items = [...getByTestId('request-log-detail-stream-events').querySelectorAll('li')];
+    expect(items.map((li) => li.textContent.trim().replace(/\s+/g, ' '))).toEqual([
+      'pulling image',
+      'progress copied 3 failed: 0',
+    ]);
+  });
+
+  it('shows no stream line for an ordinary response', async () => {
+    getLogs.mockResolvedValue([entry(undefined)]);
+    const { getByTestId, queryByTestId } = render(RequestLog);
+    await waitFor(() => expect(getByTestId('request-log-detail-button-0')).toBeInTheDocument());
+    getByTestId('request-log-detail-button-0').click();
+    await waitFor(() => expect(getByTestId('request-log-detail-modal')).toBeInTheDocument());
+    expect(queryByTestId('request-log-detail-stream')).not.toBeInTheDocument();
+  });
+});

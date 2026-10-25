@@ -16,6 +16,10 @@ The details button opens the same information for one entry. Behind it, Mimicway
 
 ![Details of a log entry: method, path, mode and matching rule](screenshots/request-log-detail.png)
 
+## A response sent as server-sent events
+
+A request answered with [server-sent events](responses-and-templates.md#server-sent-events-a-response-sent-event-by-event) is logged once, when its stream opens, and its entry fills as the stream goes. Its details say how many of the rule's events were sent and how the stream stands: still open, ended after its last event, cut by its rule, or left by the client before the end; below come the events sent, in order, with their name and data. When their data would exceed the size of a logged body (`REQUEST_LOG_MAX_BODY_SIZE`), the next events are counted but not kept.
+
 ## Requirements and limits
 
 - No requirement: available in every installation, filled as soon as a request arrives.

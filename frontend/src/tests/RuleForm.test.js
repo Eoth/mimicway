@@ -466,16 +466,17 @@ describe('RuleForm: reopening a rule shows the view that built it', () => {
 // One button per format: JSON and XML each have two views, by example and in detail, and the "Edit in detail" button
 // switches between them, so the format selector stays a single row.
 describe('RuleForm: one button per format, two views for JSON and XML', () => {
-  it('shows five format buttons: JSON, XML, Text, Advanced template and Empty', () => {
+  it('shows six format buttons: JSON, XML, Text, Advanced template, Event stream and Empty', () => {
     const { container } = render(RuleForm);
     const buttons = container.querySelectorAll('[data-testid^="rule-form-mode-button-"]');
-    expect(buttons).toHaveLength(5);
+    expect(buttons).toHaveLength(6);
     const testids = [...buttons].map((b) => b.dataset.testid);
     expect(testids).toEqual([
       'rule-form-mode-button-json',
       'rule-form-mode-button-xml',
       'rule-form-mode-button-text',
       'rule-form-mode-button-advanced',
+      'rule-form-mode-button-events',
       'rule-form-mode-button-empty',
     ]);
   });

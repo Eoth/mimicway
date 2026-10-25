@@ -16,6 +16,10 @@ Le bouton de détail ouvre ces mêmes informations pour une entrée. En coulisse
 
 ![Détail d'une entrée du journal : méthode, chemin, mode et règle correspondante](screenshots/request-log-detail.png)
 
+## Une réponse envoyée en server-sent events
+
+Une requête qui reçoit des [server-sent events](responses-and-templates.md#server-sent-events--une-réponse-envoyée-événement-par-événement) est notée une fois, à l'ouverture de son flux, et son entrée se remplit au fil du flux. Son détail dit combien d'événements de la règle sont partis et où en est le flux : encore ouvert, terminé après son dernier événement, coupé par sa règle, ou quitté par le client avant la fin ; en dessous viennent les événements envoyés, dans l'ordre, avec leur nom et leurs données. Quand leurs données dépasseraient la taille d'un corps noté (`REQUEST_LOG_MAX_BODY_SIZE`), les événements suivants sont comptés mais pas gardés.
+
 ## Prérequis et limites
 
 - Aucun prérequis : disponible dans toutes les installations, alimenté dès qu'une requête arrive.

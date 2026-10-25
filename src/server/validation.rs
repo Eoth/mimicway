@@ -166,6 +166,9 @@ pub fn validate_service(service: &Service) -> Result<(), ValidationError> {
                 );
             }
         }
+        if let Some(stream) = &rule.response.events {
+            check_event_stream(rn, stream)?;
+        }
         if !seen_rules.insert(rn.to_lowercase()) {
             return error(
                 "rules",
@@ -177,6 +180,70 @@ pub fn validate_service(service: &Service) -> Result<(), ValidationError> {
         }
     }
 
+    Ok(())
+}
+
+/// The bounds of `server::event_stream`, checked when a rule is saved rather than found when it answers. Events are
+/// numbered from 1 in the messages, as the rule form shows them.
+fn check_event_stream(
+    rule: &str,
+    stream: &crate::models::EventStream,
+) -> Result<(), ValidationError> {
+    use crate::server::event_stream::{MAX_EVENT_DELAY_MS, MAX_EVENTS, MAX_STREAM_DURATION_MS};
+    let error = |message| {
+        Err(ValidationError {
+            field: "rules",
+            message,
+        })
+    };
+    let count = stream.events.len();
+    if count == 0 {
+        return error(tr(
+            "Rule \"{0}\": an event stream needs at least one event.",
+            &[&rule],
+        ));
+    }
+    if count > MAX_EVENTS {
+        return error(tr(
+            "Rule \"{0}\": {1} events, more than the {2} a stream may hold.",
+            &[&rule, &count, &MAX_EVENTS],
+        ));
+    }
+    let mut duration: u64 = 0;
+    for (i, event) in stream.events.iter().enumerate() {
+        let number = i + 1;
+        if event
+            .event
+            .as_deref()
+            .is_some_and(|name| name.contains(['\r', '\n']))
+        {
+            return error(tr(
+                "Rule \"{0}\": the name of event {1} holds a line break, which an event name cannot carry.",
+                &[&rule, &number],
+            ));
+        }
+        if event.delay_ms > MAX_EVENT_DELAY_MS {
+            return error(tr(
+                "Rule \"{0}\": event {1} waits {2} ms, more than the {3} ms an event may wait.",
+                &[&rule, &number, &event.delay_ms, &MAX_EVENT_DELAY_MS],
+            ));
+        }
+        duration += event.delay_ms;
+    }
+    if duration > MAX_STREAM_DURATION_MS {
+        return error(tr(
+            "Rule \"{0}\": the delays of the stream add up to {1} ms, more than the {2} ms a stream may last.",
+            &[&rule, &duration, &MAX_STREAM_DURATION_MS],
+        ));
+    }
+    if let Some(at) = stream.cut_at
+        && at >= count
+    {
+        return error(tr(
+            "Rule \"{0}\": the stream is cut at event {1}, which it does not have.",
+            &[&rule, &(at + 1)],
+        ));
+    }
     Ok(())
 }
 
@@ -245,6 +312,7 @@ mod tests {
                     headers: vec![],
                     body: vec![BodyFragment::Literal { value: "ok".into() }],
                     chaos: None,
+                    events: None,
                 },
             })
             .collect();
@@ -430,6 +498,52 @@ mod tests {
         service.rules[0].conditions.any_of[0].operator =
             crate::models::Operator::Regex("^[0-9]+$".into());
         assert!(validate_service(&service).is_ok());
+    }
+
+    fn streaming(events: serde_json::Value) -> Service {
+        let mut service = svc_with_rules("feed", &["log"]);
+        service.rules[0].response.events = Some(serde_json::from_value(events).unwrap());
+        service
+    }
+
+    fn event(delay_ms: u64) -> serde_json::Value {
+        serde_json::json!({"data": "line", "delay_ms": delay_ms})
+    }
+
+    #[test]
+    fn an_event_stream_is_accepted_up_to_each_bound_and_refused_one_past_it() {
+        use crate::server::event_stream::{MAX_EVENT_DELAY_MS, MAX_EVENTS, MAX_STREAM_DURATION_MS};
+        let refused = |events: serde_json::Value, words: &str| {
+            let message = validate_service(&streaming(events)).unwrap_err().message;
+            assert!(message.contains(words), "{message}");
+        };
+        let accepted = |events: serde_json::Value| validate_service(&streaming(events)).unwrap();
+
+        refused(serde_json::json!({"events": []}), "at least one event");
+        accepted(serde_json::json!({"events": vec![event(0); MAX_EVENTS]}));
+        refused(
+            serde_json::json!({"events": vec![event(0); MAX_EVENTS + 1]}),
+            "1001 events",
+        );
+        accepted(serde_json::json!({"events": [event(MAX_EVENT_DELAY_MS)]}));
+        refused(
+            serde_json::json!({"events": [event(0), event(MAX_EVENT_DELAY_MS + 1)]}),
+            "event 2 waits",
+        );
+        let whole = (MAX_STREAM_DURATION_MS / MAX_EVENT_DELAY_MS) as usize;
+        accepted(serde_json::json!({"events": vec![event(MAX_EVENT_DELAY_MS); whole]}));
+        let mut longer = vec![event(MAX_EVENT_DELAY_MS); whole];
+        longer.push(event(1));
+        refused(serde_json::json!({"events": longer}), "add up to 600001 ms");
+        accepted(serde_json::json!({"cut_at": 1, "events": [event(0), event(0)]}));
+        refused(
+            serde_json::json!({"cut_at": 2, "events": [event(0), event(0)]}),
+            "cut at event 3",
+        );
+        refused(
+            serde_json::json!({"events": [{"event": "end\nof", "data": "x"}]}),
+            "line break",
+        );
     }
 
     #[test]
