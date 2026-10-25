@@ -20,7 +20,7 @@ Each item has an identifier that never changes, a size (S: a day or less, M: a f
 
 1. [Ready for an international launch](#1-ready-for-an-international-launch): R10 (with R16, R17, R18), R12, R13, R14, R9.
 2. [Trust and operations](#2-trust-and-operations): T1 to T15.
-3. [Make it indispensable](#3-make-it-indispensable): U1, U2, then U3 to U16, in the listed order.
+3. [Make it indispensable](#3-make-it-indispensable): U1, U2, then U3 to U18, in the listed order.
 4. [Engineering backlog](#4-engineering-backlog): taken alongside, when they unblock an item above.
 
 Hardening comes before all of these: E24, E25 and T15.
@@ -399,6 +399,30 @@ Size S per language
 
 **Done when.** Each language passes the catalogue tests and a native speaker's review.
 
+### U18. A guided first mock in the interface
+
+Size L, in three parts
+
+**Why.** The README tour shows Mimicway to someone at a terminal. Someone who opens the interface first finds an empty home screen and a **Load an example** button, and nothing that walks them through the service form, a rule, a condition and the request log: the screens are learnt by trial.
+
+**What.** A tutorial panel, offered on the empty home screen and opened from the navigation bar, that walks through one scenario: create a service, call it, add a rule with a condition, see the answer change, read the request log. For every part:
+
+- The scenario is a data file (`frontend/src/tutorial/first-mock.json`): its steps, the element each one points at by `data-testid`, the keys of its texts; the panel interprets it and holds no step of its own.
+- No guided-tour dependency. The panel is a region with a heading that takes the focus when it opens, its step text announced politely (`aria-live`), every action reachable by keyboard; no animation, no overlay over the page.
+- Offline entirely; English and French through the existing catalogues, whose extraction tests cover its texts.
+- Closed at any step, it reopens where it stopped (the step kept in `localStorage`), and it can be turned off for good.
+- The steps that change something act only on a demo service the tutorial creates for the occasion, never on one of the user's; closing it offers to delete that service.
+- Once closed, it leaves no listener, observer or timer behind, which a test counts.
+- Loaded on demand (`import()` when opened): the initial bundle does not grow.
+
+Parts, in this order:
+
+- **a. Panel and scenario** (M): the data file, the panel loaded on demand, the first two steps (create the demo service, call it from the panel).
+- **b. Condition and log** (S): the rule with a condition, the changed answer, the log entry.
+- **c. Resume, turn off, clean up** (S): reopening after a reload, the off switch, the deletion of the demo service, and the guide's screenshots in both languages.
+
+**Done when.** From the empty home screen, a first-time user reaches a rule with a condition and its log entry without leaving the panel, by keyboard alone (an end-to-end scenario) and with each step announced (an accessibility check of the panel); the initial JavaScript of the bundle keeps its size in bytes; after closing, no listener or timer of the panel is left.
+
 ## 4. Engineering backlog
 
 ### E2. Response builder leftovers
@@ -610,3 +634,13 @@ Size S
 **What.** The documented and CI runs use a temporary data directory; the suite refuses to start unless the server it reaches says it was started for tests (an environment variable reported by `/api/health`, for instance), and no spec falls back to a directory of the repository.
 
 **Done when.** Running the suite against a server started without that variable fails before any request that writes, shown by a test.
+
+### E34. The request log names the rule that forwarded a request
+
+Size S
+
+**Why.** A request that a rule forwards to the backend (`"action":"proxy"`) is logged with `"mode":"proxy"` and `"rule_matched":null`, like a request relayed by a service in proxy mode, where no rule runs: the log cannot tell which rule forwarded it, while the README and the request log guide say that an entry names its matching rule. Seen on the entry that step 4 of the README tour leaves.
+
+**What.** `RequestLog::log_proxy` (`src/server/request_log.rs`) takes the rule that forwarded the request, none for a service in proxy mode; the log screen shows it as it does for a mocked request.
+
+**Done when.** A test forwards a request through a proxy rule and reads the rule's name in the log entry, and one relayed by a service in proxy mode reads none.
