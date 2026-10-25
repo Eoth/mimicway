@@ -33,13 +33,14 @@ function levelCounts(levels) {
     .join(' ');
 }
 
-// Image targets, with the page's own language written as {lang}: README.fr.md shows docs/fr/screenshots/x.png where
-// README.md shows docs/en/screenshots/x.png, and both are the same image.
+// Image targets, Markdown and HTML (<img src>, <source srcset>) alike, in their order, with the page's own language
+// written as {lang}: README.fr.md shows docs/fr/screenshots/x.png where README.md shows docs/en/screenshots/x.png, and
+// both are the same image.
 function images(text, language) {
   const own = new RegExp(`(^|/)${language}/`);
-  return [...withoutCode(text).matchAll(/!\[[^\]]*\]\(([^)\s]+)/g)].map(([, target]) =>
-    target.replace(own, '$1{lang}/'),
-  );
+  return [
+    ...withoutCode(text).matchAll(/!\[[^\]]*\]\(([^)\s]+)|<(?:img|source)\b[^>]*?\s(?:src|srcset)="([^"\s]+)"/g),
+  ].map(([, markdown, html]) => (markdown ?? html).replace(own, '$1{lang}/'));
 }
 
 function firstLine(text) {

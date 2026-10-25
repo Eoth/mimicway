@@ -7,6 +7,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 ## [Unreleased]
 
 ### Changed
+- CI refuses an image over 150,000 bytes, a video or a GIF, and an SVG that holds a script, an event handler or a resource from elsewhere, or keeps moving for a reader who asked for less motion (`scripts/check-images.mjs`). The documentation checks now also read the images of HTML blocks (`<img src>`, `<source srcset>`): a broken one, or one shown in one language only, fails like a Markdown image.
 - The README opens on a tour in five steps instead of a single mock: an instance started for the occasion, a mocked service, a rule with a condition that changes the answer, a rule forwarded to a second service of the same instance, the request log, then cleanup, all in `curl` commands to paste, each followed by its answer. The tour runs on port 7343 with its data in a temporary directory, so an instance already on 7342 and its `./data` are left alone, and nothing leaves the machine. CI replays it as written against the binary it builds, in English and French, and fails when an answer changes (`scripts/check-readme-tour.sh`).
 
 ## [0.4.0] - 2026-10-24

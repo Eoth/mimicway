@@ -67,6 +67,8 @@ jobs:
         run: node scripts/check-former-design-system.mjs
       - name: No workflow leaves a token in a checkout or publishes outside a protected environment
         run: node scripts/check-workflows.mjs
+      - name: Every image stays light and inert, no video or GIF
+        run: node scripts/check-images.mjs
 
   secrets:
     name: Secret scan

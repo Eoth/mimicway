@@ -87,6 +87,23 @@ test("a README showing the other language's images fails", () => {
   assert.ok(check(files).some((p) => p.startsWith('README.fr.md: images differ')));
 });
 
+test('an HTML image shown in one language only fails, and matching HTML images pass', () => {
+  const files = completeRepository();
+  const picture = (language) =>
+    `<picture><source media="(prefers-reduced-motion: reduce)" srcset="docs/${language}/screenshots/home.png">` +
+    `<img src="docs/${language}/screenshots/demo.webp" alt="Demo"></picture>\n`;
+  files['docs/en/screenshots/demo.webp'] = '';
+  files['docs/fr/screenshots/demo.webp'] = '';
+  files['README.md'] += picture('en');
+  assert.ok(
+    check(files).some(
+      (p) => p.startsWith('README.fr.md: images differ') && p.includes('missing docs/{lang}/screenshots/demo.webp'),
+    ),
+  );
+  files['README.fr.md'] += picture('fr');
+  assert.deepEqual(check(files), []);
+});
+
 test('a missing link to the other language on the first line fails', () => {
   const files = completeRepository();
   files['docs/en/index.md'] = files['docs/en/index.md'].replace('[Français](../fr/index.md)\n\n', '');

@@ -38,7 +38,12 @@ const anchorCache = new Map();
 const problems = [];
 for (const file of markdownFiles()) {
   const text = withoutCode(readFileSync(file, 'utf8'));
-  for (const [, target] of text.matchAll(/\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g)) {
+  // Markdown links and images, then the images of HTML blocks (<img src>, <source srcset>).
+  const targets = [
+    ...[...text.matchAll(/\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g)].map(([, target]) => target),
+    ...[...text.matchAll(/<(?:img|source)\b[^>]*?\s(?:src|srcset)="([^"\s]+)"/g)].map(([, target]) => target),
+  ];
+  for (const target of targets) {
     if (/^(https?:|mailto:)/.test(target)) continue;
     const [pathPart, fragment] = target.split('#');
     const resolved = pathPart ? path.resolve(path.dirname(file), decodeURIComponent(pathPart)) : file;
