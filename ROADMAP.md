@@ -20,7 +20,7 @@ Each item has an identifier that never changes, a size (S: a day or less, M: a f
 
 1. [Ready for an international launch](#1-ready-for-an-international-launch): R10 (with R16, R17, R18), R12, R13, R14, R9.
 2. [Trust and operations](#2-trust-and-operations): T1 to T15.
-3. [Make it indispensable](#3-make-it-indispensable): U1, U2, then U3 to U18, in the listed order.
+3. [Make it indispensable](#3-make-it-indispensable): U1, U2, then U3 to U20, in the listed order (U19 is the first part of U10).
 4. [Engineering backlog](#4-engineering-backlog): taken alongside, when they unblock an item above.
 
 Hardening comes before all of these: E24, E25 and T15.
@@ -335,7 +335,7 @@ Size L, to split by protocol
 
 **Why.** Modern applications also talk GraphQL, WebSocket and server-sent events.
 
-**What.** GraphQL first (match on operation name and variables, answer per operation), then server-sent events (a scripted sequence of events with delays), then WebSocket (message-to-message rules, like the raw TCP mock), and gRPC last if asked for.
+**What.** Server-sent events first ([U19](#u19-server-sent-event-responses)), then GraphQL (match on operation name and variables, answer per operation), then WebSocket (message-to-message rules, like the raw TCP mock), and gRPC last if asked for.
 
 **Done when.** Each protocol has a guide page and end-to-end tests.
 
@@ -422,6 +422,26 @@ Parts, in this order:
 - **c. Resume, turn off, clean up** (S): reopening after a reload, the off switch, the deletion of the demo service, and the guide's screenshots in both languages.
 
 **Done when.** From the empty home screen, a first-time user reaches a rule with a condition and its log entry without leaving the panel, by keyboard alone (an end-to-end scenario) and with each step announced (an accessibility check of the panel); the initial JavaScript of the bundle keeps its size in bytes; after closing, no listener or timer of the panel is left.
+
+### U19. Server-sent event responses
+
+Size M
+
+**Why.** A release tool that follows a deployment pipeline reads its log as server-sent events (`text/event-stream`): lines pushed one by one, an end marker, and sometimes a stream cut in the middle. Mimicway answers a request with one body at once, so such a client cannot be tested against it at all: its end-to-end tests keep a hand-written fake server for that one endpoint, next to Mimicway for everything else.
+
+**What.** A rule whose response is a sequence of events instead of a body: each event has its data (a template, like a body), an optional event name and a delay before it; the stream ends after the last one, or is cut at a chosen event without an end (a fault for the client to survive). The connection is held only while events remain, and the number of open streams is bounded like any other resource. The rule form edits the sequence as a list; the request log records the stream once, with the events sent.
+
+**Done when.** A test client receives the events in order with their delays, an end marker, and a cut stream as a transport error; an end-to-end test edits a sequence in the interface.
+
+### U20. Templates in response headers
+
+Size S
+
+**Why.** A response header often has to carry a value of the request or a counter: a queue `Location` with the job named in the path (`/queue/item/{{path.job}}-{{seq}}/`), a `Set-Cookie` with an id. Header values are sent as written today, so a mock of such an API needs one rule per possible value.
+
+**What.** The template syntax and transformations of bodies, applied to header values, with the same variables (`path`, `query`, `header`, `seq`, `script`…). A value without `{{` stays literal, so existing rules do not change.
+
+**Done when.** A rule whose `Location` is `/queue/item/{{path.job}}-{{seq}}/` answers each call with the job of its path and an increasing counter, and the rule tester shows the rendered header.
 
 ## 4. Engineering backlog
 
