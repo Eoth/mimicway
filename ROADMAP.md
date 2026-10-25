@@ -661,3 +661,13 @@ Size S
 **What.** The redirected part of an address header is written like the one of a body, from the request the rule answers; an echo response repeats the value in its headers too. Everything else a backend sent stays literal (`literal_template`).
 
 **Done when.** A suggested rule answers a `Location` with the host of the request that reaches it, not the observed one, and an echo rule generalizes a value found in a header; the property tests that replay suggestions on the calls they come from still pass.
+
+### E36. Shutdown that waits for no held response
+
+Size S
+
+**Why.** On a stop signal, the server stops accepting connections and waits for the responses in progress (`serve` in `src/server/limits.rs`), then flushes the pending writes of the configuration (`src/main.rs`). A response held on purpose keeps it waiting: a chaos delay, which has no upper bound, or a stream of server-sent events, up to ten minutes. The Kubernetes manifests give the pod 10 seconds (`terminationGracePeriodSeconds`), after which it is killed before the final flush.
+
+**What.** On a stop signal, held responses end at once: a chaos delay answers as if it had elapsed, and an event stream is cut as if its rule said so, so that the drain takes the time of the real work only. A chaos delay gets an upper bound checked when the rule is saved, like the delays of a stream.
+
+**Done when.** A test stops a server holding an open stream and a long chaos delay, and sees it drain and flush within a second; a chaos delay past its bound is refused when saved.
