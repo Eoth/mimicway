@@ -26,6 +26,10 @@ Un script peut s'exécuter **sans aucune erreur** et produire autre chose que ce
 
 Pour chaque script exécuté sans erreur, le testeur affiche donc **le résultat qu'il a réellement produit** : chaque variable de template qu'il rend disponible (`{{script}}`, ou `{{script.champ}}` pour chaque champ de l'objet retourné), avec sa valeur exacte. C'est le moyen le plus sûr de remarquer qu'une clé que vous pensiez utiliser n'existe pas, ou qu'un champ censé contenir une valeur simple contient tout un bloc JSON.
 
+### Voir les en-têtes de réponse tels qu'ils partiront
+
+Quand la règle correspond et répond elle-même (ce n'est pas une règle proxy), le testeur liste aussi ses en-têtes de réponse tels qu'ils partiraient pour la requête choisie, avec leurs [templates](responses-and-templates.md#templates-dans-les-en-têtes-de-réponse) rendus : un `Location` construit avec `{{header.host}}` et `{{path.job}}` montre l'adresse que le client recevrait. `{{seq}}` y vaut 0 : un test ne lit aucun compteur d'appels et n'en fait avancer aucun.
+
 ## Le détecteur de conflits : un avertissement à l'enregistrement
 
 Mimicway applique la **première règle qui correspond** à une requête (voir [Règles de correspondance](matching-rules.md)) : l'ordre de la liste compte donc. Avec beaucoup de règles, il est facile d'en ajouter une qui, sans le vouloir, est **masquée** par une règle plus générale placée avant elle (ou l'inverse).

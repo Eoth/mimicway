@@ -1,5 +1,5 @@
 use crate::engine::template::{TemplateContext, render_template};
-use crate::models::{BodyFragment, ChaosConfig, FakeKind, MockResponse};
+use crate::models::{BodyFragment, ChaosConfig, FakeKind, HeaderEntry, MockResponse};
 use axum::http::StatusCode;
 
 pub struct TemplateRenderer;
@@ -28,6 +28,22 @@ impl TemplateRenderer {
             }
         }
         out
+    }
+
+    /// A header value with `{{` is a template, rendered like a body with the same variables and pipes; any other
+    /// value is sent as written, so that a value holding no expression costs no rendering. Names are never rendered.
+    pub fn render_headers(headers: &[HeaderEntry], ctx: &TemplateContext) -> Vec<(String, String)> {
+        headers
+            .iter()
+            .map(|h| {
+                let value = if h.value.contains("{{") {
+                    render_template(&h.value, ctx)
+                } else {
+                    h.value.clone()
+                };
+                (h.name.clone(), value)
+            })
+            .collect()
     }
 
     pub fn gen_uuid() -> String {
@@ -360,11 +376,7 @@ pub async fn apply_chaos_and_render(
     }
 
     let status = StatusCode::from_u16(response.status).unwrap_or(StatusCode::OK);
-    let headers: Vec<(String, String)> = response
-        .headers
-        .iter()
-        .map(|h| (h.name.clone(), h.value.clone()))
-        .collect();
+    let headers = TemplateRenderer::render_headers(&response.headers, ctx);
     let body = TemplateRenderer::render_body(&response.body, path_segments, ctx);
 
     Ok((status, headers, body))
@@ -641,6 +653,44 @@ mod tests {
         assert_eq!(headers.len(), 1);
         assert_eq!(headers[0].0, "X-Custom");
         assert_eq!(body, "ok");
+    }
+
+    #[test]
+    fn a_header_value_with_an_expression_is_rendered_and_any_other_is_sent_as_written() {
+        let path = HashMap::from([("job".to_string(), "billing".to_string())]);
+        let headers = HashMap::from([("Host".to_string(), "mock:7342".to_string())]);
+        let empty = HashMap::new();
+        let ctx = TemplateContext {
+            path_params: &path,
+            query_params: &empty,
+            headers: &headers,
+            request_body: b"",
+            seq_counter: 4,
+            script_result: None,
+        };
+        let entries = vec![
+            HeaderEntry {
+                name: "Location".into(),
+                value: "http://{{header.host}}/queue/item/{{path.job | upper}}-{{seq}}/".into(),
+            },
+            HeaderEntry {
+                name: "{{path.job}}".into(),
+                value: "{ \"single\": \"braces\" } {path.job}".into(),
+            },
+        ];
+        assert_eq!(
+            TemplateRenderer::render_headers(&entries, &ctx),
+            vec![
+                (
+                    "Location".to_string(),
+                    "http://mock:7342/queue/item/BILLING-4/".to_string()
+                ),
+                (
+                    "{{path.job}}".to_string(),
+                    "{ \"single\": \"braces\" } {path.job}".to_string()
+                ),
+            ]
+        );
     }
 
     #[tokio::test]

@@ -26,6 +26,10 @@ A script can run **without any error** and still produce something other than wh
 
 For each script that runs without error, the tester therefore shows **the result it really produced**: each template variable it makes available (`{{script}}`, or `{{script.field}}` for each field of the returned map), with its exact value. It is the most reliable way to notice that a key you meant to use does not exist, or that a field you thought held a simple value holds a whole JSON block.
 
+### See the response headers as they will be sent
+
+When the rule matches and answers itself (it is not a proxy rule), the tester also lists its response headers as they would be sent for the selected request, with their [templates](responses-and-templates.md#templates-in-response-headers) rendered: a `Location` built from `{{header.host}}` and `{{path.job}}` shows the address the client would get. `{{seq}}` gives 0 there: a test reads no call counter and moves none.
+
 ## The conflict detector: a warning when you save
 
 Mimicway applies the **first rule that matches** a request (see [Matching rules](matching-rules.md)), so the order of the list matters. With many rules, it is easy to add one that, unintentionally, is **hidden** by a more general rule placed before it (or the reverse).

@@ -20,12 +20,12 @@ Each item has an identifier that never changes, a size (S: a day or less, M: a f
 
 1. [Ready for an international launch](#1-ready-for-an-international-launch): R10 (with R16, R17, R18), R12, R13, R14, R9.
 2. [Trust and operations](#2-trust-and-operations): T1 to T15.
-3. [Make it indispensable](#3-make-it-indispensable): U1, U2, then U3 to U20, in the listed order (U19 is the first part of U10).
+3. [Make it indispensable](#3-make-it-indispensable): U1, U2, then U3 to U19, in the listed order (U19 is the first part of U10).
 4. [Engineering backlog](#4-engineering-backlog): taken alongside, when they unblock an item above.
 
 Hardening comes before all of these: E24, E25 and T15.
 
-At the maintainers' request, [U20](#u20-templates-in-response-headers) then [U19](#u19-server-sent-event-responses) come first, before the hardening and the lists above.
+At the maintainers' request, [U19](#u19-server-sent-event-responses) comes first, right after the templates in response headers (done), before the hardening and the lists above.
 
 ## 1. Ready for an international launch
 
@@ -435,16 +435,6 @@ Size M
 
 **Done when.** A test client receives the events in order with their delays, an end marker, and a cut stream as a transport error; an end-to-end test edits a sequence in the interface.
 
-### U20. Templates in response headers
-
-Size S
-
-**Why.** A response header often has to carry a value of the request or a counter: a queue `Location` with the job named in the path (`/queue/item/{{path.job}}-{{seq}}/`), a `Set-Cookie` with an id. Header values are sent as written today, so a mock of such an API needs one rule per possible value.
-
-**What.** The template syntax and transformations of bodies, applied to header values, with the same variables (`path`, `query`, `header`, `seq`, `script`…). A value without `{{` stays literal, so existing rules do not change.
-
-**Done when.** A rule whose `Location` is `/queue/item/{{path.job}}-{{seq}}/` answers each call with the job of its path and an increasing counter, and the rule tester shows the rendered header.
-
 ## 4. Engineering backlog
 
 ### E2. Response builder leftovers
@@ -666,3 +656,13 @@ Size S
 **What.** `RequestLog::log_proxy` (`src/server/request_log.rs`) takes the rule that forwarded the request, none for a service in proxy mode; the log screen shows it as it does for a mocked request.
 
 **Done when.** A test forwards a request through a proxy rule and reads the rule's name in the log entry, and one relayed by a service in proxy mode reads none.
+
+### E35. Suggested rules that use header templates
+
+Size S
+
+**Why.** Header values are templates now, but the suggestions from observed traffic still write them as literal text: a `Location` sent to a service of Mimicway holds the host seen while observing (`OwnAddress` in `src/server/suggestion/links.rs`), so it breaks when the application calls another address, while the same address in a body is built from the request (`{{header.host}}`). And a response that repeats the value telling the calls apart in a header is not generalized (`echo_response` in `src/server/suggestion.rs`), where the same value in the body is.
+
+**What.** The redirected part of an address header is written like the one of a body, from the request the rule answers; an echo response repeats the value in its headers too. Everything else a backend sent stays literal (`literal_template`).
+
+**Done when.** A suggested rule answers a `Location` with the host of the request that reaches it, not the observed one, and an echo rule generalizes a value found in a header; the property tests that replay suggestions on the calls they come from still pass.

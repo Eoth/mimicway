@@ -457,6 +457,8 @@
   "✗ Sub-path does not match": "✗ Sous-chemin ne correspond pas",
   "⚠ A script failed to run: the response would be rendered with an empty result for this script (no error is returned to the client, as in production).": "⚠ Un script a échoué à l'exécution — la réponse serait rendue avec un résultat vide pour ce script (aucune erreur n'est renvoyée au client, cf comportement de production).",
   "Result of this script (no error, but check that these are the expected values):": "Résultat produit par ce script (aucune erreur, mais vérifiez que ce sont bien les valeurs attendues) :",
+  "Response headers sent for this request:": "En-têtes de réponse envoyés pour cette requête :",
+  "{0} gives 0 here: a test does not move the call counter.": "{0} vaut 0 ici : un test ne fait pas avancer le compteur d'appels.",
   "⚠ The body of this request was truncated in the log: comparisons on the body may be wrong.": "⚠ Le corps de cette requête a été tronqué dans le journal — la comparaison sur le corps peut être invalide.",
   "AND conditions": "Conditions ET",
   "OR conditions": "Conditions OU",

@@ -81,7 +81,7 @@ Example: `{"siret":"{{path.siret}}"}` returns the `siret` path parameter of the 
 | `fake.KindName` | Generated fake data (see below) |
 | `uuid` | A generated unique identifier |
 | `now_ms` / `now_iso` / `now_epoch` | The current date and time, in several formats |
-| `seq` | A call counter |
+| `seq` | A call counter of the service: 0 for the first call, then 1, 2… |
 | `script` | The result of the rule's [Rhai script](rhai-scripts.md), if you wrote one |
 
 In the builder (both levels, JSON and XML), each variable is an option of the **source** menu of each field: "URL parameter {param}", "Query param", "HTTP header", "Script result", and so on. A few deserve a word:
@@ -128,6 +128,21 @@ To fill a response with realistic-looking data without typing it: first name, la
 In the builder, choose **Fake data** as the source of a field, then the kind of data in the menu next to it. The expression it writes for the field (`{{fake.CompanyName}}`) shows on its right, and a new value is drawn for every request.
 
 ![Two fields of a pasted JSON sample switched to fake data: a company name and a French city](screenshots/response-fake-data.png)
+
+## Templates in response headers
+
+A header value can hold expressions too, with the variables and transformations of a body. A queue that answers `201` with the address of the new item, for instance:
+
+| Header | Value |
+|---|---|
+| `Location` | `http://{{header.host}}/jenkins/queue/item/{{path.job}}-{{seq}}/` |
+
+Against `POST /jenkins/job/billing/build` sent to `localhost:7342`, the first call gets `http://localhost:7342/jenkins/queue/item/billing-0/`, the next one `…/billing-1/`: `{{header.host}}` is the address the client called, so the link works whatever the port or the machine, and `{{seq}}` counts the calls of the service.
+
+- A value without `{{` is sent as written, as before.
+- Header names are never templates.
+- A value whose result cannot be a header (a line break taken from the request body, for instance) is left out of the response, which still goes; the server log says which header.
+- The [rule tester](rule-tester-and-conflicts.md#see-the-response-headers-as-they-will-be-sent) shows each header as it would be sent for a captured request.
 
 ## Chaos mode: failures and slowness on demand
 

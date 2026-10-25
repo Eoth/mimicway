@@ -1688,7 +1688,17 @@ struct RuleTestRequest {
     action: RuleAction,
     #[serde(default)]
     script: Option<String>,
+    // The response headers of the rule, to show how their templates render against the captured request.
+    #[serde(default)]
+    response_headers: Vec<crate::models::HeaderEntry>,
     request: RuleTestCapturedRequest,
+}
+
+// A response header as the rule would send it for the captured request.
+#[derive(serde::Serialize)]
+struct RenderedHeader {
+    name: String,
+    value: String,
 }
 
 #[derive(serde::Serialize)]
@@ -1720,6 +1730,9 @@ struct RuleTestResponse {
     script_errors: Vec<ScriptExecutionError>,
     // What the script returned when it ran without error: a script appears either here or in script_errors.
     script_results: Vec<ScriptExecutionResult>,
+    // The response headers rendered as in production, when the rule matches and is not a proxy rule; empty
+    // otherwise. `{{seq}}` renders 0: the tester reads no service, so it neither reads nor moves a call counter.
+    response_headers: Vec<RenderedHeader>,
 }
 
 async fn test_rule(
@@ -1751,9 +1764,10 @@ async fn test_rule(
     // no template).
     let mut script_errors = Vec::new();
     let mut script_results = Vec::new();
+    let mut script_result = None;
+    let renders = outcome.overall_matched && payload.action != RuleAction::Proxy;
     if let Some(code) = &payload.script
-        && outcome.overall_matched
-        && payload.action != RuleAction::Proxy
+        && renders
     {
         let script_ctx = ScriptContext {
             body: String::from_utf8_lossy(&req.body).into_owned(),
@@ -1763,12 +1777,32 @@ async fn test_rule(
         };
         match state.script_engine.execute(code, &script_ctx) {
             Err(message) => script_errors.push(ScriptExecutionError { message }),
-            Ok(result) => script_results.push(ScriptExecutionResult {
-                value: result.value,
-                fields: result.fields,
-            }),
+            Ok(result) => {
+                script_results.push(ScriptExecutionResult {
+                    value: result.value.clone(),
+                    fields: result.fields.clone(),
+                });
+                script_result = Some(result);
+            }
         }
     }
+
+    let response_headers = if renders {
+        let ctx = crate::engine::TemplateContext {
+            path_params: &outcome.path_params,
+            query_params: &req.query_params,
+            headers: &req.headers,
+            request_body: &req.body,
+            seq_counter: 0,
+            script_result: script_result.as_ref(),
+        };
+        crate::engine::TemplateRenderer::render_headers(&payload.response_headers, &ctx)
+            .into_iter()
+            .map(|(name, value)| RenderedHeader { name, value })
+            .collect()
+    } else {
+        Vec::new()
+    };
 
     Json(RuleTestResponse {
         method_matches: outcome.method_matches,
@@ -1780,6 +1814,7 @@ async fn test_rule(
         any_of: outcome.group.any_of,
         script_errors,
         script_results,
+        response_headers,
     })
 }
 
@@ -2352,6 +2387,63 @@ mod tests {
         assert!(result.body_truncated);
     }
 
+    #[tokio::test]
+    async fn test_rule_shows_the_response_headers_rendered_for_the_captured_request() {
+        let mut captured = empty_captured("POST", "/job/billing/build");
+        captured
+            .headers
+            .insert("host".into(), "ci.local:7342".into());
+        let headers = vec![
+            crate::models::HeaderEntry {
+                name: "Location".into(),
+                value: "http://{{header.host}}/jenkins/queue/item/{{path.job}}-{{seq}}/".into(),
+            },
+            crate::models::HeaderEntry {
+                name: "X-From".into(),
+                value: "{{script}}".into(),
+            },
+        ];
+        let payload = |action, method: &str| RuleTestRequest {
+            method: method.into(),
+            sub_path: Some("/job/{job}/build".into()),
+            action,
+            script: Some(r#""tester""#.into()),
+            response_headers: headers.clone(),
+            request: empty_captured("POST", "/job/billing/build"),
+            ..Default::default()
+        };
+        let mut mock = payload(RuleAction::Mock, "POST");
+        mock.request = captured;
+        let state = test_state().await;
+        let Json(result) =
+            test_rule(State(state.clone()), Extension(anon_user()), Json(mock)).await;
+        let rendered: Vec<(&str, &str)> = result
+            .response_headers
+            .iter()
+            .map(|h| (h.name.as_str(), h.value.as_str()))
+            .collect();
+        assert_eq!(
+            rendered,
+            vec![
+                (
+                    "Location",
+                    "http://ci.local:7342/jenkins/queue/item/billing-0/"
+                ),
+                ("X-From", "tester"),
+            ]
+        );
+
+        // As in production, nothing is rendered for a proxy rule or a rule that does not match.
+        for request in [
+            payload(RuleAction::Proxy, "POST"),
+            payload(RuleAction::Mock, "GET"),
+        ] {
+            let Json(result) =
+                test_rule(State(state.clone()), Extension(anon_user()), Json(request)).await;
+            assert!(result.response_headers.is_empty());
+        }
+    }
+
     // --- test_rule(): script errors ---
     //
     // In production a failing script only reaches the server log; the tester is where a user sees it (`script_errors`).
@@ -2417,6 +2509,7 @@ mod tests {
             action: crate::models::RuleAction::Proxy,
             script: Some("totally_undefined_fn(1, 2)".into()),
             request: empty_captured("GET", "/x"),
+            ..Default::default()
         };
         let Json(result) = test_rule(
             State(test_state().await),

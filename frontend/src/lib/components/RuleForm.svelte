@@ -268,8 +268,8 @@
       {groupName}
       logs={serviceLogs}
       getDraftRule={() => {
-        // The action and the script too, not only method, sub-path and conditions: the tester runs the
-        // script against the chosen captured request. responseSectionRef is null until bind:this has run, which a
+        // The action, the script and the response headers too, not only method, sub-path and conditions: the tester
+        // runs the script and renders the headers against the chosen captured request. responseSectionRef is null until bind:this has run, which a
         // click on "Test" cannot precede in practice; the guard costs nothing.
         const payload = responseSectionRef?.getPayload() ?? {};
         return {
@@ -279,6 +279,7 @@
           anyOf,
           action: ruleAction,
           script: payload.script ?? null,
+          responseHeaders: payload.response?.headers ?? [],
         };
       }}
     />

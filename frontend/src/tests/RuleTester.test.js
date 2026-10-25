@@ -267,6 +267,57 @@ describe('RuleTester: API call and result display', () => {
   // `script_results`: a script that runs without error can still produce the wrong result (a misspelled key, a nested
   // object read through a path), so the tester shows what the script produced, not only the absence of an error.
 
+  it('sends the response headers of the draft and shows them as the server rendered them', async () => {
+    testRule.mockResolvedValue({
+      method_matches: true,
+      sub_path_matches: true,
+      path_params: {},
+      overall_matched: true,
+      body_truncated: false,
+      all_of: [],
+      any_of: [],
+      script_errors: [],
+      script_results: [],
+      response_headers: [{ name: 'Location', value: 'http://ci.local/jenkins/queue/item/billing-0/' }],
+    });
+    const headers = [{ name: 'Location', value: 'http://{{header.host}}/jenkins/queue/item/{{path.job}}-{{seq}}/' }];
+
+    const { getByLabelText, getByRole, getByTestId, getByText } = render(RuleTester, {
+      props: { serviceName: 'svc-a', logs: [logWithDetail], getDraftRule: draft({ responseHeaders: headers }) },
+    });
+    await fireEvent.change(getByLabelText('Captured request'), { target: { value: '0' } });
+    await fireEvent.click(getByRole('button', { name: /Test against this request/ }));
+
+    await waitFor(() => expect(getByTestId('rule-tester-response-headers')).toBeInTheDocument());
+    expect(testRule.mock.calls.at(-1)[0].response_headers).toEqual(headers);
+    expect(getByTestId('rule-tester-response-header')).toHaveTextContent(
+      'Location = http://ci.local/jenkins/queue/item/billing-0/',
+    );
+    expect(getByText('{{seq}}')).toBeInTheDocument();
+  });
+
+  it('shows no header panel when the server rendered none', async () => {
+    testRule.mockResolvedValue({
+      method_matches: true,
+      sub_path_matches: true,
+      path_params: {},
+      overall_matched: false,
+      body_truncated: false,
+      all_of: [],
+      any_of: [],
+      script_errors: [],
+      response_headers: [],
+    });
+    const { getByLabelText, getByRole, getByTestId, queryByTestId } = render(RuleTester, {
+      props: { serviceName: 'svc-a', logs: [logWithDetail], getDraftRule: draft() },
+    });
+    await fireEvent.change(getByLabelText('Captured request'), { target: { value: '0' } });
+    await fireEvent.click(getByRole('button', { name: /Test against this request/ }));
+    await waitFor(() => expect(getByTestId('rule-tester-result')).toBeInTheDocument());
+    expect(testRule.mock.calls.at(-1)[0].response_headers).toEqual([]);
+    expect(queryByTestId('rule-tester-response-headers')).not.toBeInTheDocument();
+  });
+
   it('shows the fields a successful script produces (e.g. an object picked by seeded_pick)', async () => {
     testRule.mockResolvedValue({
       method_matches: true,

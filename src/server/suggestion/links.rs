@@ -265,8 +265,8 @@ impl Covers {
     }
 }
 
-/// Mimicway's address as the observed caller reached it, for the headers of a rewritten rule: headers are copied as
-/// they are when a rule answers, never rendered, so they can only hold the address seen while observing.
+/// Mimicway's address as the observed caller reached it, for the headers of a rewritten rule. A header keeps the
+/// address seen while observing, written as literal text like the rest of a suggested header value.
 pub struct OwnAddress {
     proto: &'static str,
     host: String,
@@ -358,10 +358,10 @@ fn redirect_header(
             continue;
         };
         out.push_str(&value[copied..address.range.start]);
-        out.push_str(&format!(
+        out.push_str(&crate::engine::template::literal_template(&format!(
             "{}://{}{}{rest}",
             own.proto, own.host, cover.prefix
-        ));
+        )));
         copied = address.range.end;
         redirected.insert(cover.service.clone());
     }

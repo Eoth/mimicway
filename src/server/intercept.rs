@@ -470,8 +470,14 @@ async fn handle_service(
             );
             let mut response = axum::http::Response::builder().status(status);
             for (name, value) in &resp_headers {
-                if let Ok(hv) = HeaderValue::from_str(value) {
-                    response = response.header(name.as_str(), hv);
+                match HeaderValue::from_str(value) {
+                    Ok(hv) => response = response.header(name.as_str(), hv),
+                    // A rendered value may hold a line break or a control character taken from the request, which no
+                    // header can carry: the header is left out rather than the response failing.
+                    Err(_) => tracing::warn!(
+                        service_key = %service.name, rule = %rule.name, header = %name,
+                        "response header left out: its value is not a valid header value"
+                    ),
                 }
             }
             response
@@ -1238,6 +1244,63 @@ mod tests {
         let logged = request_log_handle.recent(1);
         assert_eq!(logged[0].mode, "no-rule");
 
+        std::fs::remove_dir_all(&data_dir).ok();
+    }
+
+    #[tokio::test]
+    async fn a_header_template_gives_each_call_its_host_path_and_counter() {
+        let rule = Rule {
+            name: "trigger".into(),
+            method: "POST".into(),
+            sub_path: Some("/job/{job}/build".into()),
+            action: RuleAction::Mock,
+            script: None,
+            response_mode: None,
+            conditions: ConditionGroup::default(),
+            response: MockResponse {
+                status: 201,
+                headers: vec![
+                    HeaderEntry {
+                        name: "Location".into(),
+                        value: "http://{{header.host}}/jenkins/queue/item/{{path.job}}-{{seq}}/"
+                            .into(),
+                    },
+                    // Not a valid header value once rendered: left out, the response still goes.
+                    HeaderEntry {
+                        name: "X-Echo".into(),
+                        value: "{{body./note}}".into(),
+                    },
+                ],
+                body: vec![],
+                chaos: None,
+            },
+        };
+        let (port, _log, data_dir) = spawn_test_server(MockConfig {
+            services: vec![purely_mocked_service(vec![rule])],
+            groups: vec![],
+        })
+        .await;
+
+        let client = reqwest::Client::new();
+        let mut locations = Vec::new();
+        for job in ["billing", "orders"] {
+            let resp = client
+                .post(format!("http://127.0.0.1:{port}/nocible/job/{job}/build"))
+                .body(r#"{"note":"two\nlines"}"#)
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(resp.status().as_u16(), 201);
+            assert!(resp.headers().get("x-echo").is_none());
+            locations.push(resp.headers()["location"].to_str().unwrap().to_string());
+        }
+        assert_eq!(
+            locations,
+            vec![
+                format!("http://127.0.0.1:{port}/jenkins/queue/item/billing-0/"),
+                format!("http://127.0.0.1:{port}/jenkins/queue/item/orders-1/"),
+            ]
+        );
         std::fs::remove_dir_all(&data_dir).ok();
     }
 

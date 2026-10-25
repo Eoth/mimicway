@@ -2,7 +2,8 @@
   // Rule tester: replays the draft rule of RuleForm, read-only, against a request already captured in the service's
   // log. Nothing changes and nothing is proxied: one POST to /api/rule-test (stateless, src/server/api.rs) evaluates
   // the method, the sub-path and each condition (MatchEngine::evaluate_rule_test, src/engine/matcher.rs) and, when the
-  // rule matches and is not a proxy rule, runs its script against that real request.
+  // rule matches and is not a proxy rule, runs its script against that real request and renders the response headers
+  // (their templates read the same variables as a body).
   //
   // Why scripts run here: in production a failing script (unknown Rhai function, type error...) is swallowed
   // (run_rule_script in src/server/intercept.rs), so that a broken script never blocks a request; only a server log
@@ -15,6 +16,7 @@
   import { testRule } from '../api.js';
   import { formatDateTime } from '../format-date.js';
   import FormField from './FormField.svelte';
+  import Sentence from './Sentence.svelte';
   import { t, intlLocale } from '../i18n.svelte.js';
 
   let { serviceName, groupName = null, logs = [], getDraftRule } = $props();
@@ -79,6 +81,7 @@
         conditions: { all_of: draft.allOf, any_of: draft.anyOf },
         action: draft.action ?? 'mock',
         script: draft.script ?? null,
+        response_headers: draft.responseHeaders ?? [],
         request: {
           method: log.method,
           remaining_path: log.captured.remaining_path,
@@ -203,6 +206,22 @@
                 {/if}
               </div>
             {/each}
+          </div>
+        {/if}
+
+        {#if result.response_headers?.length > 0}
+          <div class="script-result-panel" data-testid="rule-tester-response-headers">
+            <p class="script-result-title">{t('Response headers sent for this request:')}</p>
+            <ul class="script-result-fields">
+              {#each result.response_headers as header}
+                <li data-testid="rule-tester-response-header">
+                  <code>{header.name}</code> = <code class="script-result-value">{header.value}</code>
+                </li>
+              {/each}
+            </ul>
+            <p class="field-hint">
+              <Sentence text={t('{0} gives 0 here: a test does not move the call counter.')} codes={['{{seq}}']} />
+            </p>
           </div>
         {/if}
 

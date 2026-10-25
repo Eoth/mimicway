@@ -42,6 +42,13 @@ pub fn render_template(template: &str, ctx: &TemplateContext) -> String {
     out
 }
 
+/// `text` written so that rendering gives it back as it is: each `{{` becomes the quoted text `{{"{{"}}`. For a value
+/// that comes from elsewhere (a backend seen while observing) and lands where templates are rendered, such as a
+/// response header: whatever a backend sent, it never becomes a template.
+pub fn literal_template(text: &str) -> String {
+    text.replace("{{", r#"{{"{{"}}"#)
+}
+
 fn find_closing_double_brace(chars: &[char], start: usize) -> Option<usize> {
     let mut i = start;
     let mut in_quotes = false;
@@ -710,6 +717,36 @@ mod tests {
             render_template("{{path.siret | first(9) | upper}}", &ctx),
             "443061841"
         );
+    }
+
+    #[test]
+    fn a_literal_template_renders_back_to_its_text() {
+        let (p, q, h) = empty_ctx();
+        let ctx = make_ctx(&p, &q, &h, b"", 7);
+        for text in [
+            "{{seq}}",
+            "a{{{b}}}c",
+            "{{\"x\"}}",
+            "{{",
+            "}}{{}}",
+            "plain",
+            "{{{{seq}}}}",
+        ] {
+            assert_eq!(
+                render_template(&literal_template(text), &ctx),
+                text,
+                "{text}"
+            );
+        }
+    }
+
+    proptest::proptest! {
+        #[test]
+        fn any_text_survives_a_literal_template(text in "[{}\"a|() ]{0,24}") {
+            let (p, q, h) = empty_ctx();
+            let ctx = make_ctx(&p, &q, &h, b"", 0);
+            proptest::prop_assert_eq!(render_template(&literal_template(&text), &ctx), text);
+        }
     }
 
     #[test]

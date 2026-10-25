@@ -282,6 +282,8 @@ fn suggest_route(method: &str, sub_path: &str, samples: &[Sample]) -> Option<Sug
 /// soon as the body is edited), and `date` would freeze a timestamp that means nothing in a static configuration.
 const NEVER_SUGGESTED_RESPONSE_HEADERS: &[&str] = &["content-length", "date"];
 
+/// Values are written as literal text (`literal_template`): header values are rendered when a rule answers, and what a
+/// backend sent never becomes a template.
 fn suggested_headers(exchange: &ObservedExchange) -> Vec<HeaderEntry> {
     exchange
         .response_headers
@@ -292,7 +294,7 @@ fn suggested_headers(exchange: &ObservedExchange) -> Vec<HeaderEntry> {
         })
         .map(|(name, value)| HeaderEntry {
             name: name.clone(),
-            value: value.clone(),
+            value: crate::engine::template::literal_template(value),
         })
         .collect()
 }
@@ -313,8 +315,8 @@ fn build_response(exchange: &ObservedExchange) -> MockResponse {
 /// The response of an echo rule, when the groups' responses (their latest one each) differ only by the value that
 /// tells them apart: same status, each body holding its group's value, and the same text around every occurrence. The
 /// text around stays in `Literal` fragments; only the expression that reads the value (`{{path.name}}`, written here,
-/// never taken from the traffic) is a template. Headers are not templates when rendered, so a response that repeats
-/// the value in a header cannot be generalized.
+/// never taken from the traffic) is a template. Only the body is generalized: a response that repeats the value in a
+/// header is not.
 fn echo_response(
     candidate: &Candidate,
     representatives: &[&ObservedExchange],

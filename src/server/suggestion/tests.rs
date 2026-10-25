@@ -121,6 +121,35 @@ fn suggested_response_never_includes_credential_headers() {
 }
 
 #[test]
+fn a_suggested_header_answers_what_the_backend_sent_even_when_it_looks_like_a_template() {
+    // Header values are rendered when a rule answers: a backend's `{{seq}}` must come out as written, never as a
+    // counter.
+    let mut e = exchange(200, "ok");
+    e.response_headers
+        .insert("x-template".into(), "{{seq}} and {{{{uuid}}}}".into());
+    let obs = vec![e.clone(), e.clone(), e];
+    let Suggestion::Unconditional { rule } = suggest("GET", "/orders", &obs).unwrap() else {
+        panic!("expected an unconditional suggestion");
+    };
+    let empty = HashMap::new();
+    let ctx = crate::engine::TemplateContext {
+        path_params: &empty,
+        query_params: &empty,
+        headers: &empty,
+        request_body: b"",
+        seq_counter: 3,
+        script_result: None,
+    };
+    assert_eq!(
+        crate::engine::TemplateRenderer::render_headers(&rule.response.headers, &ctx),
+        vec![(
+            "x-template".to_string(),
+            "{{seq}} and {{{{uuid}}}}".to_string()
+        )]
+    );
+}
+
+#[test]
 fn suggested_response_never_includes_content_length_or_date() {
     // Captured from a real backend, content-length and date are in the response, but have no place in a saved rule
     // (content-length is computed when rendering, date would freeze a timestamp). An ordinary header such as x-env

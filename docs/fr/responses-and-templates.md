@@ -81,7 +81,7 @@ Exemple : `{"siret":"{{path.siret}}"}` renvoie le paramètre de chemin `siret` d
 | `fake.NomDuType` | Une donnée factice générée (voir plus bas) |
 | `uuid` | Un identifiant unique généré |
 | `now_ms` / `now_iso` / `now_epoch` | La date et l'heure actuelles, dans plusieurs formats |
-| `seq` | Un compteur d'appels |
+| `seq` | Un compteur d'appels du service : 0 au premier appel, puis 1, 2… |
 | `script` | Le résultat du [script Rhai](rhai-scripts.md) de la règle, si vous en avez écrit un |
 
 Dans le constructeur (aux deux niveaux, en JSON comme en XML), chaque variable est une option du menu **source** de chaque champ : « Paramètre URL {param} », « Query param », « En-tête HTTP », « Résultat du script », etc. Quelques-unes méritent un mot :
@@ -128,6 +128,21 @@ Pour remplir une réponse avec des données d'apparence réaliste sans les saisi
 Dans le constructeur, choisissez **Donnée fictive** comme source d'un champ, puis le type de donnée dans le menu voisin. L'expression écrite pour le champ (`{{fake.CompanyName}}`) s'affiche à sa droite, et une nouvelle valeur est tirée à chaque requête.
 
 ![Deux champs d'un exemple JSON collé passés en données factices : un nom d'entreprise et une ville française](screenshots/response-fake-data.png)
+
+## Templates dans les en-têtes de réponse
+
+Une valeur d'en-tête peut aussi contenir des expressions, avec les variables et les transformations d'un corps. Par exemple, une file d'attente qui répond `201` avec l'adresse du nouvel élément :
+
+| En-tête | Valeur |
+|---|---|
+| `Location` | `http://{{header.host}}/jenkins/queue/item/{{path.job}}-{{seq}}/` |
+
+Contre `POST /jenkins/job/billing/build` envoyé à `localhost:7342`, le premier appel reçoit `http://localhost:7342/jenkins/queue/item/billing-0/`, le suivant `…/billing-1/` : `{{header.host}}` est l'adresse que le client a appelée, donc le lien marche quels que soient le port ou la machine, et `{{seq}}` compte les appels du service.
+
+- Une valeur sans `{{` part telle qu'elle est écrite, comme avant.
+- Les noms d'en-tête ne sont jamais des templates.
+- Une valeur dont le résultat ne peut pas être un en-tête (un retour à la ligne pris dans le corps de la requête, par exemple) est retirée de la réponse, qui part quand même ; le journal du serveur dit quel en-tête.
+- Le [testeur de règle](rule-tester-and-conflicts.md#voir-les-en-têtes-de-réponse-tels-quils-partiront) montre chaque en-tête tel qu'il partirait pour une requête capturée.
 
 ## Mode Chaos : pannes et lenteurs à la demande
 
