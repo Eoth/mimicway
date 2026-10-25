@@ -283,13 +283,18 @@ Size M
 
 ### U5. Stateful mocks and instant CRUD
 
-Size L, to split
+Size L, in two parts
 
-**Why.** Many APIs are "create, then read what was created". Static rules cannot follow, and scripts have no memory.
+**Why.** Many APIs are "create, then read what was created", or "start, then poll until it is done". Static rules cannot follow, and scripts have no memory. Today the end-to-end tests of a client that polls a build change a rule through the API between two calls to make the mock move on: a build seen "in progress" then finished, a "last build" that still names the previous build right after a replay and the new one at the next call, an import that fails then succeeds once corrected, a stream cut at its first read and whole at the next.
 
-**What.** First, a per-service state machine: a rule can require a state and move to another one (like an order going from `created` to `paid`). Then a "resource" service type: from a path such as `/orders/{id}`, Mimicway answers POST, GET (one and list), PUT, PATCH and DELETE on an in-memory collection, seeded from examples, reset by API.
+**What.** For every part: the state lives in memory, per service, like the call counter; a reset of the configuration, and any change of the service, put it back to its start; the request log shows it for each call; nothing new is written to the configuration file but the rules themselves.
 
-**Done when.** A create-then-read test passes against a resource service with no rule written.
+Parts, in this order:
+
+- **a. A state machine per service** (M): a service is in a named state, `start` until a rule moves it. A rule may require a state (it matches only in that state, beside its conditions) and move the service to another state after it answers, at once or after it has answered a given number of times in that state (a build "in progress" for two polls, then finished). The current state is a template variable (`{{state}}`), readable and settable through the API (`GET` and `PUT …/{name}/state`), and shown and reset from the service page. The rule form edits "only in state" and "then go to state" next to the conditions; the rule tester says whether the state of the service lets the draft rule answer.
+- **b. Resource services** (M): a service type that, from a path such as `/orders/{id}`, answers POST, GET (one and list), PUT, PATCH and DELETE on an in-memory collection, seeded from examples, reset by API.
+
+**Done when.** a: a test polls a build that answers "in progress" twice then "finished", reads a "last build" that changes after a replay, and reads a stream cut once then whole, with no call to the management API between the calls; a reset brings every case back to its start. b: a create-then-read test passes against a resource service with no rule written.
 
 ### U6. Frozen and shifted time
 
