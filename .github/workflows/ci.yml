@@ -104,6 +104,11 @@ jobs:
       - run: cargo clippy --features tcp-mock --all-targets -- -D warnings
       - run: cargo clippy -p mimicway-alloc --all-targets -- -D warnings
       - run: cargo test
+      # The standard binary, relinked in seconds from what the tests just compiled, before the tcp-mock build replaces it:
+      # the tour of the README calls its API with curl, and fails when the server no longer answers what the README says,
+      # or the README no longer says it.
+      - name: The README tour answers as written, in English and French
+        run: cargo build && bash scripts/check-readme-tour.sh target/debug/mimicway
       - run: cargo test --features tcp-mock
       - run: cargo test -p mimicway-alloc
 

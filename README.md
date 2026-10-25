@@ -82,38 +82,66 @@ cargo build --release
 
 Building the UI first embeds it in the binary: `target/release/mimicway` is then complete on its own, and keeps its data in `./data` by default (see [Configuration](#configuration)).
 
-### Your first mock
+### A tour in five steps
 
-Create a service named `demo` with one rule, then call it:
+This tour starts a throwaway instance and shows, with `curl`, what Mimicway does: a mocked service, a rule that reads the request, a rule forwarded to a backend, the request log. The backend is a second service of the same instance: nothing leaves the machine. Paste the blocks in order into one bash terminal. Under each command, the line that starts with `#` is its answer, `…` standing for fake data or long values; CI runs these commands as written and fails when an answer changes.
+
+<!-- tour:start -->
+
+**1. Start** an empty instance. It listens on port 7343, on this machine only, and keeps its data in a temporary directory, so an instance already on 7342 and its `./data` are left alone; from a release archive, run `./mimicway`. `c` is `curl` that prints the status code after the body.
 
 ```bash
-curl -X POST http://localhost:7342/api/services \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "demo",
-    "listen_path": "/v1/users/{id}",
-    "real_target_url": "",
-    "is_mocked": true,
-    "rewrite_directory_urls": false,
-    "group_name": null,
-    "wsdl_mode": "auto",
-    "rules": [{
-      "name": "hello",
-      "method": "GET",
-      "sub_path": null,
-      "action": "mock",
-      "conditions": { "all_of": [], "any_of": [] },
-      "response": {
-        "status": 200,
-        "headers": [{ "name": "Content-Type", "value": "application/json" }],
-        "body": [{ "type": "Template", "template": "{\"id\":\"{{path.id}}\",\"name\":\"{{fake.FirstName}}\"}" }]
-      }
-    }]
-  }'
-
-curl http://localhost:7342/demo/v1/users/42
-# {"id":"42","name":"..."}
+PORT=7343 RUST_LOG=warn DATA_PATH="$(mktemp -d)" ./target/release/mimicway &
+until curl -sf localhost:7343/api/health >/dev/null; do sleep 0.2; done
+c() { curl -sS -w ' → %{http_code}\n' -H 'Content-Type: application/json' "$@"; }
 ```
+
+**2. Mock a service.** `users` answers `GET /users/{id}` with the id it was called with and a fake first name. `svc` is the service with a `RULES` placeholder: each call below sends the whole service, its rules in place of `RULES`.
+
+```bash
+user='{"name":"user","method":"GET","action":"mock","conditions":{},
+  "response":{"body":[{"type":"Template","template":"{\"id\":\"{{path.id}}\",\"name\":\"{{fake.FirstName}}\"}"}]}}'
+svc='{"name":"users","listen_path":"/{id}","real_target_url":"http://localhost:7343/backend","is_mocked":true,"wsdl_mode":"auto","rules":[RULES]}'
+c localhost:7343/api/services -d "${svc/RULES/$user}"
+# {"name":"users",…} → 201
+c localhost:7343/users/42
+# {"id":"42","name":"…"} → 200
+```
+
+**3. Add a rule with a condition.** Rules are tried in order: `vip` answers the requests whose query has `plan=vip`, `user` all the others. `PUT` replaces the whole service.
+
+```bash
+vip='{"name":"vip","method":"GET","action":"mock","conditions":{"all_of":[{"source":{"type":"QueryParam","key":"plan"},
+  "operator":{"type":"Eq","value":"vip"}}]},"response":{"body":[{"type":"Literal","value":"VIP offer"}]}}'
+c -X PUT localhost:7343/api/services/users -d "${svc/RULES/$vip,$user}"
+# {"name":"users",…} → 200
+c 'localhost:7343/users/42?plan=vip'
+# VIP offer → 200
+```
+
+**4. Forward one rule.** `backend` stands for the real API that `users` points to (its `real_target_url`). With `"action":"proxy"`, the `vip` rule sends the requests it matches there, while `user` goes on mocking the others.
+
+```bash
+c localhost:7343/api/services -d '{"name":"backend","listen_path":"","real_target_url":"","is_mocked":true,"wsdl_mode":"auto",
+  "rules":[{"name":"all","method":"GET","action":"mock","conditions":{},"response":{"body":[{"type":"Literal","value":"from the backend"}]}}]}'
+# {"name":"backend",…} → 201
+c -X PUT localhost:7343/api/services/users -d "${svc/RULES/${vip/mock/proxy},$user}"
+# {"name":"users",…"action":"proxy",…} → 200
+c 'localhost:7343/users/42?plan=vip'
+# from the backend → 200
+```
+
+**5. Read the request log, then clean up.** The last request went through `users` in proxy mode, to `/backend/42`. Stopping the instance leaves nothing behind but its temporary directory.
+
+```bash
+c 'localhost:7343/api/logs?limit=1'
+# [{…"path":"/users/42","mode":"proxy",…"target_url":"http://localhost:7343/backend/42",…}] → 200
+c -X DELETE localhost:7343/api/services/users
+# → 204
+kill %1
+```
+
+<!-- tour:end -->
 
 The same service can be built in the UI in a minute; on an empty instance, the home screen's **Load an example** button creates a `users-api` service to try (`GET /users-api/users/42`). For a fuller picture, import [examples/devops-toolchain.json](examples/devops-toolchain.json) (GitLab, Jenkins, Wiki.js and Keycloak mocks) from the UI's Import button, or with `curl -X PUT http://localhost:7342/api/config -H "Content-Type: application/json" --data @examples/devops-toolchain.json`.
 
@@ -325,11 +353,12 @@ cargo test --features tcp-mock
 cargo clippy --all-targets -- -D warnings
 cd frontend && npm test                  # Vitest
 cd frontend && npm run test:e2e          # Playwright, against a running Mimicway on :7342
+bash scripts/check-readme-tour.sh        # the tour above, against target/debug/mimicway on a free port
 ```
 
 For UI work with hot reload, run the binary, then `cd frontend && npm run dev` and open <http://localhost:5173>. `build.rs` embeds `frontend/dist` when it exists; `cargo build` without a built UI gives a binary that serves `STATIC_DIR` (`./frontend/dist` by default).
 
-CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs formatting, clippy and tests with each feature, the UI tests and build, the end-to-end suite against the real binary, `cargo-deny`, `npm audit`, an image build scanned by Trivy, and a secret scan; each job runs when a file it checks changes, and a change to the documentation runs the documentation checks and the secret scan only.
+CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs formatting, clippy and tests with each feature, the UI tests and build, the end-to-end suite against the real binary, `cargo-deny`, `npm audit`, an image build scanned by Trivy, and a secret scan; each job runs when a file it checks changes, and a change to the documentation runs the documentation checks and the secret scan only, plus the Rust job for the README, whose [tour](#a-tour-in-five-steps) it replays.
 
 Code map ([ARCHITECTURE.md](ARCHITECTURE.md) says how the parts work together):
 

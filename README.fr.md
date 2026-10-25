@@ -82,38 +82,66 @@ cargo build --release
 
 Construire l'interface d'abord l'intègre au binaire : `target/release/mimicway` se suffit alors à lui-même, et garde ses données dans `./data` par défaut (voir [Configuration](#configuration)).
 
-### Votre premier mock
+### Le tour en cinq étapes
 
-Créez un service nommé `demo` avec une règle, puis appelez-le :
+Ce tour démarre une instance jetable et montre, avec `curl`, ce que fait Mimicway : un service simulé, une règle qui lit la requête, une règle relayée vers un backend, le journal des requêtes. Le backend est un second service de la même instance : rien ne sort de la machine. Collez les blocs dans l'ordre dans un même terminal bash. Sous chaque commande, la ligne qui commence par `#` est sa réponse, `…` tenant lieu de fausses données ou de valeurs longues ; la CI exécute ces commandes telles quelles et échoue quand une réponse change.
+
+<!-- tour:start -->
+
+**1. Démarrez** une instance vide. Elle écoute sur le port 7343, sur cette machine seulement, et garde ses données dans un dossier temporaire : une instance déjà lancée sur 7342 et son `./data` restent intactes ; depuis une archive de version, lancez `./mimicway`. `c` est un `curl` qui affiche le code de statut après le corps.
 
 ```bash
-curl -X POST http://localhost:7342/api/services \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "demo",
-    "listen_path": "/v1/users/{id}",
-    "real_target_url": "",
-    "is_mocked": true,
-    "rewrite_directory_urls": false,
-    "group_name": null,
-    "wsdl_mode": "auto",
-    "rules": [{
-      "name": "hello",
-      "method": "GET",
-      "sub_path": null,
-      "action": "mock",
-      "conditions": { "all_of": [], "any_of": [] },
-      "response": {
-        "status": 200,
-        "headers": [{ "name": "Content-Type", "value": "application/json" }],
-        "body": [{ "type": "Template", "template": "{\"id\":\"{{path.id}}\",\"name\":\"{{fake.FirstName}}\"}" }]
-      }
-    }]
-  }'
-
-curl http://localhost:7342/demo/v1/users/42
-# {"id":"42","name":"..."}
+PORT=7343 RUST_LOG=warn DATA_PATH="$(mktemp -d)" ./target/release/mimicway &
+until curl -sf localhost:7343/api/health >/dev/null; do sleep 0.2; done
+c() { curl -sS -w ' → %{http_code}\n' -H 'Content-Type: application/json' "$@"; }
 ```
+
+**2. Simulez un service.** `users` répond à `GET /users/{id}` avec l'identifiant appelé et un faux prénom. `svc` est le service avec un emplacement `RULES` : chaque appel ci-dessous envoie le service entier, ses règles à la place de `RULES`.
+
+```bash
+user='{"name":"user","method":"GET","action":"mock","conditions":{},
+  "response":{"body":[{"type":"Template","template":"{\"id\":\"{{path.id}}\",\"name\":\"{{fake.FirstName}}\"}"}]}}'
+svc='{"name":"users","listen_path":"/{id}","real_target_url":"http://localhost:7343/backend","is_mocked":true,"wsdl_mode":"auto","rules":[RULES]}'
+c localhost:7343/api/services -d "${svc/RULES/$user}"
+# {"name":"users",…} → 201
+c localhost:7343/users/42
+# {"id":"42","name":"…"} → 200
+```
+
+**3. Ajoutez une règle à condition.** Les règles sont essayées dans l'ordre : `vip` répond aux requêtes dont la query contient `plan=vip`, `user` à toutes les autres. `PUT` remplace le service entier.
+
+```bash
+vip='{"name":"vip","method":"GET","action":"mock","conditions":{"all_of":[{"source":{"type":"QueryParam","key":"plan"},
+  "operator":{"type":"Eq","value":"vip"}}]},"response":{"body":[{"type":"Literal","value":"VIP offer"}]}}'
+c -X PUT localhost:7343/api/services/users -d "${svc/RULES/$vip,$user}"
+# {"name":"users",…} → 200
+c 'localhost:7343/users/42?plan=vip'
+# VIP offer → 200
+```
+
+**4. Relayez une règle.** `backend` tient le rôle de la vraie API vers laquelle pointe `users` (son `real_target_url`). Avec `"action":"proxy"`, la règle `vip` y envoie les requêtes qu'elle reconnaît, et `user` continue de simuler les autres.
+
+```bash
+c localhost:7343/api/services -d '{"name":"backend","listen_path":"","real_target_url":"","is_mocked":true,"wsdl_mode":"auto",
+  "rules":[{"name":"all","method":"GET","action":"mock","conditions":{},"response":{"body":[{"type":"Literal","value":"from the backend"}]}}]}'
+# {"name":"backend",…} → 201
+c -X PUT localhost:7343/api/services/users -d "${svc/RULES/${vip/mock/proxy},$user}"
+# {"name":"users",…"action":"proxy",…} → 200
+c 'localhost:7343/users/42?plan=vip'
+# from the backend → 200
+```
+
+**5. Lisez le journal des requêtes, puis faites le ménage.** La dernière requête est passée par `users` en mode proxy, vers `/backend/42`. Une fois l'instance arrêtée, il ne reste que son dossier temporaire.
+
+```bash
+c 'localhost:7343/api/logs?limit=1'
+# [{…"path":"/users/42","mode":"proxy",…"target_url":"http://localhost:7343/backend/42",…}] → 200
+c -X DELETE localhost:7343/api/services/users
+# → 204
+kill %1
+```
+
+<!-- tour:end -->
 
 Le même service se construit en une minute dans l'interface ; sur une instance vide, le bouton **Charger un exemple** de l'écran d'accueil crée un service `users-api` à essayer (`GET /users-api/users/42`). Pour une vue plus complète, importez [examples/devops-toolchain.json](examples/devops-toolchain.json) (mocks de GitLab, Jenkins, Wiki.js et Keycloak) avec le bouton Import de l'interface, ou avec `curl -X PUT http://localhost:7342/api/config -H "Content-Type: application/json" --data @examples/devops-toolchain.json`.
 
@@ -325,11 +353,12 @@ cargo test --features tcp-mock
 cargo clippy --all-targets -- -D warnings
 cd frontend && npm test                  # Vitest
 cd frontend && npm run test:e2e          # Playwright, contre un Mimicway lancé sur :7342
+bash scripts/check-readme-tour.sh        # le tour ci-dessus, contre target/debug/mimicway sur un port libre
 ```
 
 Pour travailler sur l'interface avec rechargement à chaud, lancez le binaire, puis `cd frontend && npm run dev` et ouvrez <http://localhost:5173>. `build.rs` intègre `frontend/dist` quand il existe ; `cargo build` sans interface construite donne un binaire qui sert `STATIC_DIR` (`./frontend/dist` par défaut).
 
-La CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) vérifie le formatage, clippy et les tests avec chaque fonctionnalité, les tests et la construction de l'interface, la suite de bout en bout contre le vrai binaire, `cargo-deny`, `npm audit`, une construction d'image analysée par Trivy, et une recherche de secrets ; chaque job tourne quand un fichier qu'il vérifie change, et une modification de la documentation ne lance que les contrôles de documentation et la recherche de secrets.
+La CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) vérifie le formatage, clippy et les tests avec chaque fonctionnalité, les tests et la construction de l'interface, la suite de bout en bout contre le vrai binaire, `cargo-deny`, `npm audit`, une construction d'image analysée par Trivy, et une recherche de secrets ; chaque job tourne quand un fichier qu'il vérifie change, et une modification de la documentation ne lance que les contrôles de documentation et la recherche de secrets, plus le job Rust pour le README, dont il rejoue le [tour](#le-tour-en-cinq-étapes).
 
 Plan du code ([ARCHITECTURE.md](ARCHITECTURE.md), en anglais, explique comment les parties travaillent ensemble) :
 

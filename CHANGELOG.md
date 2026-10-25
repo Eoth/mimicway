@@ -6,6 +6,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Changed
+- The README opens on a tour in five steps instead of a single mock: an instance started for the occasion, a mocked service, a rule with a condition that changes the answer, a rule forwarded to a second service of the same instance, the request log, then cleanup, all in `curl` commands to paste, each followed by its answer. The tour runs on port 7343 with its data in a temporary directory, so an instance already on 7342 and its `./data` are left alone, and nothing leaves the machine. CI replays it as written against the binary it builds, in English and French, and fails when an answer changes (`scripts/check-readme-tour.sh`).
+
 ## [0.4.0] - 2026-10-24
 
 ### Removed

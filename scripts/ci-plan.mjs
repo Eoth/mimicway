@@ -48,6 +48,8 @@ const CODEQL_LANGUAGES = ['actions', 'javascript-typescript', 'rust'];
 
 // Read and checked by people only: a change to these runs the always-on jobs alone.
 const DOCUMENTATION = [/\.md$/, /^docs\//, /^LICENSE$/, /^\.github\/ISSUE_TEMPLATE\//];
+// Documentation that a job runs: the Rust job replays the tour of the README against the binary it builds.
+const README_TOUR = [/^README(\.fr)?\.md$/, /^scripts\/check-readme-tour\.sh$/];
 
 const RUST = [
   /^src\//,
@@ -68,7 +70,7 @@ export const READ_BY_UI_TESTS = ['src/server/ping.rs'];
 
 // For each job, the paths it checks. A path may belong to several jobs.
 const RULES = {
-  rust: RUST,
+  rust: [...RUST, ...README_TOUR],
   // The allocator's tests under Miri, which checks every unsafe operation they reach: only its crate has any.
   miri: [/^alloc\//],
   // Builds the UI too: the Kafka specs of the end-to-end suite run against this job's binary.
@@ -162,7 +164,7 @@ export function planFor(event, files) {
     for (const language of CODEQL_LANGUAGES) codeql.add(language);
   } else {
     for (const file of files) {
-      if (matches(DOCUMENTATION, file)) continue;
+      if (matches(DOCUMENTATION, file) && !matches(README_TOUR, file)) continue;
       let claimed = matches(ALWAYS_ONLY, file);
       for (const [job, patterns] of Object.entries(RULES)) {
         if (matches(patterns, file)) {
