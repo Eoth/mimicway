@@ -25,6 +25,8 @@ Each item has an identifier that never changes, a size (S: a day or less, M: a f
 
 Hardening comes before all of these: E24, E25 and T15.
 
+At the maintainers' request, [U20](#u20-templates-in-response-headers) then [U19](#u19-server-sent-event-responses) come first, before the hardening and the lists above.
+
 ## 1. Ready for an international launch
 
 ### R9. Polish the French catalogues
