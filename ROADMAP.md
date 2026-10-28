@@ -25,6 +25,8 @@ Each item has an identifier that never changes, a size (S: a day or less, M: a f
 
 Hardening comes before all of these: E24, E25 and T15.
 
+The judges come right after the hardening, before the lists above: E37 to E40, tests whose verdict comes from outside the code under test (the real backend, axe-core, mutations, measured growth).
+
 At the maintainers' request, templates in response headers then server-sent events came first, before the hardening and the lists above; both are in the [changelog](CHANGELOG.md).
 
 ## 1. Ready for an international launch
@@ -671,3 +673,43 @@ Size S
 **What.** On a stop signal, held responses end at once: a chaos delay answers as if it had elapsed, and an event stream is cut as if its rule said so, so that the drain takes the time of the real work only. A chaos delay gets an upper bound checked when the rule is saved, like the delays of a stream.
 
 **Done when.** A test stops a server holding an open stream and a long chaos delay, and sees it drain and flush within a second; a chaos delay past its bound is refused when saved.
+
+### E37. The proxy judged by a direct call
+
+Size M
+
+**Why.** Mimicway forwards a request in two ways, a service in proxy mode and a rule whose action is `proxy` (`src/engine/proxy.rs`). Its tests check the cases someone thought of (hop-by-hop headers dropped by `is_hop_by_hop`, a timeout answered 504), but nothing compares what an application gets through Mimicway with what it would get from the service itself: a header, a body or a status that the forwarding changes unnoticed only shows in a user's application.
+
+**What.** A property test generates requests (method, path and query with encoded characters, repeated headers, bodies empty, binary, large and chunked) for a local backend that answers from what it receives, sends each one directly and through both forwarding paths, and compares the responses byte for byte, except the headers HTTP lets a proxy change (RFC 9110 §7.6.1), which the test takes from `is_hop_by_hop` itself rather than from a list of its own.
+
+**Done when.** The test runs in the CI with a fixed seed and number of cases; it fails when the forwarding drops or rewrites one header, shown by a deliberate change; its module documentation says what it does not see.
+
+### E38. Accessibility judged by axe-core in the end-to-end tests
+
+Size M
+
+**Why.** The interface aims at the French accessibility reference (RGAA, built on WCAG 2.1 AA). Keyboard and screen reader checks are written by hand (`frontend/e2e/rule-form-keyboard.spec.js`, E15) and only cover what was thought of; no tool judges every screen the suite opens.
+
+**What.** `@axe-core/playwright` as a development dependency (weight and licence given in its commit), run with the WCAG 2.1 A and AA rules on every screen the suite reaches, in both themes and both languages. The screens come from the suite itself (a shared fixture checks the page after each navigation), not from a list written by hand. A known violation waits in an exception file with an expiry date that the check enforces.
+
+**Done when.** A violation added on purpose (an image without a text alternative, a text contrast below 4.5:1) fails the suite in the CI, and the suite never runs against a server that holds real data (E33).
+
+### E39. Mutation testing of the rule engine
+
+Size M
+
+**Why.** The rule engine (`src/engine/`: `matcher.rs`, `template.rs`, `renderer.rs`, `script.rs`) decides which rule answers a request and what it sends back. Its tests pass, but nothing says whether they would fail if that code were wrong.
+
+**What.** `cargo-mutants` on `src/engine/`, with a bounded number of jobs so that the machine stays usable. First a measure: each surviving mutant is either killed by a new test or explained as equivalent in the test module. Then a gate, whose scope (the code a change touches, or the whole engine on a schedule) is chosen from the measured time and from how many mutants each scope reaches.
+
+**Done when.** `src/engine/matcher.rs` has no unexplained surviving mutant, and a change that leaves one in the code the gate covers fails it.
+
+### E40. Scale test: cost that grows with the input
+
+Size M
+
+**Why.** Mimicway is meant to stay light with many rules and much traffic, but no test measures how the cost grows: a step that becomes quadratic (a rule list scanned once per rule, a request log copied on each write) only shows on a large configuration.
+
+**What.** A test runs each family of inputs at n, 2n and 4n (rules matched for one request, requests against a fixed set of rules, conflict search for a draft rule, configuration load and save, suggestions from observed calls, script values) and counts the instructions with Callgrind, which gives the same number on every run. The expected growth of each family is written next to it; the test is red when the cost from n to 4n grows more than that, beyond a tolerance stated once.
+
+**Done when.** The test runs in the CI, every family has its expected growth, and a deliberately quadratic loop in rule matching turns it red.
