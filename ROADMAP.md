@@ -713,3 +713,33 @@ Size M
 **What.** A test runs each family of inputs at n, 2n and 4n (rules matched for one request, requests against a fixed set of rules, conflict search for a draft rule, configuration load and save, suggestions from observed calls, script values) and counts the instructions with Callgrind, which gives the same number on every run. The expected growth of each family is written next to it; the test is red when the cost from n to 4n grows more than that, beyond a tolerance stated once.
 
 **Done when.** The test runs in the CI, every family has its expected growth, and a deliberately quadratic loop in rule matching turns it red.
+
+### E41. Script XML items found under the parents of their path only
+
+Size S
+
+**Why.** `parse_xml_items` (`parse_xml_items_impl` in `src/engine/script.rs`) follows the parents of its path with a counter of its own (`parent_depth`, `in_parent`), separate from the XPath of rule conditions (`MatchEngine::walk_xml`), which once matched a sibling that was not on the path. The documented use, a path that stops at the element holding the values, was checked; a path that goes down to a leaf, or a parent name found again deeper in an unrelated branch, never was, and no test covers it.
+
+**What.** Property tests that generate XML documents and paths and compare `parse_xml_items` with the elements a reference walk finds under exactly that chain of parents; fix what they show.
+
+**Done when.** The property test passes in the CI, and a document where a parent's name appears in a sibling branch returns only the items under the real path.
+
+### E42. Arrow keys in the response format selector
+
+Size S
+
+**Why.** The response format selector is a `role="radiogroup"` (`frontend/src/lib/components/RuleResponseSection.svelte`) made of buttons: each one is a tab stop, and the arrow keys do nothing, while a radio group is expected to move its selection with them (WAI-ARIA radio group pattern, RGAA criterion 7.1).
+
+**What.** One tab stop for the group, the arrow keys moving and selecting, like native radios, with the mode change still asking before it discards the edited response.
+
+**Done when.** A component test and an end-to-end test choose every format with the arrow keys alone, and the change of mode still asks for confirmation when the response was edited.
+
+### E43. The raw TCP mock screen seen in a browser
+
+Size S
+
+**Why.** The screen of raw TCP mocks (`frontend/src/lib/components/TcpServiceManager.svelte`) has component tests, but no end-to-end test opens it on a binary built with `tcp-mock`, and no screenshot of the guide shows it: whether it works in a browser was never seen.
+
+**What.** An end-to-end scenario on a `tcp-mock` binary that creates a TCP mock in the screen, sends it a frame from the test and reads the answer, plus the screenshot of the guide in both languages.
+
+**Done when.** The scenario runs in the CI on a `tcp-mock` binary and passes, and the guide shows the screen.
