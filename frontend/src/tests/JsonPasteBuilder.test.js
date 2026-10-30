@@ -116,11 +116,17 @@ describe('JsonPasteBuilder — folding of object fields', () => {
 
 // As in JsonResponseBuilder, the pipe input shows only for a source other than 'fixed'.
 describe('JsonPasteBuilder — pipes', () => {
-  it('shows no pipe input for a "fixed" source', async () => {
-    const { getByLabelText, getByText, queryByLabelText } = render(JsonPasteBuilder);
+  it('offers a pipe for a kept value too, which then reads as quoted text in the template', async () => {
+    const onUpdate = vi.fn();
+    const { getByLabelText, getByText } = render(JsonPasteBuilder, { props: { onUpdate } });
     await pasteAndParse(getByLabelText, getByText, '{"nom":"ACME"}');
     await waitFor(() => expect(getByText('nom')).toBeInTheDocument());
-    expect(queryByLabelText('Transformation pipe for nom')).not.toBeInTheDocument();
+
+    await fireEvent.input(getByLabelText('Transformation pipe for nom'), { target: { value: 'lower' } });
+
+    const [fields] = onUpdate.mock.calls.at(-1);
+    expect(fields[0]).toMatchObject({ source: 'fixed', value: 'ACME', pipe: 'lower' });
+    expect(getByText('{{"ACME" | lower}}')).toBeInTheDocument();
   });
 
   it('shows a pipe input once another source is chosen and passes the pipe to onUpdate', async () => {

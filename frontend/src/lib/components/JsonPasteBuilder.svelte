@@ -1,4 +1,6 @@
 <script>
+  import TemplateTextInput from './TemplateTextInput.svelte';
+  import { fakeKinds as fakeOptions } from '../template-help.js';
   import { t, tCount } from '../i18n.svelte.js';
   // The by-example JSON view: edits only the values (source, pipe) of the fields found in the pasted sample. No key is
   // renamed, added, removed, moved or retyped here, unlike the detailed view (JsonResponseBuilder.svelte), which edits
@@ -106,127 +108,6 @@
       value: 'script',
       get label() {
         return t('Script result');
-      },
-    },
-  ];
-
-  const fakeOptions = [
-    'FirstName',
-    'LastName',
-    'Email',
-    'PhoneNumberFR',
-    'CompanyName',
-    'StreetName',
-    'CityFR',
-    'PostcodeFR',
-    'Siren',
-    'Siret',
-    'FullAddressFR',
-    'DatePast',
-    'DateFuture',
-    'TimestampMs',
-    'BoolRandom',
-    'LoremSentence',
-    'CountryFR',
-    'IbanFR',
-  ];
-
-  // The pipe suggestions of JsonResponseBuilder.svelte: each one is a pipe of the template engine.
-  const pipeOptions = [
-    {
-      value: 'lower',
-      get label() {
-        return t('lower — lowercase');
-      },
-    },
-    {
-      value: 'upper',
-      get label() {
-        return t('upper — uppercase');
-      },
-    },
-    {
-      value: 'trim',
-      get label() {
-        return t('trim — strip spaces');
-      },
-    },
-    {
-      value: 'capitalize',
-      get label() {
-        return t('capitalize — first letter uppercase');
-      },
-    },
-    {
-      value: 'first(N)',
-      get label() {
-        return t('first(N) — first N characters');
-      },
-    },
-    {
-      value: 'last(N)',
-      get label() {
-        return t('last(N) — last N characters');
-      },
-    },
-    {
-      value: 'substr(start,len)',
-      get label() {
-        return t('substr(start,len)');
-      },
-    },
-    {
-      value: 'default("val")',
-      get label() {
-        return t('default("val") — when empty');
-      },
-    },
-    {
-      value: 'replace("a","b")',
-      get label() {
-        return t('replace("a","b")');
-      },
-    },
-    {
-      value: 'prepend("prefix")',
-      get label() {
-        return t('prepend("prefix")');
-      },
-    },
-    {
-      value: 'append("suffix")',
-      get label() {
-        return t('append("suffix")');
-      },
-    },
-    {
-      value: 'length',
-      get label() {
-        return t('length — number of characters');
-      },
-    },
-    {
-      value: 'epoch_ms',
-      get label() {
-        return t('epoch_ms — ISO date to milliseconds since 1970');
-      },
-    },
-    {
-      value: 'epoch_seconds',
-      get label() {
-        return t('epoch_seconds — ISO date to seconds since 1970');
-      },
-    },
-    {
-      value: 'epoch_minutes',
-      get label() {
-        return t('epoch_minutes — ISO date to minutes since 1970');
-      },
-    },
-    {
-      value: 'date("yyyy-MM-dd")',
-      get label() {
-        return t('date("yyyy-MM-dd") — ISO date in another format');
       },
     },
   ];
@@ -416,6 +297,14 @@
                     <option value={fo}>{fo}</option>
                   {/each}
                 </select>
+              {:else if field.source === 'fixed'}
+                <TemplateTextInput
+                  value={field.value}
+                  onInput={(v) => updateField(currentPath, 'value', v)}
+                  placeholder={valuePlaceholder(field.source)}
+                  ariaLabel={t('Value for {0}', field.key)}
+                  testid="json-paste-builder-value-input-{currentPath.join('-')}"
+                />
               {:else if needsValueInput(field.source)}
                 <input
                   type="text"
@@ -428,21 +317,17 @@
                 />
               {/if}
 
-              {#if field.source !== 'fixed'}
-                <input
-                  type="text"
-                  class="pipe-input"
-                  value={field.pipe || ''}
-                  oninput={(e) => updateField(currentPath, 'pipe', e.target.value)}
-                  placeholder={t('e.g. {0}', 'first(9) | upper')}
-                  aria-label={t('Transformation pipe for {0}', field.key)}
-                  list="dl-paste-pipes"
-                  autocomplete="off"
-                  data-testid="json-paste-builder-pipe-input-{currentPath.join('-')}"
-                />
-              {/if}
+              <TemplateTextInput
+                kind="pipe"
+                value={field.pipe || ''}
+                onInput={(v) => updateField(currentPath, 'pipe', v)}
+                placeholder={t('e.g. {0}', 'first(9) | upper')}
+                ariaLabel={t('Transformation pipe for {0}', field.key)}
+                fixedValue={field.source === 'fixed' ? (field.value ?? '') : undefined}
+                testid="json-paste-builder-pipe-input-{currentPath.join('-')}"
+              />
 
-              {#if field.source === 'fixed'}
+              {#if field.source === 'fixed' && !field.pipe?.trim()}
                 <span class="paste-preview-fixed" translate="no">{field.value}</span>
               {:else}
                 <span class="paste-preview-var" translate="no">{sharedBuildExpr(field)}</span>
@@ -454,10 +339,6 @@
     {/snippet}
 
     {@render renderFields(fields, [], 0)}
-
-    <datalist id="dl-paste-pipes">
-      {#each pipeOptions as p}<option value={p.value}>{p.label}</option>{/each}
-    </datalist>
   {/if}
 </div>
 
@@ -568,16 +449,6 @@
     color: var(--color-text);
     min-width: 8rem;
     flex: 1;
-  }
-  .pipe-input {
-    min-width: 8rem;
-    max-width: 14rem;
-    padding: var(--space-1) var(--space-2);
-    border: var(--line-thin) solid var(--color-control);
-    border-radius: var(--radius-m);
-    font-size: var(--text-s);
-    font-family: var(--font-code);
-    color: var(--color-primary);
   }
 
   .paste-preview-fixed {

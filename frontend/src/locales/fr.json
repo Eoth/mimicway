@@ -641,7 +641,6 @@
   "ISO date": "Date ISO",
   "Sequence counter": "Compteur sequentiel",
   "Script result": "Resultat du script",
-  "(none)": "(aucun)",
   "lower — lowercase": "lower — minuscules",
   "upper — uppercase": "upper — majuscules",
   "trim — strip spaces": "trim — suppr. espaces",
@@ -766,5 +765,15 @@
   "epoch_ms — ISO date to milliseconds since 1970": "epoch_ms — date ISO en millisecondes depuis 1970",
   "epoch_seconds — ISO date to seconds since 1970": "epoch_seconds — date ISO en secondes depuis 1970",
   "epoch_minutes — ISO date to minutes since 1970": "epoch_minutes — date ISO en minutes depuis 1970",
-  "date(\"yyyy-MM-dd\") — ISO date in another format": "date(\"yyyy-MM-dd\") — date ISO dans un autre format"
+  "date(\"yyyy-MM-dd\") — ISO date in another format": "date(\"yyyy-MM-dd\") — date ISO dans un autre format",
+  "A text of your own, to transform with a pipe": "Un texte à vous, à transformer par un pipe",
+  "“{0}” is not a known transformation: the value comes out unchanged.": "« {0} » n'est pas une transformation connue : la valeur sort inchangée.",
+  "“{0}” needs whole numbers in parentheses, for example {1}.": "« {0} » attend des nombres entiers entre parenthèses, par exemple {1}.",
+  "“{{” opens an expression that no “}}” closes: the text is sent as it is.": "« {{ » ouvre une expression qu'aucun « }} » ne ferme : le texte part tel quel.",
+  "“{0}” is not a value Mimicway knows: it is replaced by an empty text.": "« {0} » n'est pas une valeur que Mimicway connaît : elle est remplacée par un texte vide.",
+  "A transformation applies to a plain text: this value holds \" \\ { } | ( ) & or <, so it is sent unchanged.": "Une transformation s'applique à un texte simple : cette valeur contient \" \\ { } | ( ) & ou <, elle part donc inchangée.",
+  "Type {{ to insert a value of the request, then | to transform it.": "Tapez {{ pour insérer une valeur de la requête, puis | pour la transformer.",
+  "For example: {0}": "Par exemple : {0}",
+  "Transformations": "Transformations",
+  "Values of the request and transformations": "Valeurs de la requête et transformations"
 }

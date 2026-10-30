@@ -1,4 +1,6 @@
 <script>
+  import TemplateTextInput from './TemplateTextInput.svelte';
+  import { fakeKinds as fakeOptions } from '../template-help.js';
   import { buildExpr as sharedBuildExpr, templateToPreview, xmlFieldsToTemplate } from '../tpl-utils.js';
   import { removeFolds, swapFolds } from '../fold-paths.js';
   import { t, tCount } from '../i18n.svelte.js';
@@ -103,27 +105,6 @@
     },
   ];
 
-  const fakeOptions = [
-    'FirstName',
-    'LastName',
-    'Email',
-    'PhoneNumberFR',
-    'CompanyName',
-    'StreetName',
-    'CityFR',
-    'PostcodeFR',
-    'Siren',
-    'Siret',
-    'FullAddressFR',
-    'DatePast',
-    'DateFuture',
-    'TimestampMs',
-    'BoolRandom',
-    'LoremSentence',
-    'CountryFR',
-    'IbanFR',
-  ];
-
   function deepClone(obj) {
     return JSON.parse(JSON.stringify(obj));
   }
@@ -140,31 +121,6 @@
     fields = clone;
     emit();
   }
-
-  const pipeOptions = [
-    {
-      value: '',
-      get label() {
-        return t('(none)');
-      },
-    },
-    { value: 'lower', label: 'lower' },
-    { value: 'upper', label: 'upper' },
-    { value: 'capitalize', label: 'capitalize' },
-    { value: 'first(N)', label: 'first(N)' },
-    { value: 'last(N)', label: 'last(N)' },
-    { value: 'substr(start,len)', label: 'substr(start,len)' },
-    { value: 'default("val")', label: 'default("val")' },
-    { value: 'replace("a","b")', label: 'replace("a","b")' },
-    { value: 'prepend("prefix")', label: 'prepend("prefix")' },
-    { value: 'append("suffix")', label: 'append("suffix")' },
-    { value: 'epoch_ms', label: 'epoch_ms' },
-    { value: 'epoch_seconds', label: 'epoch_seconds' },
-    { value: 'epoch_minutes', label: 'epoch_minutes' },
-    { value: 'date("yyyy-MM-dd")', label: 'date("yyyy-MM-dd")' },
-    { value: 'length', label: 'length' },
-    { value: 'trim', label: 'trim' },
-  ];
 
   function newNode() {
     return { tag: '', nodeType: 'value', source: 'fixed', value: '', pipe: '' };
@@ -288,6 +244,14 @@
       >
         {#each fakeOptions as fo}<option value={fo}>{fo}</option>{/each}
       </select>
+    {:else if field.source === 'fixed'}
+      <TemplateTextInput
+        value={field.value}
+        onInput={(v) => updateProp(path, idx, 'value', v)}
+        placeholder={valuePlaceholder(field.source)}
+        ariaLabel={t('Value')}
+        testid="xml-builder-value-input-{testPath}"
+      />
     {:else if needsValueInput(field.source)}
       <input
         type="text"
@@ -299,19 +263,15 @@
         data-testid="xml-builder-value-input-{testPath}"
       />
     {/if}
-    {#if field.source !== 'fixed'}
-      <input
-        type="text"
-        class="pipe-input"
-        value={field.pipe || ''}
-        oninput={(e) => updateProp(path, idx, 'pipe', e.target.value)}
-        placeholder={t('e.g. {0}', 'lower | first(5)')}
-        aria-label={t('Pipe')}
-        list="dl-xml-pipes"
-        autocomplete="off"
-        data-testid="xml-builder-pipe-input-{testPath}"
-      />
-    {/if}
+    <TemplateTextInput
+      kind="pipe"
+      value={field.pipe || ''}
+      onInput={(v) => updateProp(path, idx, 'pipe', v)}
+      placeholder={t('e.g. {0}', 'lower | first(5)')}
+      ariaLabel={t('Pipe')}
+      fixedValue={field.source === 'fixed' ? (field.value ?? '') : undefined}
+      testid="xml-builder-pipe-input-{testPath}"
+    />
   {/snippet}
 
   {#snippet renderNodes(nodeList, path, depth)}
@@ -405,10 +365,6 @@
   {/snippet}
 
   {@render renderNodes(fields, [], 0)}
-
-  <datalist id="dl-xml-pipes">
-    {#each pipeOptions.filter((p) => p.value) as p}<option value={p.value}>{p.label}</option>{/each}
-  </datalist>
 
   <button
     type="button"
@@ -527,16 +483,6 @@
     color: var(--color-text-muted);
   }
   .preview-readable {
-    color: var(--color-primary);
-  }
-  .pipe-input {
-    min-width: 8rem;
-    max-width: 14rem;
-    padding: var(--space-1) var(--space-2);
-    border: var(--line-thin) solid var(--color-control);
-    border-radius: var(--radius-m);
-    font-size: var(--text-s);
-    font-family: var(--font-code);
     color: var(--color-primary);
   }
 </style>

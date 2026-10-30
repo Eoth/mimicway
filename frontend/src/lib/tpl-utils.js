@@ -54,8 +54,14 @@ function fieldToTpl(field) {
   return '';
 }
 
+// A fixed value with a pipe becomes the quoted text of an expression, `{{"value" | pipe}}`, which the engine reads as
+// that text, transformed. Only a value the quotes can hold as it is (canPipeFixedValue): any other is inserted as it is,
+// and the builders say why its pipe is not applied.
 export function buildExpr(f) {
-  if (f.source === 'fixed') return f.value ?? '';
+  if (f.source === 'fixed') {
+    const pipe = f.pipe?.trim();
+    return pipe && canPipeFixedValue(f.value) ? `{{"${f.value ?? ''}" | ${pipe}}}` : (f.value ?? '');
+  }
   let varPart;
   switch (f.source) {
     case 'path':
@@ -96,6 +102,23 @@ export function buildExpr(f) {
   }
   const pipe = f.pipe?.trim();
   return pipe ? `{{${varPart} | ${pipe}}}` : `{{${varPart}}}`;
+}
+
+/**
+ * Whether a fixed value can be written as the quoted text of an expression (`{{"value" | pipe}}`): none of the
+ * characters that would end the text, the expression or the pipe chain early (findPipeSeparator counts parentheses,
+ * not quotes), nor an escape or an entity that a pipe would change instead of the character it stands for.
+ */
+export function canPipeFixedValue(value) {
+  return !/["\\{}|()&<]/.test(value ?? '');
+}
+
+// The fixed value and pipe of `{{"value" | pipe}}`, exactly what buildExpr writes for them; null for any other
+// expression.
+function quotedTextWithPipe(varName, pipe) {
+  const quoted = varName.match(/^"(.*)"$/s);
+  if (!quoted || !pipe || !canPipeFixedValue(quoted[1])) return null;
+  return { source: 'fixed', value: quoted[1], pipe };
 }
 
 // ── Validation: Template string → test JSON ──────────────────────────
@@ -253,8 +276,10 @@ function parseTplValue(key, raw) {
       varName = expr.trim();
       pipes = '';
     }
+    const quoted = quotedTextWithPipe(varName, pipes);
+    if (quoted) return { key, fieldType: 'value', ...quoted, asNumber: !isQuoted };
     const { source, value } = varNameToSource(varName);
-    // An expression the builder has no source for (a text in quotes, now_epoch...) stays as written:
+    // An expression the builder has no source for (now_epoch, a text in quotes with no pipe...) stays as written:
     // a fixed value is inserted as it is, so the template keeps it whole instead of losing its braces and pipes.
     if (source === 'fixed') return { key, fieldType: 'value', source, value: inner, pipe: '', asNumber: !isQuoted };
     return { key, fieldType: 'value', source, value, pipe: pipes, asNumber: !isQuoted };
@@ -678,6 +703,8 @@ function parseXmlLeafExpr(raw, toRaw) {
       varName = expr.trim();
       pipe = '';
     }
+    const quoted = quotedTextWithPipe(varName, pipe);
+    if (quoted) return quoted;
     const { source, value } = varNameToSource(varName);
     // As in parseTplValue: an expression without a source of the builder is kept whole, as a fixed value.
     if (source === 'fixed') return { source, value: toRaw(trimmed), pipe: '' };

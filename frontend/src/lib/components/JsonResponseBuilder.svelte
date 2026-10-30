@@ -1,4 +1,6 @@
 <script>
+  import TemplateTextInput from './TemplateTextInput.svelte';
+  import { fakeKinds as fakeOptions } from '../template-help.js';
   import { fieldsToTemplate, buildExpr as sharedBuildExpr, templateToPreview } from '../tpl-utils.js';
   import { removeFolds, swapFolds } from '../fold-paths.js';
   import { t, tCount } from '../i18n.svelte.js';
@@ -102,27 +104,6 @@
     },
   ];
 
-  const fakeOptions = [
-    'FirstName',
-    'LastName',
-    'Email',
-    'PhoneNumberFR',
-    'CompanyName',
-    'StreetName',
-    'CityFR',
-    'PostcodeFR',
-    'Siren',
-    'Siret',
-    'FullAddressFR',
-    'DatePast',
-    'DateFuture',
-    'TimestampMs',
-    'BoolRandom',
-    'LoremSentence',
-    'CountryFR',
-    'IbanFR',
-  ];
-
   function deepClone(obj) {
     return JSON.parse(JSON.stringify(obj));
   }
@@ -207,111 +188,6 @@
     fields = clone;
     emit();
   }
-
-  const pipeOptions = [
-    {
-      value: '',
-      get label() {
-        return t('(none)');
-      },
-    },
-    {
-      value: 'lower',
-      get label() {
-        return t('lower — lowercase');
-      },
-    },
-    {
-      value: 'upper',
-      get label() {
-        return t('upper — uppercase');
-      },
-    },
-    {
-      value: 'trim',
-      get label() {
-        return t('trim — strip spaces');
-      },
-    },
-    {
-      value: 'capitalize',
-      get label() {
-        return t('capitalize — first letter uppercase');
-      },
-    },
-    {
-      value: 'first(N)',
-      get label() {
-        return t('first(N) — first N characters');
-      },
-    },
-    {
-      value: 'last(N)',
-      get label() {
-        return t('last(N) — last N characters');
-      },
-    },
-    {
-      value: 'substr(start,len)',
-      get label() {
-        return t('substr(start,len)');
-      },
-    },
-    {
-      value: 'default("val")',
-      get label() {
-        return t('default("val") — when empty');
-      },
-    },
-    {
-      value: 'replace("a","b")',
-      get label() {
-        return t('replace("a","b")');
-      },
-    },
-    {
-      value: 'prepend("prefix")',
-      get label() {
-        return t('prepend("prefix")');
-      },
-    },
-    {
-      value: 'append("suffix")',
-      get label() {
-        return t('append("suffix")');
-      },
-    },
-    {
-      value: 'length',
-      get label() {
-        return t('length — number of characters');
-      },
-    },
-    {
-      value: 'epoch_ms',
-      get label() {
-        return t('epoch_ms — ISO date to milliseconds since 1970');
-      },
-    },
-    {
-      value: 'epoch_seconds',
-      get label() {
-        return t('epoch_seconds — ISO date to seconds since 1970');
-      },
-    },
-    {
-      value: 'epoch_minutes',
-      get label() {
-        return t('epoch_minutes — ISO date to minutes since 1970');
-      },
-    },
-    {
-      value: 'date("yyyy-MM-dd")',
-      get label() {
-        return t('date("yyyy-MM-dd") — ISO date in another format');
-      },
-    },
-  ];
 
   function newValueField() {
     return { key: '', fieldType: 'value', source: 'fixed', value: '', pipe: '', asNumber: false };
@@ -457,6 +333,14 @@
           <option value={fo}>{fo}</option>
         {/each}
       </select>
+    {:else if field.source === 'fixed'}
+      <TemplateTextInput
+        value={field.value}
+        onInput={(v) => updateProp(path, idx, 'value', v)}
+        placeholder={fieldPlaceholder(field.source)}
+        ariaLabel={t('Value')}
+        testid="json-builder-value-input-{testPath}"
+      />
     {:else if needsValueInput(field.source)}
       <input
         type="text"
@@ -468,19 +352,15 @@
         data-testid="json-builder-value-input-{testPath}"
       />
     {/if}
-    {#if field.source !== 'fixed'}
-      <input
-        type="text"
-        class="pipe-input"
-        value={field.pipe || ''}
-        oninput={(e) => updateProp(path, idx, 'pipe', e.target.value)}
-        placeholder={t('e.g. {0}', 'first(9) | upper')}
-        aria-label={t('Transformation pipe')}
-        list="dl-pipes"
-        autocomplete="off"
-        data-testid="json-builder-pipe-input-{testPath}"
-      />
-    {/if}
+    <TemplateTextInput
+      kind="pipe"
+      value={field.pipe || ''}
+      onInput={(v) => updateProp(path, idx, 'pipe', v)}
+      placeholder={t('e.g. {0}', 'first(9) | upper')}
+      ariaLabel={t('Transformation pipe')}
+      fixedValue={field.source === 'fixed' ? (field.value ?? '') : undefined}
+      testid="json-builder-pipe-input-{testPath}"
+    />
     <label class="number-toggle" title={t('Render without quotes (JSON number)')}>
       <input
         type="checkbox"
@@ -659,10 +539,6 @@
     data-testid="json-builder-add-field-button">{t('+ Add a field')}</button
   >
 
-  <datalist id="dl-pipes">
-    {#each pipeOptions.filter((p) => p.value) as p}<option value={p.value}>{p.label}</option>{/each}
-  </datalist>
-
   {#if fields.length > 0}
     <details class="preview-section">
       <summary>{t('Preview of the generated template')}</summary>
@@ -737,16 +613,6 @@
     font-size: var(--text-s);
   }
 
-  .pipe-input {
-    min-width: 8rem;
-    max-width: 14rem;
-    padding: var(--space-1) var(--space-2);
-    border: var(--line-thin) solid var(--color-control);
-    border-radius: var(--radius-m);
-    font-size: var(--text-s);
-    font-family: var(--font-code);
-    color: var(--color-primary);
-  }
   .number-toggle {
     display: flex;
     align-items: center;

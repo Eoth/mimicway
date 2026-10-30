@@ -1,0 +1,62 @@
+{
+  "variables": [
+    { "insert": "path.", "probe": "path.k" },
+    { "insert": "query.", "probe": "query.k" },
+    { "insert": "header.", "probe": "header.k" },
+    { "insert": "body.", "probe": "body.k", "body": "{\"k\":\"v\"}" },
+    { "insert": "xpath.", "probe": "xpath.k", "body": "<k>v</k>" },
+    { "insert": "fake.", "probe": "fake.FirstName" },
+    { "insert": "uuid", "probe": "uuid" },
+    { "insert": "now_ms", "probe": "now_ms" },
+    { "insert": "now_iso", "probe": "now_iso" },
+    { "insert": "seq", "probe": "seq" },
+    { "insert": "script.", "probe": null },
+    { "insert": "\"", "probe": "\"v\"" }
+  ],
+  "unknownVariable": "qery.k",
+  "fake": [
+    "FirstName",
+    "LastName",
+    "Email",
+    "PhoneNumberFR",
+    "CompanyName",
+    "StreetName",
+    "CityFR",
+    "PostcodeFR",
+    "Siren",
+    "Siret",
+    "FullAddressFR",
+    "DatePast",
+    "DateFuture",
+    "TimestampMs",
+    "BoolRandom",
+    "LoremSentence",
+    "CountryFR",
+    "IbanFR"
+  ],
+  "pipes": [
+    { "name": "lower", "insert": "lower", "input": "AbC", "output": "abc" },
+    { "name": "upper", "insert": "upper", "input": "AbC", "output": "ABC" },
+    { "name": "trim", "insert": "trim", "input": "  ab  ", "output": "ab" },
+    { "name": "capitalize", "insert": "capitalize", "input": "ada", "output": "Ada" },
+    { "name": "first", "insert": "first(3)", "input": "abcdef", "output": "abc" },
+    { "name": "last", "insert": "last(4)", "input": "FR7612345", "output": "2345" },
+    { "name": "substr", "insert": "substr(0,3)", "input": "abcdef", "output": "abc" },
+    { "name": "default", "insert": "default(\"none\")", "input": "", "output": "none" },
+    { "name": "replace", "insert": "replace(\"-\",\"\")", "input": "12-34", "output": "1234" },
+    { "name": "prepend", "insert": "prepend(\"ID-\")", "input": "42", "output": "ID-42" },
+    { "name": "append", "insert": "append(\"-01\")", "input": "2026", "output": "2026-01" },
+    { "name": "length", "insert": "length", "input": "abc", "output": "3" },
+    { "name": "epoch_ms", "insert": "epoch_ms", "input": "2026-01-01T00:00:00Z", "output": "1767225600000" },
+    { "name": "epoch_seconds", "insert": "epoch_seconds", "input": "2026-01-01T00:00:00Z", "output": "1767225600" },
+    { "name": "epoch_minutes", "insert": "epoch_minutes", "input": "2026-01-01T00:00:00Z", "output": "29453760" },
+    { "name": "date", "insert": "date(\"dd/MM/yyyy\")", "input": "2026-10-30T12:00:00Z", "output": "30/10/2026" }
+  ],
+  "traps": [
+    { "pipe": "uper", "problem": "unknown", "input": "ab", "output": "ab" },
+    { "pipe": "first(N)", "problem": "number", "input": "abc", "output": "" },
+    { "pipe": "last(n)", "problem": "number", "input": "abc", "output": "" },
+    { "pipe": "substr(start,len)", "problem": "number", "input": "abc", "output": "abc" },
+    { "pipe": "first", "problem": "number", "input": "abc", "output": "abc" }
+  ]
+}

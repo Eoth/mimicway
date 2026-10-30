@@ -12,7 +12,7 @@ Le corps se construit en deux temps : d'abord un **format** (JSON, XML, Texte, T
 
 ### 1. Par l'exemple : coller une réponse existante
 
-Pour les corps déjà complexes, il est souvent plus rapide de **coller une vraie réponse** (obtenue du vrai backend, par exemple) : Mimicway détecte chaque champ, et vous pouvez ensuite remplacer certaines valeurs par des variables ou des données factices, champ par champ. Chaque valeur variable peut aussi recevoir une **transformation** (voir « Transformations » plus bas), exactement comme au niveau détaillé.
+Pour les corps déjà complexes, il est souvent plus rapide de **coller une vraie réponse** (obtenue du vrai backend, par exemple) : Mimicway détecte chaque champ, et vous pouvez ensuite remplacer certaines valeurs par des variables ou des données factices, champ par champ. Chaque valeur peut aussi recevoir une **transformation** (voir « Transformations » plus bas), une valeur gardée comme une variable, exactement comme au niveau détaillé.
 
 En JSON, les champs détectés sont listés **à plat**, avec une indentation pour les niveaux imbriqués : cela suffit pour les charges REST, généralement peu profondes. Un champ **objet** imbriqué affiche tout de même un **chevron** (▼/▶) à sa gauche pour le replier un moment (une note « (N masqués) » rappelle que du contenu est caché) : pratique quand un échantillon collé contient plusieurs objets imbriqués et que vous voulez vous concentrer sur l'un d'eux. Replier ne supprime jamais rien : seule la vue change, et tout est déplié par défaut.
 
@@ -102,6 +102,12 @@ Une variable peut être transformée avant d'être insérée : `lower`, `upper`,
 
 Exemple : `{{path.siret | first(9)}}` garde les 9 premiers caractères du SIRET reçu.
 
+Dans les constructeurs visuels, une aide accompagne chaque champ, sans avoir à connaître la syntaxe par cœur :
+
+- le champ **transformation** d'une valeur liste chaque pipe avec ce qu'il fait, et montre son effet sur un exemple (`first(3)` : « abcdef » → « abc ») ; une valeur fixe accepte aussi un pipe, écrit pour vous sous la forme `{{"valeur" | pipe}}` ;
+- une **valeur fixe** est un texte libre dans lequel `{{` liste les valeurs de la requête (`path.`, `query.`, `header.`, `fake.`…), puis `|` liste les pipes ;
+- une ligne sous le champ signale ce que Mimicway ne lirait pas comme voulu : une transformation inconnue (la valeur sortirait inchangée), un argument numérique laissé à `N`, une valeur inconnue (remplacée par un texte vide) ou un `{{` que rien ne ferme.
+
 ### Dates dans une autre unité ou un autre format
 
 Un champ qui attend une date en millisecondes, en secondes ou en minutes depuis 1970 (un horodatage Unix), ou dans un format donné, la prend d'une date ISO 8601, sans conversion à la main :
@@ -119,7 +125,7 @@ Un champ qui attend une date en millisecondes, en secondes ou en minutes depuis 
 - Formes acceptées : `2026-12-31`, `2026-12-31T10:00`, `2026-12-31T10:00:00`, avec une fraction (`.250`) et un décalage (`Z`, `+02:00`, `-0500`) ; une espace peut remplacer le `T`. Sans décalage, la date est en UTC, comme `now_iso`.
 - `date("…")` remplace `yyyy`, `MM`, `dd`, `HH`, `mm`, `ss` et `SSS` (millisecondes) et garde le reste : `date("dd/MM/yyyy HH:mm")` donne `31/12/2026 10:00`.
 - Une valeur qui n'est pas une telle date (`31/12/2026`, un nombre) ressort telle quelle : l'erreur se voit dans la réponse au lieu d'un nombre faux.
-- Dans le constructeur visuel, écrivez l'expression entière dans la valeur d'un champ fixe, ou choisissez un pipe dans la liste d'un champ dont la source est une variable.
+- Dans le constructeur visuel, choisissez le pipe dans le champ transformation de la valeur, quelle que soit sa source, ou écrivez l'expression entière dans une valeur fixe.
 
 ### Données factices (`fake.*`)
 

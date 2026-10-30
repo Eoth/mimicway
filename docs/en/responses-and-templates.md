@@ -12,7 +12,7 @@ The body is built in two steps: first a **format** (JSON, XML, Text, Advanced te
 
 ### 1. By example: paste an existing response
 
-For bodies that are already complex, it is often faster to **paste a real response** (one you got from the real backend, for instance): Mimicway detects every field, and you can then replace some values with variables or fake data, field by field. Each variable value can also get a **transformation** (see "Transformations" below), exactly as in the detailed level.
+For bodies that are already complex, it is often faster to **paste a real response** (one you got from the real backend, for instance): Mimicway detects every field, and you can then replace some values with variables or fake data, field by field. Each value can also get a **transformation** (see "Transformations" below), a kept value as well as a variable, exactly as in the detailed level.
 
 For JSON, the detected fields are listed **flat**, with indentation for nested levels: enough for REST payloads, which are usually shallow. A nested **object** field still shows a **chevron** (▼/▶) on its left to fold it for a while (a "(N hidden items)" note reminds you that content is hidden): handy when a pasted sample holds several nested objects and you want to focus on one. Folding never deletes anything: it only changes the view, and everything is unfolded by default.
 
@@ -102,6 +102,12 @@ A variable can be transformed before it is inserted: `lower`, `upper`, `trim`, `
 
 Example: `{{path.siret | first(9)}}` keeps the first 9 characters of the SIRET received.
 
+In the visual builders, help comes with every field, so the syntax need not be known by heart:
+
+- the **transformation** field of a value lists every pipe with what it does, and shows its effect on an example (`first(3)`: "abcdef" → "abc"); a fixed value takes a pipe too, written for you as `{{"value" | pipe}}`;
+- a **fixed value** is free text in which `{{` lists the values of the request (`path.`, `query.`, `header.`, `fake.`…), then `|` lists the pipes;
+- a line under the field names what Mimicway would not read as meant: an unknown transformation (the value would come out unchanged), a number argument left as `N`, an unknown value (replaced by an empty text) or a `{{` that nothing closes.
+
 ### Dates in another unit or format
 
 A field that expects a date as a number of milliseconds, seconds or minutes since 1970 (a Unix timestamp), or in a given format, takes it from an ISO 8601 date, without converting it by hand:
@@ -119,7 +125,7 @@ A field that expects a date as a number of milliseconds, seconds or minutes sinc
 - Accepted forms: `2026-12-31`, `2026-12-31T10:00`, `2026-12-31T10:00:00`, with a fraction (`.250`) and an offset (`Z`, `+02:00`, `-0500`); a space may replace the `T`. Without an offset, the date is UTC, like `now_iso`.
 - `date("…")` replaces `yyyy`, `MM`, `dd`, `HH`, `mm`, `ss` and `SSS` (milliseconds) and keeps the rest: `date("dd/MM/yyyy HH:mm")` gives `31/12/2026 10:00`.
 - A value that is not such a date (`31/12/2026`, a number) comes out unchanged: the mistake shows in the response instead of a wrong number.
-- In the visual builder, write the whole expression in the value of a fixed field, or pick a pipe in the list of a field whose source is a variable.
+- In the visual builder, pick the pipe in the transformation field of the value, whatever its source, or write the whole expression in a fixed value.
 
 ### Fake data (`fake.*`)
 

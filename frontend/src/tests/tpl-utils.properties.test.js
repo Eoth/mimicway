@@ -13,6 +13,7 @@ import {
   templateToXmlFields,
   validateTemplateAsJson,
   xmlFieldsToTemplate,
+  canPipeFixedValue,
 } from '../lib/tpl-utils.js';
 
 // A {{ in a fixed value cannot be told apart from an expression: the format has no escape for it.
@@ -42,9 +43,14 @@ const jsonLiteral = fc.oneof(
   fc.double({ noNaN: true, noDefaultInfinity: true }).map((d) => JSON.stringify(d)),
   fc.constantFrom('true', 'false', 'null'),
 );
+// A fixed value with a pipe is written as the quoted text of an expression, when the quotes can hold it.
+const somePipe = pipe.filter((p) => p !== '');
 const jsonItem = fc.oneof(
   variable.chain((v) => fc.boolean().map((asNumber) => ({ ...v, asNumber }))),
   jsonRaw.map((value) => ({ source: 'fixed', value, pipe: '', asNumber: false })),
+  fc
+    .tuple(jsonRaw.filter(canPipeFixedValue), somePipe, fc.boolean())
+    .map(([value, p, asNumber]) => ({ source: 'fixed', value, pipe: p, asNumber })),
   jsonLiteral.map((value) => ({ source: 'fixed', value, pipe: '', asNumber: true })),
 );
 const jsonKey = jsonRaw.filter((k) => k.trim() === k && k !== '');
@@ -161,6 +167,12 @@ const { xmlField } = fc.letrec((tie) => ({
         fc.oneof(
           variable,
           xmlTextRaw.map((value) => ({ source: 'fixed', value, pipe: '' })),
+          fc
+            .tuple(
+              xmlTextRaw.filter((v) => canPipeFixedValue(v) && v.trim() === v),
+              somePipe,
+            )
+            .map(([value, p]) => ({ source: 'fixed', value, pipe: p })),
         ),
       )
       .map(([t, attrs, leaf]) => ({ tag: t, nodeType: 'value', attributes: attrs, ...leaf })),

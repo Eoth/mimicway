@@ -187,11 +187,17 @@ describe('XmlPasteBuilder — startParsed/rootTag (restoring a saved rule)', () 
 
 // A pipe applies to the content of a value node only: attributes take a source but no pipe.
 describe('XmlPasteBuilder — pipes', () => {
-  it('shows no pipe input for a "fixed" source', async () => {
-    const { getByLabelText, getByText, queryByLabelText } = render(XmlPasteBuilder);
+  it('offers a pipe for a kept value too, which then reads as quoted text in the template', async () => {
+    const onUpdate = vi.fn();
+    const { getByLabelText, getByText } = render(XmlPasteBuilder, { props: { onUpdate } });
     await pasteAndParse(getByLabelText, getByText, '<r><nom>ACME</nom></r>');
     await waitFor(() => expect(getByText('nom')).toBeInTheDocument());
-    expect(queryByLabelText('Transformation pipe for nom')).not.toBeInTheDocument();
+
+    await fireEvent.input(getByLabelText('Transformation pipe for nom'), { target: { value: 'lower' } });
+
+    const [fields] = onUpdate.mock.calls.at(-1);
+    expect(fields[0]).toMatchObject({ source: 'fixed', value: 'ACME', pipe: 'lower' });
+    expect(getByText('{{"ACME" | lower}}')).toBeInTheDocument();
   });
 
   it('shows a pipe input once another source is chosen and passes the pipe to onUpdate', async () => {
