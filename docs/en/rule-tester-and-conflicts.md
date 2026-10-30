@@ -34,13 +34,13 @@ When the rule matches and answers itself (it is not a proxy rule), the tester al
 
 Mimicway applies the **first rule that matches** a request (see [Matching rules](matching-rules.md)), so the order of the list matters. With many rules, it is easy to add one that, unintentionally, is **hidden** by a more general rule placed before it (or the reverse).
 
-Each time a rule is saved (created or edited), Mimicway compares the draft with the service's other rules and shows a warning when a plausible overlap is found, saying **which of the two rules would really apply** in the current order.
+Each time a rule is saved (created or edited), Mimicway compares the draft with the service's other rules and shows a warning when one of them can **never trigger**: every request it accepts is already taken by a rule placed before it. Two rules that only share some requests raise nothing: a specific rule placed before a general fallback is the usual way to write one, and the order already decides which one answers.
 
 ![Rule conflict warning shown when saving](screenshots/rule-conflict-warning.png)
 
 The warning **never blocks**: two choices are always offered,
 
-- **Save anyway**, when the overlap is intended (a general fallback rule placed on purpose after more specific ones, for instance),
+- **Save anyway**, when the hidden rule is kept on purpose (switched on later by moving it up, for instance),
 - **Edit the rule**, to review it before saving.
 
 ## Requirements and limits
@@ -49,5 +49,5 @@ The warning **never blocks**: two choices are always offered,
 - The tester can only check your draft against requests that **already went through** Mimicway and are kept in the log. If none fits yet, send one (with `curl`, Postman or the application under test) and come back to the tester.
 - A request relayed by a service in proxy mode (see [Services and routing](services.md)) has no details kept in the log, so as not to slow that path down: the tester says that no details are available for those entries.
 - The tester only runs scripts when the rule matches the selected request and its action is "Mock": as in production, the script of a "Proxy" rule never runs.
-- Conflict detection catches the common, clear-cut cases (same conditions, a more specific rule behind a more general one…) but does not promise to find **every** possible overlap, especially complex combinations of OR conditions. It deliberately never raises a false alarm, at the cost of missing some edge cases: a warning you see deserves trust.
+- Conflict detection compares rules two by two. It is exact for equality, `contains`, presence and plain-text patterns, OR conditions included; with a real regular expression it only recognizes the same pattern. It never raises a false alarm, at the cost of missing a rule hidden by several rules together, or by a regular expression written differently: a warning you see deserves trust.
 - The detection is **informative only**: it never changes the actual order of evaluation or the behavior of rules.

@@ -1,3 +1,4 @@
+use crate::engine::shadowing::{RuleShape, hides};
 use crate::models::{Condition, ConditionGroup, ConditionSource, Operator, Rule};
 use serde::Serialize;
 use std::collections::HashMap;
@@ -258,95 +259,45 @@ impl MatchEngine {
     }
 
     /// Conflict detection when a rule is saved (`POST /api/rule-conflicts`, stateless); never called on the
-    /// production path. Two rules conflict when one request could satisfy both (same method, compatible sub-paths,
-    /// overlapping conditions): only the first in `rules` order would then apply.
+    /// production path. Rules are tried in order and the first match wins, so sharing requests is no conflict by
+    /// itself (a specific rule before a general fallback is the usual way to write one): a conflict is a rule that
+    /// never triggers because a rule before it takes every request it accepts (`shadowing::hides`, exact for every
+    /// operator but real regular expressions, where it stays silent rather than wrong).
     ///
     /// `other_rules` are the service's other rules in their current order (the one being edited left out by the
     /// caller). `draft_position` is where the saved rule will sit: its index for an edit in place, or
-    /// `other_rules.len()` for a new rule (the UI appends it). The winner follows from that position alone: a rule with
-    /// a lower index is evaluated first and wins, and the reverse.
-    ///
-    /// **Detection is pragmatic, not exhaustive**, on purpose:
-    /// - `method`: equal, ignoring case; rules on different methods can never match the same request.
-    /// - `sub_path`: compatible when both are absent, when one is (`None` matches any remaining path), or when both
-    ///   patterns have the same shape once parameters are reduced to a placeholder (`/a/{id}` and `/a/{orderId}` are
-    ///   compatible, `/a/{id}` and `/b` are not). Patterns that overlap without having the same shape (`/a/*` and
-    ///   `/a/{id}/b`) are missed: a false negative rather than a full pattern overlap engine.
-    /// - `conditions`: only the clear cases: identical `all_of` and `any_of`, or one `all_of` strictly included in the
-    ///   other with both `any_of` empty (a general rule next to a more specific one). As soon as an `any_of` is
-    ///   non-empty and the two differ, nothing is reported: OR semantics would need real modeling, and a missed
-    ///   conflict is better than a false alarm.
-    ///
-    /// It compares conditions with their derived `PartialEq` and patterns with `normalize_colon_syntax`, but not with
-    /// `matches_group`, which judges conditions against a concrete request; here two sets of conditions are compared
-    /// with no request at all.
+    /// `other_rules.len()` for a new rule (the UI appends it). A rule before that position may hide the draft
+    /// (`winner: Other`), a rule after it may be hidden by the draft (`winner: Draft`).
     pub fn find_rule_conflicts(
         draft: &RuleConflictDraft,
         other_rules: &[OtherRuleConflictInput],
         draft_position: usize,
     ) -> Vec<RuleConflict> {
+        let draft_shape = RuleShape {
+            method: draft.method,
+            sub_path: draft.sub_path,
+            conditions: draft.conditions,
+        };
         other_rules
             .iter()
             .enumerate()
-            .filter(|(_, other)| Self::rules_could_overlap(draft, other))
-            .map(|(i, other)| RuleConflict {
-                other_rule_name: other.name.to_string(),
-                winner: if i < draft_position {
-                    ConflictWinner::Other
+            .filter_map(|(i, other)| {
+                let other_shape = RuleShape {
+                    method: other.method,
+                    sub_path: other.sub_path,
+                    conditions: other.conditions,
+                };
+                let winner = if i < draft_position {
+                    hides(&other_shape, &draft_shape).then_some(ConflictWinner::Other)
                 } else {
-                    ConflictWinner::Draft
-                },
+                    hides(&draft_shape, &other_shape).then_some(ConflictWinner::Draft)
+                }?;
+                Some(RuleConflict {
+                    other_rule_name: other.name.to_string(),
+                    winner,
+                })
             })
             .collect()
-    }
-
-    fn rules_could_overlap(draft: &RuleConflictDraft, other: &OtherRuleConflictInput) -> bool {
-        draft.method.eq_ignore_ascii_case(other.method)
-            && Self::sub_paths_could_overlap(draft.sub_path, other.sub_path)
-            && Self::conditions_could_overlap(draft.conditions, other.conditions)
-    }
-
-    fn sub_paths_could_overlap(a: &Option<String>, b: &Option<String>) -> bool {
-        match (a, b) {
-            (None, _) | (_, None) => true,
-            (Some(pa), Some(pb)) => {
-                Self::canonicalize_sub_path(pa) == Self::canonicalize_sub_path(pb)
-            }
-        }
-    }
-
-    fn canonicalize_sub_path(pattern: &str) -> String {
-        normalize_colon_syntax(pattern)
-            .split('/')
-            .map(|seg| {
-                if seg.starts_with('{') && seg.ends_with('}') && seg.len() >= 2 {
-                    "{}"
-                } else {
-                    seg
-                }
-            })
-            .collect::<Vec<_>>()
-            .join("/")
-    }
-
-    fn conditions_could_overlap(a: &ConditionGroup, b: &ConditionGroup) -> bool {
-        if Self::condition_sets_equal(&a.all_of, &b.all_of)
-            && Self::condition_sets_equal(&a.any_of, &b.any_of)
-        {
-            return true;
-        }
-        a.any_of.is_empty()
-            && b.any_of.is_empty()
-            && (Self::is_strict_subset(&a.all_of, &b.all_of)
-                || Self::is_strict_subset(&b.all_of, &a.all_of))
-    }
-
-    fn condition_sets_equal(a: &[Condition], b: &[Condition]) -> bool {
-        a.len() == b.len() && a.iter().all(|c| b.contains(c))
-    }
-
-    fn is_strict_subset(smaller: &[Condition], larger: &[Condition]) -> bool {
-        smaller.len() < larger.len() && smaller.iter().all(|c| larger.contains(c))
     }
 
     fn extract(
@@ -475,7 +426,7 @@ impl MatchEngine {
             .map(|(_, v)| v.into_owned())
     }
 
-    fn apply_op(op: &Operator, value: Option<&str>) -> bool {
+    pub(crate) fn apply_op(op: &Operator, value: Option<&str>) -> bool {
         match op {
             Operator::Exists => value.is_some(),
             Operator::Eq(expected) => value == Some(expected.as_str()),
@@ -571,7 +522,7 @@ pub(crate) fn match_path(
     Some((params, remaining))
 }
 
-fn normalize_colon_syntax(s: &str) -> String {
+pub(crate) fn normalize_colon_syntax(s: &str) -> String {
     s.split('/')
         .map(|seg| {
             if let Some(name) = seg.strip_prefix(':') {
@@ -583,6 +534,9 @@ fn normalize_colon_syntax(s: &str) -> String {
         .collect::<Vec<_>>()
         .join("/")
 }
+
+#[cfg(test)]
+mod conflict_judge;
 
 #[cfg(test)]
 mod tests {
@@ -1404,9 +1358,9 @@ mod tests {
     }
 
     #[test]
-    fn find_rule_conflicts_subset_conditions_detected() {
-        // The draft has no condition (matches everything) and the other rule one more: a general rule added after a more
-        // specific one, a legitimate fallback that is still reported.
+    fn find_rule_conflicts_general_rule_after_a_specific_one_is_no_conflict() {
+        // The draft has no condition (matches everything) and the other rule one more: a general fallback added after
+        // a more specific rule. Both trigger, the order settles which one answers: nothing to report.
         let draft_conditions = ConditionGroup::default();
         let other_conditions = cg(vec![header_eq("x-env", "prod")], vec![]);
         let draft = RuleConflictDraft {
@@ -1421,9 +1375,29 @@ mod tests {
             conditions: &other_conditions,
         };
 
-        let conflicts = MatchEngine::find_rule_conflicts(&draft, &[other], 1);
+        assert!(MatchEngine::find_rule_conflicts(&draft, &[other], 1).is_empty());
+    }
+
+    #[test]
+    fn find_rule_conflicts_general_rule_before_a_specific_one_hides_it() {
+        let draft_conditions = ConditionGroup::default();
+        let other_conditions = cg(vec![header_eq("x-env", "prod")], vec![]);
+        let draft = RuleConflictDraft {
+            method: "POST",
+            sub_path: &None,
+            conditions: &draft_conditions,
+        };
+        let other = OtherRuleConflictInput {
+            name: "specific-rule",
+            method: "POST",
+            sub_path: &None,
+            conditions: &other_conditions,
+        };
+
+        let conflicts = MatchEngine::find_rule_conflicts(&draft, &[other], 0);
         assert_eq!(conflicts.len(), 1);
         assert_eq!(conflicts[0].other_rule_name, "specific-rule");
+        assert_eq!(conflicts[0].winner, ConflictWinner::Draft);
     }
 
     #[test]
@@ -1508,7 +1482,7 @@ mod tests {
     }
 
     #[test]
-    fn find_rule_conflicts_missing_sub_path_matches_any_pattern() {
+    fn find_rule_conflicts_missing_sub_path_covers_any_pattern() {
         let conditions = ConditionGroup::default();
         let other_sub = Some("/x/{id}".to_string());
         let draft = RuleConflictDraft {
@@ -1523,7 +1497,11 @@ mod tests {
             conditions: &conditions,
         };
 
-        let conflicts = MatchEngine::find_rule_conflicts(&draft, &[other], 1);
+        // Placed after the rule with a sub-path, the draft still answers every other path; placed before, it hides it.
+        assert!(
+            MatchEngine::find_rule_conflicts(&draft, std::slice::from_ref(&other), 1).is_empty()
+        );
+        let conflicts = MatchEngine::find_rule_conflicts(&draft, &[other], 0);
         assert_eq!(conflicts.len(), 1);
     }
 
@@ -1568,9 +1546,8 @@ mod tests {
     }
 
     #[test]
-    fn find_rule_conflicts_non_empty_any_of_skips_subset_detection() {
-        // As documented: once an any_of is non-empty and the two differ, inclusion is not analyzed, rather than risk a
-        // false alarm on OR semantics.
+    fn find_rule_conflicts_general_rule_after_an_any_of_rule_is_no_conflict() {
+        // The draft, with no condition, still answers the requests that meet neither alternative of the other rule.
         let draft_conditions = ConditionGroup::default();
         let other_conditions = cg(
             vec![],

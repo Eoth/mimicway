@@ -162,7 +162,7 @@
           <div class="sub-section"><strong>Headers</strong>Content-Type: application/json is added automatically.</div>
         </fieldset>
         <div class="callout callout-warning">
-          <p class="callout-title">This rule may conflict with an existing rule of this service:</p>
+          <p class="callout-title">This rule conflicts with an existing rule of this service:</p>
           <ul class="callout-list"><li>The rule "any-order" has identical conditions.</li></ul>
           <div class="callout-actions"><button type="button" class="btn btn-sm btn-primary">Save anyway</button></div>
         </div>

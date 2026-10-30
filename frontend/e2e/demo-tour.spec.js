@@ -153,10 +153,10 @@ test('the demo of the README goes through a first mock, screen by screen', async
       .join(', '),
   );
   await page.locator(testId('rule-form-submit-button')).click();
-  // It overlaps vip, which comes first: the general answer is the fallback of the specific one, as intended.
-  await expect(page.locator(testId('rule-form-conflict-warning-item-vip'))).toBeVisible();
-  await page.locator(testId('rule-form-conflict-save-anyway-button')).click();
+  // It shares requests with vip, which comes first: the general answer is the fallback of the specific one and still
+  // answers every other call, so no conflict warning stops the save.
   await expect(page.locator(testId('rule-list-item-customer'))).toBeVisible();
+  await expect(page.locator(testId('rule-form-conflict-warning'))).toHaveCount(0);
 
   await page.locator(testId('rule-list-edit-button-vip')).click();
   await page.locator(testId('rule-form-action-proxy-option')).click();

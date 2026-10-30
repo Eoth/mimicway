@@ -121,4 +121,4 @@ To avoid surprises, use the [rule tester and conflict detection](rule-tester-and
 ## Requirements and limits
 
 - No requirement: available in every installation.
-- Overlap detection between rules (see [rule tester and conflict detection](rule-tester-and-conflicts.md)) covers the common cases, not every possible one: it is a help, not a guarantee.
+- Conflict detection (see [rule tester and conflict detection](rule-tester-and-conflicts.md)) reports a rule that can never trigger behind another one; it compares rules two by two and may miss a rule hidden by several rules together, or by a regular expression written differently.

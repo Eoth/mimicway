@@ -6,6 +6,7 @@ mod renderer;
 pub mod script;
 mod script_budget;
 mod script_json;
+mod shadowing;
 pub mod template;
 mod template_dates;
 

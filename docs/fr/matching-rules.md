@@ -121,4 +121,4 @@ Pour éviter les surprises, servez-vous du [testeur de règle et de la détectio
 ## Prérequis et limites
 
 - Aucun prérequis : disponible dans toutes les installations.
-- La détection des chevauchements entre règles (voir [testeur de règle et détection de conflits](rule-tester-and-conflicts.md)) couvre les cas courants, pas tous les cas possibles : c'est une aide, pas une garantie.
+- La détection de conflits (voir [testeur de règle et détection de conflits](rule-tester-and-conflicts.md)) signale une règle qui ne peut jamais se déclencher derrière une autre ; elle compare les règles deux à deux et peut manquer une règle masquée par plusieurs règles ensemble, ou par une expression régulière écrite autrement.

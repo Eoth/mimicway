@@ -34,13 +34,13 @@ Quand la règle correspond et répond elle-même (ce n'est pas une règle proxy)
 
 Mimicway applique la **première règle qui correspond** à une requête (voir [Règles de correspondance](matching-rules.md)) : l'ordre de la liste compte donc. Avec beaucoup de règles, il est facile d'en ajouter une qui, sans le vouloir, est **masquée** par une règle plus générale placée avant elle (ou l'inverse).
 
-À chaque enregistrement d'une règle (création ou modification), Mimicway compare le brouillon aux autres règles du service et affiche un avertissement quand un chevauchement plausible est trouvé, en indiquant **laquelle des deux règles s'appliquerait réellement** dans l'ordre actuel.
+À chaque enregistrement d'une règle (création ou modification), Mimicway compare le brouillon aux autres règles du service et affiche un avertissement quand l'une d'elles ne peut **jamais se déclencher** : chaque requête qu'elle accepte est déjà prise par une règle placée avant elle. Deux règles qui partagent seulement une partie de leurs requêtes ne déclenchent rien : une règle précise placée avant une règle générale de repli est la façon habituelle d'en écrire une, et l'ordre décide déjà laquelle répond.
 
 ![Avertissement de conflit de règles affiché à l'enregistrement](screenshots/rule-conflict-warning.png)
 
 L'avertissement **ne bloque jamais** : deux choix sont toujours proposés,
 
-- **Enregistrer quand même**, quand le chevauchement est voulu (une règle générale de repli placée exprès après des règles plus précises, par exemple),
+- **Enregistrer quand même**, quand la règle masquée est gardée exprès (pour l'activer plus tard en la remontant, par exemple),
 - **Modifier la règle**, pour la revoir avant d'enregistrer.
 
 ## Prérequis et limites
@@ -49,5 +49,5 @@ L'avertissement **ne bloque jamais** : deux choix sont toujours proposés,
 - Le testeur ne peut confronter votre brouillon qu'à des requêtes **déjà passées** par Mimicway et conservées dans le journal. Si aucune ne convient encore, envoyez-en une (avec `curl`, Postman ou l'application testée) et revenez au testeur.
 - Une requête relayée par un service en mode proxy (voir [Services et routage](services.md)) n'a pas de détail conservé dans le journal, pour ne pas ralentir ce chemin : le testeur indique qu'aucun détail n'est disponible pour ces entrées.
 - Le testeur n'exécute les scripts que si la règle matche la requête sélectionnée et que son action est « Mock » : comme en production, le script d'une règle « Proxy » ne s'exécute jamais.
-- La détection de conflits repère les cas courants et nets (mêmes conditions, règle plus précise derrière une règle plus générale…) mais ne promet pas de trouver **tous** les chevauchements possibles, en particulier les combinaisons complexes de conditions OU. Elle ne lève volontairement jamais de fausse alerte, au prix de manquer certains cas limites : un avertissement affiché mérite votre confiance.
+- La détection de conflits compare les règles deux à deux. Elle est exacte pour l'égalité, « contient », la présence et les motifs en texte simple, conditions OU comprises ; avec une vraie expression régulière, elle ne reconnaît que le même motif. Elle ne lève jamais de fausse alerte, au prix de manquer une règle masquée par plusieurs règles ensemble, ou par une expression régulière écrite autrement : un avertissement affiché mérite votre confiance.
 - La détection est **purement informative** : elle ne change jamais l'ordre réel d'évaluation ni le comportement des règles.
