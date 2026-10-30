@@ -23,7 +23,7 @@ Each item has an identifier that never changes, a size (S: a day or less, M: a f
 3. [Make it indispensable](#3-make-it-indispensable): U1, U2, then U3 to U18, in the listed order.
 4. [Engineering backlog](#4-engineering-backlog): taken alongside, when they unblock an item above.
 
-Hardening comes before all of these: E25 and T15.
+Hardening comes before all of these: T15.
 
 The judges come right after the hardening, before the lists above: E37 to E40, tests whose verdict comes from outside the code under test (the real backend, axe-core, mutations, measured growth).
 
@@ -583,16 +583,6 @@ Size S
 **What.** Check again what the signed-in user may open after signing in and after signing out, and show each button only to the users the server lets use its page.
 
 **Done when.** A unit test of the application signs in on an instance with authentication and finds, without reloading, the buttons the server allows to that user, and none after signing out.
-
-### E25. No install scripts on a contributor's machine
-
-Size S
-
-**Why.** The CI and the Dockerfile install the interface's packages with `--ignore-scripts`, but the README, `CONTRIBUTING.md` and `frontend/README.md` tell contributors to run `npm ci` as is: the install scripts of the dependency tree run on their machine (one package of the lock file declares one today, `fsevents`, on macOS).
-
-**What.** A `frontend/.npmrc` with `ignore-scripts=true`, and a check that the build, the tests and Playwright's browser download work without them.
-
-**Done when.** `npm ci` in `frontend/` runs no install script, and the documented steps pass from a clean clone.
 
 ### E28. Limits of a script value that let a list of objects through
 

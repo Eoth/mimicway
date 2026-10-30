@@ -22,6 +22,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - Reading a template back into the guided view no longer cuts an array of values at a bracket inside an expression (`["{{query.x | default("]")}}"]`).
 
 ### Security
+- `npm ci` in `frontend/` runs no install script of the dependency tree on a contributor's machine, as it already did in the CI and the image: `frontend/.npmrc` sets `ignore-scripts`. The build, the tests and Playwright's browser download need none.
 - CI fails on a high advisory of any package of the interface, build and test tools included, where the tools only failed it on a critical one (`npm audit --audit-level=high`; `scripts/check-workflows.mjs` refuses a weaker audit in any workflow). Each ignored advisory carries a date to be looked at again, at most six months ahead: `ignoreUntil` in `osv-scanner.toml`, which osv-scanner enforces, and "review by" in `deny.toml`; `scripts/check-exception-dates.mjs` fails CI once a date is reached. `libz-sys`, brought by the Kafka client, moves to 1.1.31 (RUSTSEC-2026-0418: its build script wrote the environment under `target/`). A low advisory of `deepmerge`, a build tool with no fixed release, is ignored until 2027-01-31.
 
 ## [0.4.0] - 2026-10-24

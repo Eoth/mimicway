@@ -21,6 +21,8 @@ DATA_PATH=./data ./target/debug/mimicway     # http://localhost:7342
 cd frontend && npm run dev                     # UI with hot reload on http://localhost:5173
 ```
 
+`npm ci` runs no install script of the dependency tree: `frontend/.npmrc` sets `ignore-scripts`, as the CI and the image do, and nothing in the build, the tests or `npx playwright install chromium` needs one.
+
 ## Checks
 
 CI runs the ones a pull request needs: each job runs when a file it checks changes (`scripts/ci-plan.mjs` maps files to jobs), and the `CI passed` check fails when a job that had to run did not pass. Run the ones your change touches before pushing.
