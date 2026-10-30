@@ -1,40 +1,13 @@
 import { test, expect } from '@playwright/test';
 import { docsScreenshot } from './docs-screenshot.js';
+import { openAddRuleForm, validService } from './rule-form-helpers.js';
 
 const API = 'http://localhost:7342/api';
-
-function validService(name, overrides = {}) {
-  return {
-    name,
-    listen_path: '/e2e/*',
-    real_target_url: 'http://e2e:80',
-    is_mocked: true,
-    rewrite_directory_urls: false,
-    group_name: null,
-    wsdl_mode: 'auto',
-    rules: [],
-    ...overrides,
-  };
-}
 
 test.beforeEach(async ({ request }) => {
   await request.delete(`${API}/config/reset`);
   await request.post(`${API}/services`, { data: validService('autocomplete-svc') });
 });
-
-async function openAddRuleForm(page) {
-  await page.goto('/');
-  await page.waitForLoadState('networkidle');
-  const group = page.locator('button[aria-expanded]').first();
-  if ((await group.getAttribute('aria-expanded')) === 'false') {
-    await group.click();
-  }
-  await page
-    .getByRole('button', { name: /Configure/ })
-    .first()
-    .click();
-  await page.getByRole('button', { name: /Add a rule/ }).click();
-}
 
 test('autocompletion: a click inserts the function with its parameters', async ({ page }) => {
   await openAddRuleForm(page);

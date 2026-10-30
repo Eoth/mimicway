@@ -53,6 +53,7 @@ All values live in `src/tokens.css`, in two levels.
 | `--color-mock` (+ `-bg`, `-text`) | what is imitated | moss | moss |
 | `--color-proxy` (+ `-bg`, `-text`) | the real target | bark 600, 7.55:1 | bark 400, 7.22:1 |
 | `--color-success`, `-warning`, `-danger`, `-info` (+ `-bg`, `-text`, `--color-on-*`) | states | moss, pollen, berry, lake | the same families, lighter |
+| `--color-code-keyword`, `-function`, `-string`, `-number`, `-comment` | the pieces of a script in its editor | lake 700, moss 600, bark 700, berry 700, lichen 700 | lake 300, moss 300, bark 300, berry 300, lichen 400 |
 | `--color-overlay`, `--shadow-popover`, `--shadow-overlay` | what floats | shade | shade |
 
 Ratios are against the surface or background the role is set on. The test measures every declared pair in both themes and fails under WCAG 2.2 AA: 4.5:1 for text, 3:1 for the boundaries of controls, the focus ring and the mode lines.

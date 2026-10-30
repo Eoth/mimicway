@@ -159,6 +159,10 @@ const PAIRS = [
     ['--color-focus', bg, GRAPHIC],
   ]),
   ['--color-focus', '--color-selected', GRAPHIC],
+  // The colors of a script, on the background of the script editor and of code elsewhere.
+  ...['keyword', 'function', 'string', 'number', 'comment'].flatMap((piece) =>
+    ['--color-bg', '--color-surface', '--color-sunken'].map((bg) => [`--color-code-${piece}`, bg, TEXT]),
+  ),
 ];
 
 describe('contrasts', () => {

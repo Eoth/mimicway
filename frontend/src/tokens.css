@@ -169,6 +169,11 @@
   --color-info: var(--lake-600);
   --color-info-bg: var(--lake-100);
   --color-info-text: var(--lake-700);
+  --color-code-keyword: var(--lake-700);
+  --color-code-function: var(--moss-600);
+  --color-code-string: var(--bark-700);
+  --color-code-number: var(--berry-700);
+  --color-code-comment: var(--lichen-700);
   --color-overlay: var(--shade-55);
   --shadow-popover: 0 4px 12px var(--shade-20);
   --shadow-overlay: 0 8px 28px var(--shade-35);
@@ -211,6 +216,11 @@
   --color-info: var(--lake-400);
   --color-info-bg: var(--lake-900);
   --color-info-text: var(--lake-300);
+  --color-code-keyword: var(--lake-300);
+  --color-code-function: var(--moss-300);
+  --color-code-string: var(--bark-300);
+  --color-code-number: var(--berry-300);
+  --color-code-comment: var(--lichen-400);
   --color-overlay: var(--shade-55);
   --shadow-popover: 0 4px 12px var(--shade-55);
   --shadow-overlay: 0 8px 28px var(--shade-55);

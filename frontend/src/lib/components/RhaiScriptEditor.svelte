@@ -5,22 +5,36 @@
   // A plain <textarea> with a list placed under it, without following the caret's pixel position: the UI has no code
   // editor (CodeMirror, Monaco), and adding one for this alone would be out of proportion.
   //
+  // Colors: the textarea's text is transparent over a colored copy of it (../rhai-highlight.js), a <pre> hidden from
+  // assistive technologies that takes the same box, font and wrapping, and follows its scroll. Typing, selecting and
+  // the caret stay those of the textarea. In forced colors the copy is hidden and the textarea shows its own text.
+  //
   // Accessibility: DOM focus stays on the <textarea>, whose implicit "textbox" role supports aria-autocomplete and
   // aria-activedescendant (no explicit role="combobox" needed). The highlighted suggestion is announced through
   // aria-activedescendant, which points to its option in the listbox, never by moving focus.
   import { tick, untrack } from 'svelte';
   import { filterRhaiSuggestions, tokenAtCursor, computeInsertSelection } from '../rhai-functions.js';
+  import { highlightRhai } from '../rhai-highlight.js';
   import { t } from '../i18n.svelte.js';
 
   let { id, value = '', onInput = () => {}, rows = 5, placeholder = '', ariaDescribedby = undefined } = $props();
 
   let textareaEl = $state(null);
+  let highlightEl = $state(null);
   let showSuggestions = $state(false);
   let suggestions = $state([]);
   let activeIndex = $state(0);
 
   // Read once (untrack): each script slot passes a constant `id`, so an instance never sees it change.
   const listboxId = untrack(() => `${id}-rhai-suggestions`);
+
+  const pieces = $derived(highlightRhai(value));
+
+  function followScroll() {
+    if (!highlightEl || !textareaEl) return;
+    highlightEl.scrollTop = textareaEl.scrollTop;
+    highlightEl.scrollLeft = textareaEl.scrollLeft;
+  }
 
   function openSuggestionsFor(text, cursorPos, { allowEmpty = false } = {}) {
     const { token } = tokenAtCursor(text, cursorPos);
@@ -90,6 +104,14 @@
 </script>
 
 <div class="rhai-editor">
+  <!-- A final line break shows no line in a <pre>: the space after it keeps the copy as tall as the text. -->
+  <pre
+    class="rhai-highlight"
+    aria-hidden="true"
+    bind:this={highlightEl}
+    data-testid="rhai-script-editor-colors-{id}">{#each pieces as piece}{#if piece.kind}<span class="rhai-{piece.kind}"
+          >{piece.text}</span
+        >{:else}{piece.text}{/if}{/each}{' '}</pre>
   <textarea
     bind:this={textareaEl}
     {id}
@@ -97,6 +119,7 @@
     oninput={handleInput}
     onkeydown={handleKeydown}
     onblur={handleBlur}
+    onscroll={followScroll}
     {rows}
     class="script-textarea"
     {placeholder}
@@ -138,19 +161,79 @@
 <style>
   .rhai-editor {
     position: relative;
+    border-radius: var(--radius-m);
+    background: var(--color-bg);
+  }
+
+  /* The copy and the textarea share every property that places a character, and the copy changes only colors: a
+     weight or a style could change the width of a character and move the colors off the text. */
+  .rhai-highlight,
+  .script-textarea {
+    box-sizing: border-box;
+    margin: 0;
+    font-family: var(--font-code);
+    font-size: var(--text-s);
+    line-height: var(--leading-body);
+    letter-spacing: normal;
+    tab-size: 4;
+    padding: var(--space-2);
+    border: var(--line-thin) solid transparent;
+    border-radius: var(--radius-m);
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+    font-variant-ligatures: none;
+    /* The scroll bar the textarea gets past its height narrows its lines: the copy keeps the same room for it. */
+    scrollbar-gutter: stable;
+  }
+
+  .rhai-highlight {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+    color: var(--color-text);
   }
 
   .script-textarea {
+    position: relative;
+    display: block;
     width: 100%;
-    font-family: var(--font-code);
-    font-size: var(--text-s);
-    padding: var(--space-2);
-    border: var(--line-thin) solid var(--color-control);
-    border-radius: var(--radius-m);
-    background: var(--color-bg);
-    color: var(--color-text);
+    border-color: var(--color-control);
+    background: transparent;
+    color: transparent;
+    caret-color: var(--color-text);
     resize: vertical;
-    font-variant-ligatures: none;
+  }
+
+  .script-textarea::placeholder {
+    color: var(--color-text-muted);
+  }
+
+  .rhai-keyword {
+    color: var(--color-code-keyword);
+  }
+
+  .rhai-function {
+    color: var(--color-code-function);
+  }
+
+  .rhai-string {
+    color: var(--color-code-string);
+  }
+
+  .rhai-number {
+    color: var(--color-code-number);
+  }
+
+  .rhai-comment {
+    color: var(--color-code-comment);
+  }
+
+  /* Forced colors give the textarea's own text back its color: the copy would show it twice. */
+  @media (forced-colors: active) {
+    .rhai-highlight {
+      display: none;
+    }
   }
 
   .rhai-suggestions {
