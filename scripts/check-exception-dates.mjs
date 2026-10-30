@@ -1,11 +1,14 @@
 // Fails when an advisory ignored by the supply-chain gates has no date to be looked at again, a date already
 // reached, or one more than six months ahead: an exception written once would otherwise stay for good. The two lists
 // are read from the files the gates read, deny.toml (`[advisories] ignore`, for cargo deny, whose entries take no
-// expiry: the date is written in the reason, as "review by YYYY-MM-DD") and osv-scanner.toml (`ignoreUntil`, which
-// osv-scanner enforces itself: past it, the advisory fails its job again). OSV also reads the RustSec database, so
-// every advisory deny.toml ignores is ignored by osv-scanner.toml too, with the same date; OSV may hold more (the
-// npm packages, GitHub advisories missing from RustSec). A list that cannot be read whole is an error, never a pass.
+// expiry: the date is written in the reason, as "review by YYYY-MM-DD") and every osv-scanner.toml the repository
+// tracks (`ignoreUntil`, which osv-scanner enforces itself: past it, the advisory fails its job again; it reads, for
+// each lock file, the configuration of that file's own directory, so there is one per directory with exceptions).
+// OSV also reads the RustSec database, so every advisory deny.toml ignores is ignored by the root osv-scanner.toml,
+// next to Cargo.lock, with the same date; OSV may hold more (the npm packages, GitHub advisories missing from
+// RustSec). A list that cannot be read whole is an error, never a pass.
 // Run with: node scripts/check-exception-dates.mjs; its tests: node --test scripts/*.test.mjs
+import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -48,12 +51,29 @@ export function osvExceptions(text) {
   });
 }
 
+/** deny.toml and every osv-scanner.toml that Git tracks in `root`, as `checkExceptions` takes them. */
+export function repositoryLists(root) {
+  const tracked = execFileSync('git', ['ls-files', '--', 'osv-scanner.toml', '*/osv-scanner.toml'], {
+    cwd: root,
+    encoding: 'utf8',
+  })
+    .split('\n')
+    .filter(Boolean);
+  if (!tracked.includes('osv-scanner.toml')) throw new Error('no osv-scanner.toml at the root of the repository');
+  const read = (name) => readFileSync(path.join(root, name), 'utf8');
+  return [read('deny.toml'), Object.fromEntries(tracked.map((name) => [name, read(name)]))];
+}
+
 const dayNumber = (iso) => Math.floor(Date.parse(`${iso}T00:00:00Z`) / 86_400_000);
 
-/** The problems of the two lists on `today` (an ISO date), with the number of exceptions checked. */
-export function checkExceptions(denyText, osvText, today) {
+/**
+ * The problems of the lists on `today` (an ISO date), with the number of exceptions checked. `osvTexts` maps the path
+ * of each osv-scanner.toml to its text; the root one is `osv-scanner.toml`.
+ */
+export function checkExceptions(denyText, osvTexts, today) {
   const problems = [];
-  const lists = { 'deny.toml': denyExceptions(denyText), 'osv-scanner.toml': osvExceptions(osvText) };
+  const lists = { 'deny.toml': denyExceptions(denyText) };
+  for (const [file, text] of Object.entries(osvTexts)) lists[file] = osvExceptions(text);
   const now = dayNumber(today);
   for (const [file, entries] of Object.entries(lists)) {
     for (const { id, date } of entries) {
@@ -68,24 +88,22 @@ export function checkExceptions(denyText, osvText, today) {
       }
     }
   }
-  const [deny, osv] = Object.values(lists);
   const dated = (entries) => new Map(entries.map((e) => [e.id, e.date]));
-  const [denyDates, osvDates] = [dated(deny), dated(osv)];
+  const [denyDates, osvDates] = [dated(lists['deny.toml']), dated(lists['osv-scanner.toml'] ?? [])];
   for (const id of denyDates.keys()) {
     if (!osvDates.has(id)) {
-      problems.push(`${id} is ignored by deny.toml but not by osv-scanner.toml, which reads RustSec too`);
+      problems.push(`${id} is ignored by deny.toml but not by the root osv-scanner.toml, which reads RustSec too`);
     } else if (denyDates.get(id) && osvDates.get(id) && denyDates.get(id) !== osvDates.get(id)) {
       problems.push(`${id}: deny.toml says ${denyDates.get(id)}, osv-scanner.toml ${osvDates.get(id)}`);
     }
   }
-  return { problems, count: deny.length + osv.length };
+  return { problems, count: Object.values(lists).reduce((n, entries) => n + entries.length, 0) };
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
-  const read = (name) => readFileSync(path.join(root, name), 'utf8');
   const today = new Date().toISOString().slice(0, 10);
-  const { problems, count } = checkExceptions(read('deny.toml'), read('osv-scanner.toml'), today);
+  const { problems, count } = checkExceptions(...repositoryLists(root), today);
   for (const problem of problems) console.error(problem);
   if (problems.length > 0) process.exit(1);
   console.log(`${count} ignored advisories, dated within ${HORIZON_DAYS} days, those of deny.toml the same in OSV.`);

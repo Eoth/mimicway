@@ -12,8 +12,3 @@ reason = "smartstring is unmaintained, with no known vulnerability; it is intern
 id = "RUSTSEC-2024-0449"
 ignoreUntil = 2027-04-30
 reason = "unsafe-libyaml is unmaintained, with no known vulnerability; serde_yaml brings it, and only reads the configuration file Mimicway writes itself (imports go through JSON)"
-
-[[IgnoredVulns]]
-id = "GHSA-gcqx-w48m-w2h4"
-ignoreUntil = 2027-01-31
-reason = "deepmerge, prototype poisoning in mergeObject(); a build tool only, brought by @sveltejs/vite-plugin-svelte, which merges the project's own Svelte configuration; no fixed release yet"
