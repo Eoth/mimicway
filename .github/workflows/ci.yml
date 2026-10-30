@@ -67,6 +67,8 @@ jobs:
         run: node scripts/check-former-design-system.mjs
       - name: No workflow leaves a token in a checkout or publishes outside a protected environment
         run: node scripts/check-workflows.mjs
+      - name: Every ignored advisory is dated, not past and at most six months ahead
+        run: node scripts/check-exception-dates.mjs
       - name: Every image stays light and inert, no video or GIF
         run: node scripts/check-images.mjs
 
@@ -209,12 +211,9 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
-      - name: npm audit (production dependencies of the UI)
+      - name: npm audit (every package of the UI, build and test tools included)
         working-directory: frontend
-        run: npm audit --omit=dev --audit-level=high
-      - name: npm audit (build and test tooling)
-        working-directory: frontend
-        run: npm audit --audit-level=critical
+        run: npm audit --audit-level=high
 
   ui:
     name: UI (unit tests, build)

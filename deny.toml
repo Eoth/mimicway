@@ -9,13 +9,15 @@ all-features = true
 [advisories]
 version = 2
 yanked = "deny"
+# Each exception says when to look at it again ("review by", at most six months ahead), and so does its twin in
+# osv-scanner.toml: scripts/check-exception-dates.mjs fails the CI once the date is reached.
 ignore = [
     # smartstring is unmaintained (no known vulnerability). It is an internal detail of rhai, the script engine,
     # whose latest release still depends on it; to be dropped when rhai moves away from it (see ROADMAP.md).
-    { id = "RUSTSEC-2026-0249", reason = "unmaintained, no vulnerability, internal to rhai with no alternative release" },
+    { id = "RUSTSEC-2026-0249", reason = "unmaintained, no vulnerability, internal to rhai with no alternative release; review by 2027-04-30" },
     # unsafe-libyaml is unmaintained (no known vulnerability). serde_yaml brings it, and only reads the configuration
     # file Mimicway writes itself (imports go through JSON); to be dropped with serde_yaml (see ROADMAP.md).
-    { id = "RUSTSEC-2024-0449", reason = "unmaintained, no vulnerability, brought by serde_yaml, which only reads Mimicway's own configuration file" },
+    { id = "RUSTSEC-2024-0449", reason = "unmaintained, no vulnerability, brought by serde_yaml, which only reads Mimicway's own configuration file; review by 2027-04-30" },
 ]
 
 [licenses]

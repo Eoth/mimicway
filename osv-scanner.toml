@@ -1,11 +1,19 @@
 # Advisories osv-scanner reports that do not apply, each with its reason. OSV is the database the CI's osv-scanner job
 # and the OpenSSF Scorecard read. Keep in step with the ignore list of deny.toml: the CI runs both tools, so an entry
-# missing from one of them fails its job.
+# missing from one of them fails its job. Each entry expires on its `ignoreUntil` (the same date as in deny.toml, at
+# most six months ahead, checked by scripts/check-exception-dates.mjs): past it, osv-scanner reports the advisory again.
 
 [[IgnoredVulns]]
 id = "RUSTSEC-2026-0249"
+ignoreUntil = 2027-04-30
 reason = "smartstring is unmaintained, with no known vulnerability; it is internal to rhai, the script engine, whose latest release still depends on it"
 
 [[IgnoredVulns]]
 id = "RUSTSEC-2024-0449"
+ignoreUntil = 2027-04-30
 reason = "unsafe-libyaml is unmaintained, with no known vulnerability; serde_yaml brings it, and only reads the configuration file Mimicway writes itself (imports go through JSON)"
+
+[[IgnoredVulns]]
+id = "GHSA-gcqx-w48m-w2h4"
+ignoreUntil = 2027-01-31
+reason = "deepmerge, prototype poisoning in mergeObject(); a build tool only, brought by @sveltejs/vite-plugin-svelte, which merges the project's own Svelte configuration; no fixed release yet"

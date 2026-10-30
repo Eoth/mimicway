@@ -80,3 +80,22 @@ test('every workflow of the repository is closed', () => {
     assert.ok(result.checkouts > 0, `${file}: no checkout read`);
   }
 });
+
+const audit = (command) => workflow({ publish: '' }) + `      - run: ${command}\n`;
+
+test('an npm audit passes only when it fails from high on and audits every package', () => {
+  const verdicts = [
+    ['npm audit --audit-level=high', 0],
+    ['npm audit --audit-level=moderate', 0],
+    ['npm audit --audit-level low', 0],
+    ['npm audit --audit-level=critical', 1],
+    ['npm audit', 1],
+    ['npm audit --omit=dev --audit-level=high', 1],
+    ['npm audit --production --audit-level=critical', 2],
+  ];
+  for (const [command, problems] of verdicts) {
+    const result = checkWorkflow('t.yml', audit(command));
+    assert.equal(result.problems.length, problems, command);
+    assert.equal(result.audits, 1, command);
+  }
+});

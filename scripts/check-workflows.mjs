@@ -3,7 +3,9 @@
 //   repository's Git configuration, where any later step of the job can read it;
 // - every job that may write the repository's contents or publish packages (`contents: write`, `packages: write`)
 //   runs in an environment, which the maintainers protect with a required reviewer: otherwise a pushed tag publishes
-//   without anyone's approval.
+//   without anyone's approval;
+// - every `npm audit` fails from a high advisory on and audits every package, development tools included: a high
+//   advisory of the build tooling (vite) once went through a step that only failed on critical ones.
 // Every .yml file of .github/workflows/ is read, so a new workflow is checked without being listed, and the summary
 // counts what was checked: a reading that found no checkout or no job would show.
 // Run with: node scripts/check-workflows.mjs; its tests: node --test scripts/*.test.mjs
@@ -55,8 +57,21 @@ export function checkWorkflow(file, text) {
   const problems = [];
   let checkouts = 0;
   let publishers = 0;
+  let audits = 0;
   const jobs = jobsOf(text);
   for (const job of jobs) {
+    for (const line of job.lines) {
+      // A command, in a `run:` line or the lines of its block; never the `name:` of a step.
+      if (!/\bnpm audit\b/.test(line) || /^\s*(-\s+)?name:/.test(line)) continue;
+      audits++;
+      const level = line.match(/--audit-level[= ](\w+)/)?.[1];
+      if (!['low', 'moderate', 'high'].includes(level)) {
+        problems.push(`${file}, job ${job.name}: an npm audit that lets a high advisory through (--audit-level=high)`);
+      }
+      if (/--omit\b|--only\b|--production\b/.test(line)) {
+        problems.push(`${file}, job ${job.name}: an npm audit that leaves packages out (development tools too)`);
+      }
+    }
     job.lines.forEach((line, i) => {
       if (!/^\s*(-\s+)?uses:\s*actions\/checkout@/.test(line)) return;
       checkouts++;
@@ -82,24 +97,28 @@ export function checkWorkflow(file, text) {
       }
     }
   }
-  return { problems, jobs: jobs.length, checkouts, publishers };
+  return { problems, jobs: jobs.length, checkouts, publishers, audits };
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '.github', 'workflows');
   const files = readdirSync(dir).filter((name) => /\.ya?ml$/.test(name));
-  const totals = { problems: [], jobs: 0, checkouts: 0, publishers: 0 };
+  const totals = { problems: [], jobs: 0, checkouts: 0, publishers: 0, audits: 0 };
   for (const file of files) {
     const result = checkWorkflow(file, readFileSync(path.join(dir, file), 'utf8'));
     totals.problems.push(...result.problems);
     totals.jobs += result.jobs;
     totals.checkouts += result.checkouts;
     totals.publishers += result.publishers;
+    totals.audits += result.audits;
   }
   for (const problem of totals.problems) console.error(problem);
-  if (totals.problems.length > 0 || files.length === 0 || totals.checkouts === 0) process.exit(1);
+  if (totals.audits === 0) console.error('no npm audit in any workflow: the UI packages are not audited');
+  if (totals.problems.length > 0 || files.length === 0 || totals.checkouts === 0 || totals.audits === 0) {
+    process.exit(1);
+  }
   console.log(
     `${files.length} workflows, ${totals.jobs} jobs: ${totals.checkouts} checkouts keep no token, ` +
-      `${totals.publishers} publishing jobs run in an environment.`,
+      `${totals.publishers} publishing jobs run in an environment, ${totals.audits} npm audits fail from high on.`,
   );
 }
