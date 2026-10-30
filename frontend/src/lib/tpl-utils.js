@@ -457,6 +457,14 @@ function readTplToken(str, start) {
         j += 2;
         continue;
       }
+      // As for an object: an expression is skipped whole, for the quotes and brackets it may hold.
+      if (isVarOpen(str, j)) {
+        const end = findDoubleClose(str, j + 2);
+        if (end !== -1) {
+          j = end + 2;
+          continue;
+        }
+      }
       if (str[j] === '"') {
         inStr = !inStr;
         j++;

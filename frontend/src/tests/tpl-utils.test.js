@@ -258,6 +258,22 @@ describe('round-trip: fields -> template -> fields', () => {
 
 // ── templateToFields error cases ─────────────────────────────────────
 
+describe('round-trip: arrays holding expressions with quotes and brackets', () => {
+  it('reads each item of an array whole, past the quotes and brackets of its expression', () => {
+    const tpl = '{"tags":["{{query.x | default("]")}}","b"]}';
+    expect(templateToFields(tpl)).toEqual([
+      {
+        key: 'tags',
+        fieldType: 'array-values',
+        items: [
+          { source: 'query', value: 'x', pipe: 'default("]")', asNumber: false },
+          { source: 'fixed', value: 'b', pipe: '', asNumber: false },
+        ],
+      },
+    ]);
+  });
+});
+
 describe('templateToFields error cases', () => {
   it('throws on array root', () => {
     expect(() => templateToFields('[1,2,3]')).toThrow();
