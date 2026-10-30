@@ -311,7 +311,11 @@ async fn put_config(
 ) -> Result<Json<Arc<MockConfig>>, AppError> {
     require_super_admin(&user)?;
     let config = check_imported_config(config)?;
-    state.store.replace(config).await.map_err(AppError::Store)?;
+    state
+        .store
+        .replace_capped(config)
+        .await
+        .map_err(AppError::Store)?;
     Ok(Json(state.store.snapshot().await))
 }
 
@@ -362,18 +366,8 @@ async fn reset_config(
 ) -> Result<StatusCode, AppError> {
     require_super_admin(&user)?;
 
-    state
-        .store
-        .backup_before_reset()
-        .await
-        .map_err(AppError::Store)?;
-
     tracing::info!(user = %user.username, "config reset: all services removed");
-    state
-        .store
-        .replace(MockConfig::empty())
-        .await
-        .map_err(AppError::Store)?;
+    state.store.reset().await.map_err(AppError::Store)?;
     // Observation state lives outside the configuration: without this, a service created again after the reset would
     // start out observed, with the traffic of the one deleted.
     state.observation.stop_all();
@@ -1925,6 +1919,12 @@ enum AppError {
 impl IntoResponse for AppError {
     fn into_response(self) -> axum::response::Response {
         match self {
+            // A cap reached is the answer to this request, not a failure of the server.
+            AppError::Store(crate::store::StoreError::OverQuota(msg)) => (
+                StatusCode::CONFLICT,
+                Json(serde_json::json!({ "error": msg })),
+            )
+                .into_response(),
             AppError::Store(e) => {
                 tracing::error!(error = %e, "store error");
                 (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()
@@ -2273,6 +2273,48 @@ mod tests {
             #[cfg(feature = "tcp-mock")]
             tcp_runtime,
         }
+    }
+
+    #[tokio::test]
+    async fn a_cap_reached_answers_409_with_the_message_that_names_it() {
+        let mut state = test_state().await;
+        let quotas = crate::store::Quotas {
+            services_per_group: 1,
+            ..state.store.quotas()
+        };
+        state.store = state.store.clone().with_quotas(quotas);
+        let service = |name: &str| -> Service {
+            serde_json::from_value(serde_json::json!({
+                "name": name, "listen_path": format!("/{name}/*"), "real_target_url": "", "is_mocked": true,
+                "group_name": null, "wsdl_mode": "auto", "rules": []
+            }))
+            .unwrap()
+        };
+        let created = create_service(
+            State(state.clone()),
+            Extension(anon_user()),
+            Json(service("a")),
+        )
+        .await;
+        assert!(created.is_ok());
+
+        let refused = create_service(
+            State(state.clone()),
+            Extension(anon_user()),
+            Json(service("b")),
+        )
+        .await
+        .expect_err("the second service is past the cap")
+        .into_response();
+        assert_eq!(refused.status(), StatusCode::CONFLICT);
+        let body = axum::body::to_bytes(refused.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let error = serde_json::from_slice::<serde_json::Value>(&body).unwrap()["error"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        assert!(error.contains("MAX_SERVICES_PER_GROUP"), "{error}");
     }
 
     fn empty_captured(method: &str, remaining_path: &str) -> RuleTestCapturedRequest {

@@ -142,6 +142,11 @@ Everything is set through environment variables; none is required.
 | `RUST_LOG` | `mimicway=info` | Log filter, for example `mimicway=debug`. |
 | `BACKUP_MAX_COUNT` | `5` | Backups kept in `{DATA_PATH}/backups/` before rotation. |
 | `BACKUP_MIN_INTERVAL_SECS` | `60` | Changes coming within this many seconds of the last backup share it; `0` backs up every change. |
+| `MAX_CONFIG_BYTES` | `2097152` | Bytes of YAML the configuration may grow to (2 MiB): 17 copies (the file, its temporary copy, 5 backups, 10 protected ones) fit in the 64 MiB volume of the Kubernetes manifests, and an export comes back in one import, whose body the API bounds at 2 MiB. |
+| `MAX_SERVICES_PER_GROUP` | `100` | Services a group may hold; the services outside any group count together. |
+| `MAX_RULES_PER_GROUP` | `1000` | Rules of all the services of a group together (about 400 KB of YAML, a fifth of `MAX_CONFIG_BYTES`). |
+| `MAX_GROUPS_PER_USER` | `20` | Groups one user may administer; whoever creates a group is its first admin. |
+| `PROTECTED_BACKUP_MAX_COUNT` | `10` | Copies kept in `{DATA_PATH}/backups/protected/` by full resets, the oldest removed first. |
 | `API_BASE_URL` | *(empty)* | Where the UI calls the API when they are served from different origins; see [Split UI and API](#split-ui-and-api). |
 | `CORS_ALLOWED_ORIGINS` | *(empty)* | Comma-separated origins allowed to call the management API from a browser, besides the UI's own origin. Needed only with `API_BASE_URL`. Mocked services always answer any origin. |
 | `MAX_REQUESTS_IN_FLIGHT` | `1024` | Requests handled at once; the next one gets 503 with `Retry-After: 1` at once instead of waiting. `/api/health` is never refused. |
@@ -281,7 +286,7 @@ Mimicway does not terminate TLS; put it behind your usual reverse proxy or ingre
 
 ## Backups
 
-Before a change, the previous `mock-config.yaml` is copied to `{DATA_PATH}/backups/` (the last `BACKUP_MAX_COUNT` are kept). Changes coming in a burst share one copy, taken before the first of them: a change backs up only when the last backup is `BACKUP_MIN_INTERVAL_SECS` old (60 by default), so that an action sending several requests, such as merging an import, does not push the older copies out. Replacing the whole configuration (restore, import that replaces, reset) always backs up first. A change that leaves the configuration as it is writes nothing, and a copy identical to the newest one is not made again. A reset also writes a copy to `backups/protected/`, kept 30 days whatever the rotation. Changes apply in memory at once and reach the disk in the background; on `SIGTERM` or Ctrl+C the server finishes writing before it exits.
+Before a change, the previous `mock-config.yaml` is copied to `{DATA_PATH}/backups/` (the last `BACKUP_MAX_COUNT` are kept). Changes coming in a burst share one copy, taken before the first of them: a change backs up only when the last backup is `BACKUP_MIN_INTERVAL_SECS` old (60 by default), so that an action sending several requests, such as merging an import, does not push the older copies out. Replacing the whole configuration (restore, import that replaces) always backs up first. A change that leaves the configuration as it is writes nothing, and a copy identical to the newest one is not made again. A full reset instead writes its copy to `backups/protected/`, kept 30 days whatever the rotation; the newest `PROTECTED_BACKUP_MAX_COUNT` are kept. A change that would grow the configuration past a cap (`MAX_CONFIG_BYTES`, `MAX_SERVICES_PER_GROUP`, `MAX_RULES_PER_GROUP`, `MAX_GROUPS_PER_USER`) is refused with 409 and a message that names the cap; a configuration already past one can still be edited and shrunk, and restoring a backup is never refused. Changes apply in memory at once and reach the disk in the background; on `SIGTERM` or Ctrl+C the server finishes writing before it exits.
 
 Restore from the UI (Backups button, super-admins), or by hand: stop Mimicway, copy a backup over `mock-config.yaml`, start it again.
 

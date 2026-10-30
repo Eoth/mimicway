@@ -11,7 +11,7 @@ Before a change to the configuration (creating, editing or deleting a service or
 Only the most recent backups are kept (`BACKUP_MAX_COUNT`, 5 by default): older ones are removed as new ones arrive. So that they cover more than the last few clicks:
 
 - **Changes made in a burst share one backup**, taken before the first of them. A change is backed up only when the last backup is a minute old (`BACKUP_MIN_INTERVAL_SECS`, 60 by default; `0` backs up every change). Merging an import, which sends one request per group and per service, makes one backup at most. Going back to a backup therefore undoes every change made in the minute that followed it.
-- **Restoring a backup, importing a file that replaces everything and a full reset always back up first**, whenever they happen.
+- **Restoring a backup and importing a file that replaces everything always back up first**, whenever they happen; a full reset makes the special backup below instead.
 - **Saving without changing anything writes nothing**, and a backup identical to the newest one is not made twice.
 
 ## Restoring a backup
@@ -26,7 +26,7 @@ A restore itself first backs up the state it overwrites: even a restore can be u
 
 ## A special backup before a full reset
 
-Before a [full reset](administration.md) (which deletes every service), an extra backup is written to a protected place, out of reach of the normal rotation for 30 days: enough time to notice and restore it if the reset was a mistake.
+Before a [full reset](administration.md) (which deletes every service), its backup is written to a protected place, out of reach of the normal rotation for 30 days: enough time to notice and restore it if the reset was a mistake. It holds the last change made before the reset, and no ordinary backup repeats it. The newest 10 are kept (`PROTECTED_BACKUP_MAX_COUNT`): a test suite that resets before each test does not fill the disk.
 
 ## Requirements and limits
 

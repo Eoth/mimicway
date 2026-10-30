@@ -14,14 +14,22 @@
 // the writes already queued have reached the file: a change is never accepted without its backup, which is the whole
 // point of the rollback, and the copy holds the last state, not an older one still on disk.
 //
-// A full reset first copies the configuration to backups/protected/ (backup_before_reset). Rotation only looks at
-// files directly in backups/, so later changes can never push that copy out. It expires after 30 days
-// (PROTECTED_BACKUP_MAX_AGE_MS), checked at each ordinary write: a write 30 days after the reset is taken as the
-// sign that nobody depends on the old state any more.
+// A full reset (reset) copies the configuration to backups/protected/ instead, and makes no ordinary backup, which
+// would hold the same bytes. Rotation of backups/ only looks at files directly in it, so later changes can never push
+// that copy out; only later resets can, past the newest PROTECTED_BACKUP_MAX_COUNT (quotas.rs). A protected copy also
+// expires after 30 days (PROTECTED_BACKUP_MAX_AGE_MS), checked at each ordinary write: a write 30 days after the reset
+// is taken as the sign that nobody depends on the old state any more.
+//
+// Caps on what a change may grow (quotas.rs) are checked under the write lock, before anything is backed up or
+// queued: a refused change leaves no trace.
+mod quotas;
+
+pub use quotas::Quotas;
+
 use crate::models::MockConfig;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 use tokio::sync::{RwLock, mpsc, oneshot};
 
@@ -35,6 +43,13 @@ const DEFAULT_BACKUP_MAX_COUNT: usize = 5;
 /// Seconds between two backups of ordinary changes when `BACKUP_MIN_INTERVAL_SECS` is unset. A minute holds the
 /// requests of one action, however many it sends, and with five backups kept, at least five minutes of editing.
 const DEFAULT_BACKUP_MIN_INTERVAL_SECS: u64 = 60;
+
+/// Whether a write is held to the caps of quotas.rs.
+#[derive(Clone, Copy, PartialEq)]
+enum Capped {
+    Yes,
+    No,
+}
 
 /// When a write backs up the file it overwrites.
 #[derive(Clone, Copy, PartialEq)]
@@ -193,6 +208,9 @@ pub struct MockStore {
     backup_min_interval: Duration,
     /// When this process last backed up the file; None until the first change, which always backs up.
     last_backup: Arc<std::sync::Mutex<Option<Instant>>>,
+    quotas: Quotas,
+    /// Bytes of YAML of the configuration in memory, against which MAX_CONFIG_BYTES tells a change that grows it.
+    yaml_len: Arc<AtomicUsize>,
 }
 
 impl MockStore {
@@ -207,7 +225,21 @@ impl MockStore {
             writer: WriterHandle::spawn(),
             backup_min_interval: Self::backup_min_interval_in(crate::settings::env),
             last_backup: Arc::default(),
+            quotas: Quotas::from_lookup(crate::settings::env),
+            yaml_len: Arc::default(),
         })
+    }
+
+    /// The same store with other caps (tests).
+    #[cfg(test)]
+    pub(crate) fn with_quotas(mut self, quotas: Quotas) -> Self {
+        self.quotas = quotas;
+        self
+    }
+
+    /// The caps this store enforces.
+    pub fn quotas(&self) -> Quotas {
+        self.quotas
     }
 
     /// The same store, backing up ordinary changes at most once per `interval` (tests: 0 backs up every change).
@@ -270,16 +302,16 @@ impl MockStore {
 
         // The first write is synchronous on purpose: it happens before the server takes any traffic, so no request waits
         // on it, and the file must exist as soon as load_or_init returns, without a flush().
-        let config = if file.exists() {
+        let (config, yaml_len) = if file.exists() {
             let content =
                 std::fs::read_to_string(&file).map_err(|e| StoreError::Io(e.to_string()))?;
-            Self::parse(&content)?
+            (Self::parse(&content)?, content.len())
         } else {
             let empty = MockConfig::empty();
             let yaml =
                 serde_yaml::to_string(&empty).map_err(|e| StoreError::Yaml(e.to_string()))?;
             Self::write_to_disk(&file, &yaml)?;
-            empty
+            (empty, yaml.len())
         };
 
         tracing::info!(path = %file.display(), services = config.services.len(), "config loaded");
@@ -292,6 +324,8 @@ impl MockStore {
             writer: WriterHandle::spawn(),
             backup_min_interval: Self::backup_min_interval_in(crate::settings::env),
             last_backup: Arc::default(),
+            quotas: Quotas::from_lookup(crate::settings::env),
+            yaml_len: Arc::new(AtomicUsize::new(yaml_len)),
         })
     }
 
@@ -314,16 +348,65 @@ impl MockStore {
     /// Applies the change in memory at once and leaves the disk write to the background task. The write lock is held
     /// from the backup until the job is queued, so concurrent changes reach the single-consumer queue in the order they
     /// were applied, and the disk sees them in that order. Replacing the whole configuration always backs up first;
-    /// replacing it with itself writes nothing.
+    /// replacing it with itself writes nothing. No cap is checked: restoring brings back a state the server held.
     pub async fn replace(&self, config: MockConfig) -> Result<(), StoreError> {
+        self.replace_as(config, Capped::No).await
+    }
+
+    /// `replace`, refused when the new configuration grows past a cap: an import.
+    pub async fn replace_capped(&self, config: MockConfig) -> Result<(), StoreError> {
+        self.replace_as(config, Capped::Yes).await
+    }
+
+    async fn replace_as(&self, config: MockConfig, capped: Capped) -> Result<(), StoreError> {
         let mut guard = self.config.write().await;
         if **guard == config && !self.writer.last_write_failed() {
             return Ok(());
         }
-        let yaml = self.prepare_and_backup(&config, BackupWhen::Always).await?;
+        if capped == Capped::Yes {
+            self.check_quotas(&guard, &config)?;
+        }
+        let yaml = self
+            .prepare_and_backup(&config, BackupWhen::Always, capped)
+            .await?;
         *guard = Arc::new(config);
         self.writer.send_write(self.path.clone(), yaml).await;
         Ok(())
+    }
+
+    /// Empties the configuration, after copying it to backups/protected/ (the copy a reset is undone from), and
+    /// without the ordinary backup a replacement makes: it would hold the same bytes. The copy is taken under the
+    /// write lock once the writes already queued are on disk, so it holds the last change. An empty configuration
+    /// is left as it is, without a copy.
+    pub async fn reset(&self) -> Result<(), StoreError> {
+        let mut guard = self.config.write().await;
+        let empty = MockConfig::empty();
+        if **guard == empty && !self.writer.last_write_failed() {
+            return Ok(());
+        }
+        let yaml = serde_yaml::to_string(&empty).map_err(|e| StoreError::Yaml(e.to_string()))?;
+        let dirs = BackupDirs::open(&self.root, &self.path)?;
+        Self::purge_expired_protected_backups(&dirs.protected)?;
+        if let Some(file) = &dirs.config_file {
+            self.writer.flush().await;
+            let dest = dirs
+                .protected
+                .join(format!("pre-reset-{}.yaml", Self::now_ms()));
+            std::fs::copy(file, &dest).map_err(|e| StoreError::Io(e.to_string()))?;
+            tracing::info!(path = %dest.display(), "pre-reset backup created (protected, 30 days)");
+            Self::rotate_protected_backups(&dirs.protected, self.quotas.protected_backups)?;
+        }
+        self.yaml_len.store(yaml.len(), Ordering::Relaxed);
+        *guard = Arc::new(empty);
+        self.writer.send_write(self.path.clone(), yaml).await;
+        Ok(())
+    }
+
+    fn check_quotas(&self, before: &MockConfig, after: &MockConfig) -> Result<(), StoreError> {
+        match self.quotas.refusal(before, after) {
+            Some(refusal) => Err(StoreError::OverQuota(refusal)),
+            None => Ok(()),
+        }
     }
 
     pub async fn update<F>(&self, f: F) -> Result<Arc<MockConfig>, StoreError>
@@ -336,8 +419,9 @@ impl MockStore {
         if cfg == **guard && !self.writer.last_write_failed() {
             return Ok(guard.clone());
         }
+        self.check_quotas(&guard, &cfg)?;
         let yaml = self
-            .prepare_and_backup(&cfg, BackupWhen::OncePerBurst)
+            .prepare_and_backup(&cfg, BackupWhen::OncePerBurst, Capped::Yes)
             .await?;
         *guard = Arc::new(cfg);
         self.writer.send_write(self.path.clone(), yaml).await;
@@ -359,8 +443,9 @@ impl MockStore {
         if cfg == **guard && !self.writer.last_write_failed() {
             return Ok(Ok(guard.clone()));
         }
+        self.check_quotas(&guard, &cfg)?;
         let yaml = self
-            .prepare_and_backup(&cfg, BackupWhen::OncePerBurst)
+            .prepare_and_backup(&cfg, BackupWhen::OncePerBurst, Capped::Yes)
             .await?;
         *guard = Arc::new(cfg);
         self.writer.send_write(self.path.clone(), yaml).await;
@@ -387,7 +472,7 @@ impl MockStore {
         Self::collect_backups_dir(&dirs.protected, true, &mut result)?;
 
         // Several backups can share a millisecond. Within one, the sequence number of the name orders the normal ones,
-        // and a protected backup is the oldest: a reset takes it before the write that makes the normal one.
+        // and a protected backup counts as the oldest.
         result.sort_by_key(|b| {
             std::cmp::Reverse((
                 b.created_at_ms,
@@ -483,32 +568,25 @@ impl MockStore {
         self.replace(config).await
     }
 
-    /// The protected backup taken before a full reset. Called explicitly before `replace(MockConfig::empty())` by the
-    /// reset handler; ordinary writes never create a protected backup.
-    pub async fn backup_before_reset(&self) -> Result<(), StoreError> {
-        let dirs = BackupDirs::open(&self.root, &self.path)?;
-        let Some(file) = dirs.config_file else {
-            return Ok(());
-        };
-
-        let dest = dirs
-            .protected
-            .join(format!("pre-reset-{}.yaml", Self::now_ms()));
-        std::fs::copy(&file, &dest).map_err(|e| StoreError::Io(e.to_string()))?;
-        tracing::info!(path = %dest.display(), "pre-reset backup created (protected, 30j)");
-        Ok(())
-    }
-
-    /// The part of a write done before it is queued: serializes to YAML, purges expired protected backups, then backs
-    /// up the current file when `when` says so. Runs under the write lock (see the top of this file: the backup always
-    /// comes first). Before copying, it waits for the writes already queued: without that, a change made a moment
-    /// before a restore was still only in memory, and the restore's backup held the state before it.
+    /// The part of a write done before it is queued: serializes to YAML, refuses a capped change that grows past
+    /// MAX_CONFIG_BYTES, purges expired protected backups, then backs up the current file when `when` says so. Runs
+    /// under the write lock (see the top of this file: the backup always comes first). Before copying, it waits for the
+    /// writes already queued: without that, a change made a moment before a restore was still only in memory, and the
+    /// restore's backup held the state before it.
     async fn prepare_and_backup(
         &self,
         config: &MockConfig,
         when: BackupWhen,
+        capped: Capped,
     ) -> Result<String, StoreError> {
         let yaml = serde_yaml::to_string(config).map_err(|e| StoreError::Yaml(e.to_string()))?;
+        if capped == Capped::Yes
+            && let Some(refusal) = self
+                .quotas
+                .size_refusal(self.yaml_len.load(Ordering::Relaxed), yaml.len())
+        {
+            return Err(StoreError::OverQuota(refusal));
+        }
 
         let dirs = BackupDirs::open(&self.root, &self.path)?;
         Self::purge_expired_protected_backups(&dirs.protected)?;
@@ -520,6 +598,7 @@ impl MockStore {
             *self.last_backup.lock().unwrap_or_else(|e| e.into_inner()) = Some(Instant::now());
         }
 
+        self.yaml_len.store(yaml.len(), Ordering::Relaxed);
         Ok(yaml)
     }
 
@@ -546,9 +625,10 @@ impl MockStore {
     /// than on a timer. The age comes from the timestamp in the file name (`pre-reset-{ts}.yaml`), not from file
     /// metadata.
     ///
-    /// It runs under the write lock on every change, and this directory has no count-based rotation: it can hold
-    /// thousands of files (test suites reset before every test). `entry.file_type()` reuses what the directory listing
-    /// already returned, whereas `entry.path().is_file()` would make one more system call per file on every change.
+    /// It runs under the write lock on every change, and only a reset rotates this directory by count: a directory
+    /// written by an older version, or with a high PROTECTED_BACKUP_MAX_COUNT, can hold thousands of files.
+    /// `entry.file_type()` reuses what the directory listing already returned, whereas `entry.path().is_file()` would
+    /// make one more system call per file on every change.
     fn purge_expired_protected_backups(protected_dir: &Path) -> Result<(), StoreError> {
         let now = Self::now_ms();
         for entry in std::fs::read_dir(protected_dir).map_err(|e| StoreError::Io(e.to_string()))? {
@@ -564,6 +644,28 @@ impl MockStore {
                 std::fs::remove_file(&path).map_err(|e| StoreError::Io(e.to_string()))?;
                 tracing::info!(path = %path.display(), "expired pre-reset backup purged");
             }
+        }
+        Ok(())
+    }
+
+    /// Deletes the oldest pre-reset backups beyond the newest `keep`, by the timestamp of their names.
+    fn rotate_protected_backups(protected_dir: &Path, keep: usize) -> Result<(), StoreError> {
+        let mut dated: Vec<(u128, PathBuf)> = std::fs::read_dir(protected_dir)
+            .map_err(|e| StoreError::Io(e.to_string()))?
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| entry.file_type().is_ok_and(|t| t.is_file()))
+            .filter_map(|entry| {
+                let path = entry.path();
+                Self::extract_protected_timestamp(&path).map(|ts| (ts, path))
+            })
+            .collect();
+        if dated.len() <= keep {
+            return Ok(());
+        }
+        dated.sort();
+        for (_, old) in &dated[..dated.len() - keep] {
+            std::fs::remove_file(old).map_err(|e| StoreError::Io(e.to_string()))?;
+            tracing::info!(path = %old.display(), "pre-reset backup removed past PROTECTED_BACKUP_MAX_COUNT");
         }
         Ok(())
     }
@@ -711,6 +813,8 @@ pub enum StoreError {
     Io(String),
     Yaml(String),
     NotFound(String),
+    /// A change refused by a cap (quotas.rs), with the message that names it.
+    OverQuota(String),
 }
 
 impl std::fmt::Display for StoreError {
@@ -719,6 +823,7 @@ impl std::fmt::Display for StoreError {
             StoreError::Io(msg) => write!(f, "IO error: {msg}"),
             StoreError::Yaml(msg) => write!(f, "YAML error: {msg}"),
             StoreError::NotFound(msg) => write!(f, "Not found: {msg}"),
+            StoreError::OverQuota(msg) => write!(f, "{msg}"),
         }
     }
 }
@@ -1037,7 +1142,7 @@ mod tests {
         let store = MockStore::load_or_init(&dir).await.unwrap();
         store.replace(sample_config()).await.unwrap();
 
-        store.backup_before_reset().await.unwrap();
+        store.reset().await.unwrap();
 
         let protected_dir = dir.join("backups").join("protected");
         let count = std::fs::read_dir(&protected_dir).unwrap().count();
@@ -1051,8 +1156,7 @@ mod tests {
 
         let store = MockStore::load_or_init(&dir).await.unwrap();
         store.replace(sample_config()).await.unwrap();
-        store.backup_before_reset().await.unwrap();
-        store.replace(MockConfig::empty()).await.unwrap();
+        store.reset().await.unwrap();
 
         // Many writes after the reset, well beyond BACKUP_MAX_COUNT: the protected pre-reset backup must survive all
         // of them.
@@ -1239,7 +1343,12 @@ mod tests {
         let store = MockStore::load_or_init(&dir).await.unwrap();
         store.replace(sample_config()).await.unwrap();
         store.replace(MockConfig::empty()).await.unwrap();
-        store.backup_before_reset().await.unwrap();
+        // Within a minute of the last backup, an ordinary change makes none: the reset adds the protected copy only.
+        store
+            .update(|cfg| cfg.services.push(sample_config().services[0].clone()))
+            .await
+            .unwrap();
+        store.reset().await.unwrap();
 
         let backups = store.list_backups().await.unwrap();
         assert_eq!(backups.iter().filter(|b| !b.protected).count(), 2);
@@ -1391,13 +1500,7 @@ mod tests {
         let dir = temp_dir();
         let store = MockStore::load_or_init(&dir).await.unwrap();
         store.replace(sample_config()).await.unwrap();
-        // write-behind: flush so "svc-a" actually lands on disk before
-        // backup_before_reset() copies "whatever is currently on disk" into
-        // backups/protected/ — otherwise it would copy the stale bootstrap
-        // content instead.
-        store.flush().await;
-        store.backup_before_reset().await.unwrap();
-        store.replace(MockConfig::empty()).await.unwrap();
+        store.reset().await.unwrap();
 
         let backups = store.list_backups().await.unwrap();
         let protected = backups

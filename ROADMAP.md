@@ -19,15 +19,13 @@ Each item has an identifier that never changes, a size (S: a day or less, M: a f
 ## Order of work
 
 1. [Ready for an international launch](#1-ready-for-an-international-launch): R10 (with R16, R17, R18), R12, R13, R14, R9.
-2. [Trust and operations](#2-trust-and-operations): T1 to T15.
+2. [Trust and operations](#2-trust-and-operations): T1 to T12.
 3. [Make it indispensable](#3-make-it-indispensable): U1, U2, then U3 to U18, in the listed order.
 4. [Engineering backlog](#4-engineering-backlog): taken alongside, when they unblock an item above.
 
-Hardening comes before all of these: T15.
+The judges come before the lists above: E37 to E40, tests whose verdict comes from outside the code under test (the real backend, axe-core, mutations, measured growth).
 
-The judges come right after the hardening, before the lists above: E37 to E40, tests whose verdict comes from outside the code under test (the real backend, axe-core, mutations, measured growth).
-
-At the maintainers' request, templates in response headers then server-sent events came first, before the hardening and the lists above; both are in the [changelog](CHANGELOG.md).
+At the maintainers' request, templates in response headers then server-sent events came first, before the lists above; both are in the [changelog](CHANGELOG.md).
 
 ## 1. Ready for an international launch
 
@@ -230,16 +228,6 @@ Size L, to split (the second listener first, then the interface's URLs, then the
 **What.** A `SERVICES_PORT` setting: the mocked and proxied services answer on that port, the interface and the management API on `PORT`; their responses then keep their own origin, without the sandbox. The interface shows service URLs with the right port, and the overlays route a second host to it.
 
 **Done when.** With `SERVICES_PORT` set, an end-to-end test browses a proxied page that uses its own storage, and finds the interface unreachable from it; without it, nothing changes.
-
-### T15. Limits on what users create and keep
-
-Size S
-
-**Why.** With authentication on, any signed-in user may create groups, and their admins services, without limit (`create_group`, `create_service` in `src/server/api.rs`); every change rewrites the whole configuration file, and a backup at most once a minute. A full reset keeps a protected copy for 30 days whatever the number of resets. One user can grow the configuration, the disk and the time of every write.
-
-**What.** Configurable caps: groups per user, services and rules per group, size of the configuration, protected backups kept; a write over a cap is refused with a message that names it. A reset also stops adding an ordinary backup identical to its protected copy (measured: the reset of a 1,108-byte configuration left the same bytes in both), which takes one of the five places for nothing.
-
-**Done when.** Each cap has a test that is refused one past it, and the defaults are documented with the reason for their value.
 
 ## 3. Make it indispensable
 

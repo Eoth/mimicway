@@ -11,7 +11,7 @@ Avant un changement de la configuration (création, modification ou suppression 
 Seules les sauvegardes les plus récentes sont conservées (`BACKUP_MAX_COUNT`, 5 par défaut) : les plus anciennes sont retirées à mesure que de nouvelles arrivent. Pour qu'elles couvrent plus que les derniers clics :
 
 - **Les changements faits en rafale partagent une sauvegarde**, prise avant le premier d'entre eux. Un changement n'est sauvegardé que si la dernière sauvegarde a une minute (`BACKUP_MIN_INTERVAL_SECS`, 60 par défaut ; `0` sauvegarde chaque changement). Fusionner un import, qui envoie une requête par groupe et par service, fait au plus une sauvegarde. Revenir à une sauvegarde annule donc tous les changements faits dans la minute qui l'a suivie.
-- **Restaurer une sauvegarde, importer un fichier qui remplace tout et réinitialiser sauvegardent toujours d'abord**, à tout moment.
+- **Restaurer une sauvegarde et importer un fichier qui remplace tout sauvegardent toujours d'abord**, à tout moment ; une réinitialisation complète fait plutôt la sauvegarde spéciale ci-dessous.
 - **Enregistrer sans rien changer n'écrit rien**, et une sauvegarde identique à la plus récente n'est pas faite deux fois.
 
 ## Restaurer une sauvegarde
@@ -26,7 +26,7 @@ Une restauration sauvegarde d'abord l'état qu'elle écrase : même une restaura
 
 ## Une sauvegarde spéciale avant une réinitialisation complète
 
-Avant une [réinitialisation complète](administration.md) (qui supprime tous les services), une sauvegarde supplémentaire est écrite dans un emplacement protégé, hors de portée de la rotation normale pendant 30 jours : le temps de s'apercevoir de l'erreur et de la restaurer si la réinitialisation n'était pas voulue.
+Avant une [réinitialisation complète](administration.md) (qui supprime tous les services), sa sauvegarde est écrite dans un emplacement protégé, hors de portée de la rotation normale pendant 30 jours : le temps de s'apercevoir de l'erreur et de la restaurer si la réinitialisation n'était pas voulue. Elle contient le dernier changement fait avant la réinitialisation, et aucune sauvegarde ordinaire ne la répète. Les 10 plus récentes sont conservées (`PROTECTED_BACKUP_MAX_COUNT`) : une suite de tests qui réinitialise avant chaque test ne remplit pas le disque.
 
 ## Prérequis et limites
 
