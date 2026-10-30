@@ -2,6 +2,8 @@
 FROM node:24-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1 AS frontend
 WORKDIR /build/frontend
 COPY frontend/package.json frontend/package-lock.json ./
+# A package of the tree lives in the repository (package.json, `deepmerge`): npm ci installs it from there.
+COPY frontend/vendor/ vendor/
 RUN npm ci --ignore-scripts
 COPY frontend/ ./
 RUN npm run build

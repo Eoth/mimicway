@@ -1,0 +1,8 @@
+{
+  "name": "mimicway-deepmerge",
+  "version": "1.0.0",
+  "description": "Mimicway's own stand-in for deepmerge 4.3.1, installed under that name, without its prototype poisoning",
+  "private": true,
+  "license": "MIT",
+  "main": "index.js"
+}

@@ -2,8 +2,5 @@
 # reads, for each lock file, the configuration of that file's own directory: this one holds the exceptions of
 # frontend/package-lock.json, as ../osv-scanner.toml holds those of Cargo.lock. Each entry expires on its
 # `ignoreUntil`, at most six months ahead (scripts/check-exception-dates.mjs): past it, the advisory fails the scan again.
-
-[[IgnoredVulns]]
-id = "GHSA-gcqx-w48m-w2h4"
-ignoreUntil = 2027-01-31
-reason = "deepmerge, prototype poisoning in mergeObject(); a build tool only, brought by @sveltejs/vite-plugin-svelte, which merges the project's own Svelte configuration; no fixed release yet"
+#
+# None today: deepmerge, the last one, was replaced by vendor/deepmerge.
