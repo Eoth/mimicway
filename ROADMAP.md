@@ -23,7 +23,7 @@ Each item has an identifier that never changes, a size (S: a day or less, M: a f
 3. [Make it indispensable](#3-make-it-indispensable): U1, U2, then U3 to U18, in the listed order.
 4. [Engineering backlog](#4-engineering-backlog): taken alongside, when they unblock an item above.
 
-Hardening comes before all of these: E24, E25 and T15.
+Hardening comes before all of these: E25 and T15.
 
 The judges come right after the hardening, before the lists above: E37 to E40, tests whose verdict comes from outside the code under test (the real backend, axe-core, mutations, measured growth).
 
@@ -584,16 +584,6 @@ Size S
 
 **Done when.** A unit test of the application signs in on an instance with authentication and finds, without reloading, the buttons the server allows to that user, and none after signing out.
 
-### E24. Vulnerability gates that see every high and age their exceptions
-
-Size S
-
-**Why.** The CI audits the interface's development tools with `npm audit --audit-level=critical`: a high advisory of vite went through that step, caught only by osv-scanner. The two advisories ignored by `deny.toml` and `osv-scanner.toml` (unmaintained `smartstring` and `unsafe-libyaml`) carry no date: nothing makes anyone look at them again.
-
-**What.** `--audit-level=high` for the development tools too; an expiry on each exception (`ignoreUntil` in `osv-scanner.toml`, a review date next to the entry of `deny.toml`), with a check that fails past it.
-
-**Done when.** A high advisory of a development tool fails the CI, and so does an exception past its date, each shown by a test.
-
 ### E25. No install scripts on a contributor's machine
 
 Size S
@@ -743,3 +733,23 @@ Size S
 **What.** An end-to-end scenario on a `tcp-mock` binary that creates a TCP mock in the screen, sends it a frame from the test and reads the answer, plus the screenshot of the guide in both languages.
 
 **Done when.** The scenario runs in the CI on a `tcp-mock` binary and passes, and the guide shows the screen.
+
+### E44. Raw TCP API tests that take a port another test may take
+
+Size S
+
+**Why.** `creations_at_the_same_time_are_all_kept_or_refused` (`src/server/api/tcp_tests.rs`) failed once in a full `cargo test --features tcp-mock` run and passed in the three next ones and alone. Its `free_port()` binds port 0, reads the port and closes it: between that close and the mock's own bind, another test of the same run can take the port, and the creation is refused.
+
+**What.** Ports that no other test can take between the choice and the bind: the listener kept open and handed over, or a port range owned by this test module.
+
+**Done when.** The test passes 200 full runs in a row, and a test shows that a port chosen for a mock cannot be given to another one in the meantime.
+
+### E45. A rule hidden by several rules together
+
+Size M
+
+**Why.** The conflict warning compares rules two by two (`src/engine/shadowing.rs`): a rule whose requests are all taken, but by two earlier rules between them (`q=1` then `q=2` before a rule on `q=1` or `q=2`), never triggers and is not reported.
+
+**What.** Inclusion in the union of the earlier rules, decided on the same model of independent fields, with a bound on the work for a service with many rules; the warning names every rule that takes part.
+
+**Done when.** The property test of the warning (`src/engine/matcher/conflict_judge.rs`) generates three rules and requires the report exactly when `first_match` never reaches the last one, and a service of 200 rules is checked within 50 ms.
