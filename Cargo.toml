@@ -70,7 +70,7 @@ url = "2"
 
 # Kafka client (consumer and producer), only compiled with the "messaging-kafka" feature. "cmake-build" builds
 # librdkafka (C) from source, which needs cmake, a C toolchain and, on Linux, the libcurl headers.
-rdkafka = { version = "0.36", features = ["cmake-build"], optional = true }
+rdkafka = { version = "0.39", features = ["cmake-build"], optional = true }
 
 [dev-dependencies]
 # Property-based tests of the code that reads untrusted backend responses (rule suggestions). Pure Rust, runs on
