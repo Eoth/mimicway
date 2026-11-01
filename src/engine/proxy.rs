@@ -115,17 +115,7 @@ impl ProxyClient {
     ) -> Result<Response<Body>, StatusCode> {
         let (parts, body) = req.into_parts();
 
-        let query = parts
-            .uri
-            .query()
-            .map(|q| format!("?{q}"))
-            .unwrap_or_default();
-        let url = format!(
-            "{}/{}{}",
-            target_base.trim_end_matches('/'),
-            remaining_path.trim_start_matches('/'),
-            query,
-        );
+        let url = target_url(target_base, remaining_path, parts.uri.query());
 
         let method = reqwest::Method::from_bytes(parts.method.as_str().as_bytes())
             .unwrap_or(reqwest::Method::GET);
@@ -139,19 +129,14 @@ impl ProxyClient {
             .to_string();
 
         for (name, value) in &parts.headers {
-            let name_str = name.as_str();
-            if is_hop_by_hop(name_str) {
-                continue;
-            }
-            if let Ok(v) = value.to_str() {
-                builder = builder.header(name_str, v);
+            if !is_hop_by_hop(name.as_str()) {
+                builder = builder.header(name, value);
             }
         }
 
-        if !original_host.is_empty() {
-            builder = builder.header("X-Forwarded-Host", &original_host);
+        for (name, value) in forwarding_headers(&original_host) {
+            builder = builder.header(name, value);
         }
-        builder = builder.header("X-Forwarded-Proto", "http");
 
         let req_stream = http_body_util::BodyStream::new(body).filter_map(|result| async move {
             match result {
@@ -176,12 +161,8 @@ impl ProxyClient {
 
         let mut response = Response::builder().status(status);
         for (name, value) in upstream_resp.headers() {
-            let name_str = name.as_str();
-            if is_hop_by_hop(name_str) {
-                continue;
-            }
-            if let Ok(v) = value.to_str() {
-                response = response.header(name_str, v);
+            if !is_hop_by_hop(name.as_str()) {
+                response = response.header(name, value);
             }
         }
 
@@ -244,17 +225,7 @@ impl ProxyClient {
                     .collect()
             })
             .unwrap_or_default();
-        let query = parts
-            .uri
-            .query()
-            .map(|q| format!("?{q}"))
-            .unwrap_or_default();
-        let url = format!(
-            "{}/{}{}",
-            target_base.trim_end_matches('/'),
-            remaining_path.trim_start_matches('/'),
-            query,
-        );
+        let url = target_url(target_base, remaining_path, parts.uri.query());
 
         let method = reqwest::Method::from_bytes(parts.method.as_str().as_bytes())
             .unwrap_or(reqwest::Method::GET);
@@ -278,15 +249,14 @@ impl ProxyClient {
             if is_hop_by_hop(name_str) {
                 continue;
             }
+            builder = builder.header(name, value);
             if let Ok(v) = value.to_str() {
-                builder = builder.header(name_str, v);
                 request_headers.insert(name_str.to_string(), v.to_string());
             }
         }
-        if !original_host.is_empty() {
-            builder = builder.header("X-Forwarded-Host", &original_host);
+        for (name, value) in forwarding_headers(&original_host) {
+            builder = builder.header(name, value);
         }
-        builder = builder.header("X-Forwarded-Proto", "http");
 
         let body_bytes = axum::body::to_bytes(body, max_buffer).await.map_err(|e| {
             tracing::error!(error = %e, "observed request body exceeds capture buffer");
@@ -320,8 +290,8 @@ impl ProxyClient {
             if is_hop_by_hop(name_str) {
                 continue;
             }
+            response_builder = response_builder.header(name, value);
             if let Ok(v) = value.to_str() {
-                response_builder = response_builder.header(name_str, v);
                 response_headers.insert(name_str.to_string(), v.to_string());
             }
         }
@@ -379,6 +349,17 @@ pub struct ProxyCaptureRaw {
     pub response_content_type: Option<String>,
 }
 
+/// The backend URL a request is relayed to. One slash is taken from the start of the path, not all: a path that
+/// starts with empty segments (`//a`) reaches the backend as the caller wrote it. An empty query (`?`) is kept.
+pub(crate) fn target_url(target_base: &str, remaining_path: &str, query: Option<&str>) -> String {
+    let path = remaining_path.strip_prefix('/').unwrap_or(remaining_path);
+    let base = target_base.trim_end_matches('/');
+    match query {
+        Some(q) => format!("{base}/{path}?{q}"),
+        None => format!("{base}/{path}"),
+    }
+}
+
 /// Host and port of a URL for the TCP check: the URL's port, else 443 for https and 80 for anything else.
 fn parse_host_port(url: &str) -> Result<(String, u16), String> {
     let parsed = url::Url::parse(url).map_err(|e| crate::i18n::tr("invalid URL: {0}", &[&e]))?;
@@ -401,6 +382,13 @@ fn upstream_error_status(e: &reqwest::Error) -> StatusCode {
     }
 }
 
+/// What the relay adds to the request it sends on, after the caller's own headers of the same name: where the caller
+/// reached Mimicway, which the backend cannot see otherwise.
+fn forwarding_headers(original_host: &str) -> impl Iterator<Item = (&'static str, &str)> {
+    let host = (!original_host.is_empty()).then_some(("x-forwarded-host", original_host));
+    host.into_iter().chain([("x-forwarded-proto", "http")])
+}
+
 fn is_hop_by_hop(name: &str) -> bool {
     matches!(
         name,
@@ -415,6 +403,9 @@ fn is_hop_by_hop(name: &str) -> bool {
             | "proxy-connection"
     )
 }
+
+#[cfg(test)]
+mod judge;
 
 #[cfg(test)]
 mod tests {
@@ -502,27 +493,19 @@ mod tests {
     }
 
     #[test]
-    fn url_construction() {
-        let base = "http://svc.default.svc:8080/";
-        let remaining = "/api/users";
-        let combined = format!(
-            "{}/{}",
-            base.trim_end_matches('/'),
-            remaining.trim_start_matches('/'),
+    fn target_url_joins_base_and_path_with_one_slash() {
+        let url = target_url("http://svc.default.svc:8080/", "/api/users", None);
+        assert_eq!(url, "http://svc.default.svc:8080/api/users");
+        assert_eq!(
+            target_url("http://svc:8080", "api/v1", Some("a=1")),
+            "http://svc:8080/api/v1?a=1"
         );
-        assert_eq!(combined, "http://svc.default.svc:8080/api/users");
     }
 
     #[test]
-    fn url_construction_no_trailing_slash() {
-        let base = "http://svc:8080";
-        let remaining = "api/v1";
-        let combined = format!(
-            "{}/{}",
-            base.trim_end_matches('/'),
-            remaining.trim_start_matches('/'),
-        );
-        assert_eq!(combined, "http://svc:8080/api/v1");
+    fn target_url_keeps_empty_leading_segments_and_an_empty_query() {
+        assert_eq!(target_url("http://svc/", "//a", None), "http://svc//a");
+        assert_eq!(target_url("http://svc", "/x", Some("")), "http://svc/x?");
     }
 
     use crate::server::test_support::capture_one_raw_request;

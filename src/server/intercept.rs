@@ -155,11 +155,7 @@ async fn do_proxy(
         None => format!("/{}", service.name),
     };
     let proxy_path = path.strip_prefix(&prefix).unwrap_or(path);
-    let target = format!(
-        "{}/{}",
-        service.real_target_url.trim_end_matches('/'),
-        proxy_path.trim_start_matches('/')
-    );
+    let target = crate::engine::target_url(&service.real_target_url, proxy_path, None);
     tracing::info!(
         service_key = %service.name,
         method = %method_str,
@@ -337,26 +333,28 @@ async fn handle_service(
         }
     }
 
-    let uri = req.uri().clone();
-    let query_params = extract_query_params(uri.query());
-    let headers = extract_headers(req.headers());
+    // `parts` keeps the request's own headers for a proxy rule, which relays them: the map the rules read holds one value
+    // per name and only values that are text.
+    let (parts, body) = req.into_parts();
+    let query_params = extract_query_params(parts.uri.query());
+    let headers = extract_headers(&parts.headers);
     let content_type = headers.get("content-type").cloned();
 
-    let budget = req
-        .extensions()
+    let budget = parts
+        .extensions
         .get::<crate::server::limits::BodyBudget>()
         .cloned();
-    let stream_budget = req
-        .extensions()
+    let stream_budget = parts
+        .extensions
         .get::<crate::server::limits::StreamBudget>()
         .cloned();
-    let content_length = req
-        .headers()
+    let content_length = parts
+        .headers
         .get(axum::http::header::CONTENT_LENGTH)
         .cloned();
     // `_held` keeps this body's share of the memory budget until the response is built.
     let (body_bytes, _held) = match crate::server::limits::read_body(
-        req.into_body(),
+        body,
         content_length.as_ref(),
         crate::server::limits::MAX_SERVICE_BODY,
         budget.as_ref(),
@@ -408,7 +406,7 @@ async fn handle_service(
             rule = %rule.name, mode = "proxy",
             "rule matched with action=proxy"
         );
-        let proxy_req = rebuild_request_for_proxy(&method_str, &uri, &request_data);
+        let proxy_req = Request::from_parts(parts, Body::from(request_data.body));
         return do_proxy(
             state,
             service,
@@ -515,24 +513,6 @@ async fn handle_service(
             (status, "chaos error injected").into_response()
         }
     }
-}
-
-fn rebuild_request_for_proxy(
-    method: &str,
-    uri: &axum::http::Uri,
-    data: &RequestData,
-) -> Request<Body> {
-    let mut builder = axum::http::Request::builder()
-        .method(method)
-        .uri(uri.clone());
-    for (k, v) in &data.headers {
-        if let Ok(hv) = HeaderValue::from_str(v) {
-            builder = builder.header(k.as_str(), hv);
-        }
-    }
-    builder
-        .body(Body::from(data.body.clone()))
-        .unwrap_or_else(|_| Request::new(Body::empty()))
 }
 
 fn is_wsdl_request(query: Option<&str>) -> bool {
@@ -948,8 +928,8 @@ mod tests {
 
     #[tokio::test]
     async fn rule_level_proxy_action_preserves_query_headers_method_and_body() {
-        // The same check through the other proxy path: a mocked service whose rule says proxy, which rebuilds the request
-        // (rebuild_request_for_proxy) instead of forwarding the original one. The target must see no difference.
+        // The same check through the other proxy path: a mocked service whose rule says proxy, which relays the request
+        // with the body it already read to match the rules. The target must see no difference.
         let (target_ready_tx, target_ready_rx) = tokio::sync::oneshot::channel();
         let target_server = tokio::spawn(capture_one_raw_request(target_ready_tx));
         let target_port = target_ready_rx.await.unwrap();

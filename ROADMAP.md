@@ -23,7 +23,7 @@ Each item has an identifier that never changes, a size (S: a day or less, M: a f
 3. [Make it indispensable](#3-make-it-indispensable): U1, U2, then U3 to U18, in the listed order.
 4. [Engineering backlog](#4-engineering-backlog): taken alongside, when they unblock an item above.
 
-The judges come before the lists above: E37 to E40, tests whose verdict comes from outside the code under test (the real backend, axe-core, mutations, measured growth).
+The judges come before the lists above: E38 to E40, tests whose verdict comes from outside the code under test (the real backend, axe-core, mutations, measured growth).
 
 At the maintainers' request, templates in response headers then server-sent events came first, before the lists above; both are in the [changelog](CHANGELOG.md).
 
@@ -642,16 +642,6 @@ Size S
 
 **Done when.** A test stops a server holding an open stream and a long chaos delay, and sees it drain and flush within a second; a chaos delay past its bound is refused when saved.
 
-### E37. The proxy judged by a direct call
-
-Size M
-
-**Why.** Mimicway forwards a request in two ways, a service in proxy mode and a rule whose action is `proxy` (`src/engine/proxy.rs`). Its tests check the cases someone thought of (hop-by-hop headers dropped by `is_hop_by_hop`, a timeout answered 504), but nothing compares what an application gets through Mimicway with what it would get from the service itself: a header, a body or a status that the forwarding changes unnoticed only shows in a user's application.
-
-**What.** A property test generates requests (method, path and query with encoded characters, repeated headers, bodies empty, binary, large and chunked) for a local backend that answers from what it receives, sends each one directly and through both forwarding paths, and compares the responses byte for byte, except the headers HTTP lets a proxy change (RFC 9110 §7.6.1), which the test takes from `is_hop_by_hop` itself rather than from a list of its own.
-
-**Done when.** The test runs in the CI with a fixed seed and number of cases; it fails when the forwarding drops or rewrites one header, shown by a deliberate change; its module documentation says what it does not see.
-
 ### E38. Accessibility judged by axe-core in the end-to-end tests
 
 Size M
@@ -731,3 +721,13 @@ Size M
 **What.** Inclusion in the union of the earlier rules, decided on the same model of independent fields, with a bound on the work for a service with many rules; the warning names every rule that takes part.
 
 **Done when.** The property test of the warning (`src/engine/matcher/conflict_judge.rs`) generates three rules and requires the report exactly when `first_match` never reaches the last one, and a service of 200 rules is checked within 50 ms.
+
+### E46. `OPTIONS` requests that reach the services
+
+Size S
+
+**Why.** The CORS layer of the router (`BrowserGuard::cors_layer`, tower-http) answers every `OPTIONS` request itself, with an empty 200 and its own headers, before Mimicway looks for a service. A rule on `OPTIONS`, which the rule form offers, never answers, and a service in proxy mode never forwards `OPTIONS` to its backend: an application that asks the real service which methods it allows gets Mimicway's answer. Browsers' preflights to services are meant to stay open (`api_cors_is_limited_to_listed_origins_while_mocks_stay_open`), but a preflight is an `OPTIONS` with `Origin` and `Access-Control-Request-Method`; other `OPTIONS` requests are ordinary requests.
+
+**What.** Only CORS preflights are answered by the layer; any other `OPTIONS` goes to the service, mocked or forwarded, and its response gets the same CORS headers as any other service response.
+
+**Done when.** A rule on `OPTIONS` answers a request without `Access-Control-Request-Method`, a preflight to a service is still answered as today, and the proxy judge (`src/engine/proxy/judge.rs`) generates `OPTIONS` again and passes.
