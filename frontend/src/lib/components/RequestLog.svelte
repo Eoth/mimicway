@@ -328,7 +328,14 @@
         {/if}
       </dl>
       {#if detailLog.stream?.sent?.length > 0}
-        <ol class="sent-events" aria-label={t('Events sent')} data-testid="request-log-detail-stream-events">
+        <!-- A list taller than its box scrolls: focusable, so that the keyboard can scroll it too (WCAG 2.1.1). -->
+        <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+        <ol
+          class="sent-events"
+          tabindex="0"
+          aria-label={t('Events sent')}
+          data-testid="request-log-detail-stream-events"
+        >
           {#each detailLog.stream.sent as sent}
             <li>
               {#if sent.event}<code class="dd-mono">{sent.event}</code>{/if}

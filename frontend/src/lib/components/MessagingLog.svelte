@@ -316,7 +316,9 @@
         </div>
         <div class="detail-row">
           <dt>{detailLog.body_truncated ? t('Body (truncated preview)') : t('Body')}</dt>
-          <dd class="dd-mono dd-break dd-body">{detailLog.body_preview}</dd>
+          <!-- A body taller than its box scrolls: focusable, so that the keyboard can scroll it too (WCAG 2.1.1). -->
+          <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+          <dd class="dd-mono dd-break dd-body" tabindex="0">{detailLog.body_preview}</dd>
         </div>
       </dl>
       <div class="modal-footer">
