@@ -169,8 +169,11 @@ jobs:
       - run: cargo build --features messaging-kafka
       - name: Start Mimicway with the Kafka feature
         run: |
-          mkdir -p data
-          DATA_PATH=./data ./target/debug/mimicway > mimicway.log 2>&1 &
+          # A data directory of its own, outside the checkout, given to the later steps too: the suite refuses to
+          # start without it, and without DISPOSABLE_DATA reported by the server.
+          export DATA_PATH="$RUNNER_TEMP/mimicway-data"
+          mkdir -p "$DATA_PATH" && echo "DATA_PATH=$DATA_PATH" >> "$GITHUB_ENV"
+          DISPOSABLE_DATA=true ./target/debug/mimicway > mimicway.log 2>&1 &
           for _ in $(seq 1 50); do
             if curl -sf http://localhost:7342/api/messaging/status | grep -q '"available":true'; then exit 0; fi
             sleep 0.2
@@ -285,8 +288,11 @@ jobs:
       - run: cargo build
       - name: Start Mimicway (embedded UI, no STATIC_DIR)
         run: |
-          mkdir -p data
-          DATA_PATH=./data ./target/debug/mimicway > mimicway.log 2>&1 &
+          # A data directory of its own, outside the checkout, given to the later steps too: the suite refuses to
+          # start without it, and without DISPOSABLE_DATA reported by the server.
+          export DATA_PATH="$RUNNER_TEMP/mimicway-data"
+          mkdir -p "$DATA_PATH" && echo "DATA_PATH=$DATA_PATH" >> "$GITHUB_ENV"
+          DISPOSABLE_DATA=true ./target/debug/mimicway > mimicway.log 2>&1 &
           for _ in $(seq 1 50); do curl -sf http://localhost:7342/api/health && exit 0; sleep 0.2; done
           cat mimicway.log; exit 1
       - working-directory: frontend

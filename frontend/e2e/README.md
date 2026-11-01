@@ -8,15 +8,17 @@ Playwright tests that drive a real Mimicway binary through a real browser. Two s
 ## Run
 
 ```bash
-# From the repository root: build the UI, then the binary (which embeds it), and start it with an empty data directory
+# From the repository root: build the UI, then the binary (which embeds it), and start it on a temporary data directory
 (cd frontend && npm run build) && cargo build
-mkdir -p data
-DATA_PATH=./data ./target/debug/mimicway &
+export DATA_PATH=$(mktemp -d)
+DISPOSABLE_DATA=true ./target/debug/mimicway &
 
 cd frontend
 npx playwright install chromium   # once
 npm run test:e2e
 ```
+
+The suite resets the configuration of the server it reaches, so it refuses to start unless that server reports `DISPOSABLE_DATA=true` in `/api/health`, and unless `DATA_PATH`, which some specs read back, is the same absolute directory outside the repository for the server and for Playwright (`e2e/global-setup.mjs`). An instance you keep mocks in is never touched.
 
 The suite reads the interface in English, its source language (`playwright.config.js`); `i18n.spec.js` checks the French interface and the language switch. A few specs start their own Mimicway (authentication, API base URL); they need `cargo build` first. The Kafka specs are skipped unless the binary was built with `--features messaging-kafka`.
 

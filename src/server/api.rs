@@ -113,12 +113,20 @@ pub fn routes() -> Router<AppState> {
 struct HealthResponse {
     status: &'static str,
     write_queue: crate::store::WriteQueueStatus,
+    disposable_data: bool,
+}
+
+/// Whether the server was started with `DISPOSABLE_DATA=true`, for tests that may wipe its data: the end-to-end suite
+/// refuses to run against any other server, so that it never resets a configuration someone keeps.
+fn disposable_data(lookup: impl Fn(&str) -> Option<String>) -> bool {
+    lookup("DISPOSABLE_DATA").is_some_and(|v| v.trim().eq_ignore_ascii_case("true"))
 }
 
 async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
     Json(HealthResponse {
         status: "ok",
         write_queue: state.store.writer_status(),
+        disposable_data: disposable_data(crate::settings::env),
     })
 }
 
@@ -1976,6 +1984,16 @@ mod uniqueness_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn data_is_disposable_only_when_the_server_was_told_so() {
+        use crate::settings::vars;
+        assert!(!disposable_data(vars(&[])));
+        assert!(!disposable_data(vars(&[("DISPOSABLE_DATA", "1")])));
+        assert!(!disposable_data(vars(&[("DISPOSABLE_DATA", "false")])));
+        assert!(disposable_data(vars(&[("DISPOSABLE_DATA", "true")])));
+        assert!(disposable_data(vars(&[("DISPOSABLE_DATA", " TRUE ")])));
+    }
 
     // require_super_admin() is what stands between any user and reset_config or restore_backup.
     #[test]

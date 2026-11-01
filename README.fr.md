@@ -138,6 +138,7 @@ Tout se règle par des variables d'environnement ; aucune n'est obligatoire.
 | `BIND_ADDRESS` | `127.0.0.1` | Interface d'écoute. `0.0.0.0` (ou `::`) accepte les connexions distantes ; l'image de conteneur la fixe. |
 | `ALLOWED_HOSTS` | *(vide)* | Noms d'hôte, séparés par des virgules, auxquels l'API de gestion répond, en plus de `localhost` et des adresses IP, auxquels elle répond toujours ; `*` pour tout nom. Vide, elle ne répond à aucun autre nom, sauf en écoute au-delà de la boucle locale avec l'authentification activée, où elle répond à tous. C'est ce qui empêche une page web d'atteindre l'API par un nom à elle (DNS rebinding). L'hôte d'`API_BASE_URL` est toujours accepté. |
 | `DATA_PATH` | `./data` | Répertoire de `mock-config.yaml` et de ses `backups/`. |
+| `DISPOSABLE_DATA` | `false` | `true` signale dans `/api/health` que les données de ce serveur peuvent être effacées : la suite de bout en bout refuse tout serveur qui ne le signale pas, pour ne jamais remettre à zéro une configuration que quelqu'un garde. Ne jamais le fixer sur une instance dont les données comptent. |
 | `STATIC_DIR` | *(l'interface intégrée au binaire)* | Un répertoire d'où servir l'interface à la place, pour développer l'interface ou en servir une version personnalisée. Un binaire construit sans l'interface lit `./frontend/dist`. |
 | `RUST_LOG` | `mimicway=info` | Filtre des journaux, par exemple `mimicway=debug`. |
 | `BACKUP_MAX_COUNT` | `5` | Sauvegardes conservées dans `{DATA_PATH}/backups/` avant rotation. |

@@ -602,16 +602,6 @@ Size S
 
 **Done when.** An import with a missing field shows which field, in both languages, shown by an end-to-end test.
 
-### E33. End-to-end tests that cannot reach a server holding real data
-
-Size S
-
-**Why.** The end-to-end suite resets the configuration of whatever answers on `localhost:7342`, and `frontend/e2e/README.md` starts that server with `DATA_PATH=./data`, the default data directory of a Mimicway run from the repository, where a contributor keeps their own mocks. Two specs also fall back to `../data` when `DATA_PATH` is unset. A contributor's running instance, or the suite started next to it, loses its configuration (a protected copy is kept 30 days).
-
-**What.** The documented and CI runs use a temporary data directory; the suite refuses to start unless the server it reaches says it was started for tests (an environment variable reported by `/api/health`, for instance), and no spec falls back to a directory of the repository.
-
-**Done when.** Running the suite against a server started without that variable fails before any request that writes, shown by a test.
-
 ### E34. The request log names the rule that forwarded a request
 
 Size S

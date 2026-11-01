@@ -17,6 +17,7 @@ const takesScreenshots = (name) =>
 export default defineConfig({
   testDir: './e2e',
   testMatch: fs.readdirSync(e2eDir).filter(takesScreenshots),
+  globalSetup: './e2e/global-setup.mjs',
   timeout: 15000,
   workers: 1,
   use: {

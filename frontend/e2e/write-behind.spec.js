@@ -1,17 +1,14 @@
 import { test, expect } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { dataDir } from './disposable-server.mjs';
 
 const API = 'http://localhost:7342/api';
 
 // The store applies a change in memory at once and writes mock-config.yaml in a background task (write-behind,
 // src/store/mod.rs). The test reads that file rather than the API, which answers from memory: the file is what a
 // restart would load (load_or_init), without stopping the server the whole suite shares.
-//
-// The file is looked for in DATA_PATH when Playwright gets it, else in ./data at the root of the repository, where
-// README.md starts the server.
-const dataDir = process.env.DATA_PATH || resolve(process.cwd(), '../data');
-const CONFIG_FILE = resolve(dataDir, 'mock-config.yaml');
+const CONFIG_FILE = resolve(dataDir(), 'mock-config.yaml');
 
 function readConfigFromDisk() {
   return readFileSync(CONFIG_FILE, 'utf-8');

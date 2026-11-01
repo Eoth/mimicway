@@ -138,6 +138,7 @@ Everything is set through environment variables; none is required.
 | `BIND_ADDRESS` | `127.0.0.1` | Interface to listen on. `0.0.0.0` (or `::`) accepts remote connections; the container image sets it. |
 | `ALLOWED_HOSTS` | *(empty)* | Comma-separated host names the management API answers to, besides `localhost` and IP addresses, which it always answers; `*` for any name. Empty, it answers no other name, except when listening beyond loopback with authentication on, where it answers any. This is what stops a web page from reaching the API through a name of its own (DNS rebinding). The host of `API_BASE_URL` is always answered. |
 | `DATA_PATH` | `./data` | Directory of `mock-config.yaml` and its `backups/`. |
+| `DISPOSABLE_DATA` | `false` | `true` reports in `/api/health` that the data of this server may be wiped: the end-to-end suite refuses any server that does not, so that it never resets a configuration someone keeps. Never set it on an instance whose data matters. |
 | `STATIC_DIR` | *(the UI embedded in the binary)* | A directory to serve the UI from instead, for UI development or a customized UI. A binary built without the UI reads `./frontend/dist`. |
 | `RUST_LOG` | `mimicway=info` | Log filter, for example `mimicway=debug`. |
 | `BACKUP_MAX_COUNT` | `5` | Backups kept in `{DATA_PATH}/backups/` before rotation. |

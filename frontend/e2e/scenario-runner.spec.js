@@ -5,10 +5,10 @@ import { test, expect } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { runScenario, loadScenario } from './scenario-runner.js';
+import { dataDir } from './disposable-server.mjs';
 
 const API = 'http://localhost:7342/api';
-const dataDir = process.env.DATA_PATH || resolve(process.cwd(), '../data');
-const CONFIG_FILE = resolve(dataDir, 'mock-config.yaml');
+const CONFIG_FILE = resolve(dataDir(), 'mock-config.yaml');
 function readConfigFromDisk() {
   return readFileSync(CONFIG_FILE, 'utf-8');
 }
