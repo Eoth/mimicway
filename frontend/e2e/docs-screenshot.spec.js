@@ -2,7 +2,7 @@
 // server is involved. It runs in the standard suite, where docsScreenshot() frames and checks without capturing; it
 // is skipped when the screenshots are regenerated, where a passing call would write an image of this page into the
 // guide.
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures.mjs';
 import { docsScreenshot, DOCS_SCREENSHOTS_ENABLED } from './docs-screenshot.js';
 import { runScenario } from './scenario-runner.js';
 

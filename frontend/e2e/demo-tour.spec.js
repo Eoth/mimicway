@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures.mjs';
 import { docsScreenshot, DOCS_SCREENSHOTS_ENABLED } from './docs-screenshot.js';
 
 // The demo at the top of the README: the screens a first mock goes through, played on the real binary. Each step

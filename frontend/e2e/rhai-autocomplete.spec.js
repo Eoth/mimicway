@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures.mjs';
 import { docsScreenshot } from './docs-screenshot.js';
 import { openAddRuleForm, validService } from './rule-form-helpers.js';
 

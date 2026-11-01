@@ -1,7 +1,7 @@
 // With authentication on, the admins of a group manage who belongs to it. The shared instance runs without
 // authentication, so the browser is told that it is on and the sign-in is answered for a group admin; every other
 // call, the change of members included, reaches the real server, which is where the result is checked.
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures.mjs';
 import { docsScreenshot } from './docs-screenshot.js';
 
 const API = 'http://localhost:7342/api';

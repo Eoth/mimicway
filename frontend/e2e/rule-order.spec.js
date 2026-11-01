@@ -1,6 +1,6 @@
 // The order of a service's rules decides which one answers: the first match wins. Reordering them by drag and drop
 // changes what the service returns, which is what this checks, through the list, the API and a real call.
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures.mjs';
 import { docsScreenshot } from './docs-screenshot.js';
 
 const API = 'http://localhost:7342/api';

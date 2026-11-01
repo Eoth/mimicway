@@ -23,7 +23,7 @@ Each item has an identifier that never changes, a size (S: a day or less, M: a f
 3. [Make it indispensable](#3-make-it-indispensable): U1, U2, then U3 to U18, in the listed order.
 4. [Engineering backlog](#4-engineering-backlog): taken alongside, when they unblock an item above.
 
-The judges come before the lists above: E38 to E40, tests whose verdict comes from outside the code under test (the real backend, axe-core, mutations, measured growth).
+The judges come before the lists above: E39 and E40, tests whose verdict comes from outside the code under test (the real backend, axe-core, mutations, measured growth).
 
 At the maintainers' request, templates in response headers then server-sent events came first, before the lists above; both are in the [changelog](CHANGELOG.md).
 
@@ -632,16 +632,6 @@ Size S
 
 **Done when.** A test stops a server holding an open stream and a long chaos delay, and sees it drain and flush within a second; a chaos delay past its bound is refused when saved.
 
-### E38. Accessibility judged by axe-core in the end-to-end tests
-
-Size M
-
-**Why.** The interface aims at the French accessibility reference (RGAA, built on WCAG 2.1 AA). Keyboard and screen reader checks are written by hand (`frontend/e2e/rule-form-keyboard.spec.js`, E15) and only cover what was thought of; no tool judges every screen the suite opens.
-
-**What.** `@axe-core/playwright` as a development dependency (weight and licence given in its commit), run with the WCAG 2.1 A and AA rules on every screen the suite reaches, in both themes and both languages. The screens come from the suite itself (a shared fixture checks the page after each navigation), not from a list written by hand. A known violation waits in an exception file with an expiry date that the check enforces.
-
-**Done when.** A violation added on purpose (an image without a text alternative, a text contrast below 4.5:1) fails the suite in the CI, and the suite never runs against a server that holds real data (E33).
-
 ### E39. Mutation testing of the rule engine
 
 Size M
@@ -721,3 +711,13 @@ Size S
 **What.** Only CORS preflights are answered by the layer; any other `OPTIONS` goes to the service, mocked or forwarded, and its response gets the same CORS headers as any other service response.
 
 **Done when.** A rule on `OPTIONS` answers a request without `Access-Control-Request-Method`, a preflight to a service is still answered as today, and the proxy judge (`src/engine/proxy/judge.rs`) generates `OPTIONS` again and passes.
+
+### E47. Keyboard access to the suggestion list of the script editor
+
+Size S
+
+**Why.** axe-core, run live on the rule form, reported the suggestion list of the script editor (`#rule-script-rhai-suggestions`) as a scrollable region that the keyboard cannot reach (`scrollable-region-focusable`, WCAG 2.1.1). The list follows the combobox pattern (the focus stays in the editor, the arrow keys move the active option), which the rule does not account for; whether a long list scrolls to the active option, and whether every option can be reached, was never checked. The accessibility check of the end-to-end suite judges copies of still screens, where the list, shown only while the editor has the focus, never appears.
+
+**What.** A keyboard test that opens a list longer than its height and goes through every option with the arrow keys, each one scrolled into view; then either the list made reachable as axe-core asks, or the rule set aside for this element in `frontend/e2e/a11y-exceptions.json` with the reason, if the test shows the keyboard reaches everything.
+
+**Done when.** The keyboard test passes in the CI, and axe-core run on the open list reports nothing that is not explained.

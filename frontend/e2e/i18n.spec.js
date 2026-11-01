@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures.mjs';
 
 // The interface follows the browser's language (English unless a catalogue exists for it) and the language picked
 // in the header, which is remembered.

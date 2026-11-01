@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures.mjs';
 
 // The page takes its theme before the application has loaded anything: someone who chose the dark theme does not see
 // a light page while the runtime configuration and the language catalogue are fetched.

@@ -1,7 +1,7 @@
 // Replays the scenarios of scenarios/*.scenarios.json (see scenario-runner.js). A scenario only drives the interface:
 // each test prepares its data through the API first, and checks after the scenario what the interface does not show
 // (what the mock answers, what was saved), with real calls.
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures.mjs';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { runScenario, loadScenario } from './scenario-runner.js';

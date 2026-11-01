@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures.mjs';
 
 // A purely mocked service (empty real_target_url) has nothing to forward to: a request no rule matches gets a 404 that
 // says why, where a mocked service that has a target answers a plain 404.

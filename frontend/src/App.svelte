@@ -608,7 +608,7 @@
     onCancel={() => (resetPending = false)}
   />
 
-  <main id="main-content" class="app-main">
+  <main id="main-content" class="app-main" data-view={view}>
     <Notification message={notification.message} type={notification.type} visible={notification.visible} />
 
     {#if view === 'logs'}

@@ -73,7 +73,7 @@ One file per functional domain, holding several scenarios:
 Add a scenario to the domain file it belongs to, with a name unique in that file; a new domain is a deliberate choice, listed above. Scenario names, like test titles and comments, are written in English: CI fails otherwise (`scripts/check-french-comments.mjs`). Replay it from a spec:
 
 ```js
-import { test } from '@playwright/test';
+import { test } from './fixtures.mjs';
 import { runScenario, loadScenario } from './scenario-runner.js';
 
 test('create a service', async ({ page }) => {

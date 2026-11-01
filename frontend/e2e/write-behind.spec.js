@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures.mjs';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { dataDir } from './disposable-server.mjs';

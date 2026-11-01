@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures.mjs';
 import { docsScreenshot } from './docs-screenshot.js';
 import { spawn } from 'node:child_process';
 import { mkdtempSync, rmSync, readdirSync } from 'node:fs';

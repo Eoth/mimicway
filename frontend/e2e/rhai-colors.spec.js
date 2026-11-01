@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures.mjs';
 import { openAddRuleForm, validService } from './rule-form-helpers.js';
 
 const API = 'http://localhost:7342/api';
