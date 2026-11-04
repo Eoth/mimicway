@@ -721,3 +721,23 @@ Size S
 **What.** A keyboard test that opens a list longer than its height and goes through every option with the arrow keys, each one scrolled into view; then either the list made reachable as axe-core asks, or the rule set aside for this element in `frontend/e2e/a11y-exceptions.json` with the reason, if the test shows the keyboard reaches everything.
 
 **Done when.** The keyboard test passes in the CI, and axe-core run on the open list reports nothing that is not explained.
+
+### E48. The proxy judge on a tower-http upgrade, `Vary` included
+
+Size S
+
+**Why.** tower-http 0.7 (0.6.11 today) cannot be taken as it is: the dependency update was left open because the proxy judge (`src/engine/proxy/judge.rs`) does not say whether the CORS layer still leaves a relayed response as the backend sent it, `Vary` in particular, which the layer rewrites. The tree also holds two copies of tower-http once reqwest is on its own version, which doubles what the build compiles and the review has to read. It touches E46, which moves where the layer answers.
+
+**What.** The judge generates `Vary` (and `Origin`, `Access-Control-Request-Method` on the request side) among its headers and requires the relayed response to carry the backend's `Vary` values, with the layer's own added and none lost. Then the upgrade of tower-http, once reqwest and Mimicway agree on one copy (`cargo tree --locked -d` shows a single tower-http).
+
+**Done when.** The judge is red on a layer that drops or replaces `Vary`, green on the current one, and tower-http 0.7 passes it with one copy in `cargo tree --locked -d`.
+
+### E49. A red run of the Rust job on the merge of the Rust minor and patch group
+
+Size S
+
+**Why.** The run of the CI on the merge of the `rust-minor-and-patch` group (7 crates, `Cargo.lock` only) failed in `cargo test --features tcp-mock` (exit code 101), while the commit before it passed. The same command, replayed locally on that commit, passed 12 times, 6 of them pinned to 2 cores. The failing test is unknown: the log of a run cannot be read without a token. E44 (a port another test takes) is the likely cause, not a proven one.
+
+**What.** Rerun the job on that commit with its log, name the failing test, and decide between E44 and a real break of one of the 7 crates. If it is E44, fix E44; the other dependency updates wait for a green run.
+
+**Done when.** The test that failed is named, and the Rust job is green on the commit that follows.

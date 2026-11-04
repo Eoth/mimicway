@@ -53,3 +53,8 @@ updates:
     groups:
       base-images:
         patterns: ["*"]
+    ignore:
+      # The CI and the frontend build stay on Node 24 (the LTS line); an odd-numbered release, such as Node 25, stops
+      # being maintained within months and is not a base to build on. The next even-numbered major is taken by hand.
+      - dependency-name: node
+        update-types: ["version-update:semver-major"]
