@@ -682,16 +682,6 @@ Size S
 
 **Done when.** The scenario runs in the CI on a `tcp-mock` binary and passes, and the guide shows the screen.
 
-### E44. Raw TCP API tests that take a port another test may take
-
-Size S
-
-**Why.** `creations_at_the_same_time_are_all_kept_or_refused` (`src/server/api/tcp_tests.rs`) failed once in a full `cargo test --features tcp-mock` run and passed in the three next ones and alone. Its `free_port()` binds port 0, reads the port and closes it: between that close and the mock's own bind, another test of the same run can take the port, and the creation is refused.
-
-**What.** Ports that no other test can take between the choice and the bind: the listener kept open and handed over, or a port range owned by this test module.
-
-**Done when.** The test passes 200 full runs in a row, and a test shows that a port chosen for a mock cannot be given to another one in the meantime.
-
 ### E45. A rule hidden by several rules together
 
 Size M
@@ -736,8 +726,18 @@ Size S
 
 Size S
 
-**Why.** The run of the CI on the merge of the `rust-minor-and-patch` group (7 crates, `Cargo.lock` only) failed in `cargo test --features tcp-mock` (exit code 101), while the commit before it passed. The same command, replayed locally on that commit, passed 12 times, 6 of them pinned to 2 cores. The failing test is unknown: the log of a run cannot be read without a token. E44 (a port another test takes) is the likely cause, not a proven one.
+**Why.** The run of the CI on the merge of the `rust-minor-and-patch` group (7 crates, `Cargo.lock` only) failed in `cargo test --features tcp-mock` (exit code 101), while the commit before it passed; the step `cargo test` before it, on the same tests without the feature, passed. The log cannot be read without a token, and the public annotations only give the exit code. Two tests were found failing at random on the code before that merge, neither tied to the 7 crates, both fixed since: the conflict judge (`conflict_reported_exactly_when_first_match_never_reaches_the_rule`) failed 2 runs in 60 on fresh seeds, on a rule hidden behind a condition `id == ""` that a captured segment can never meet; the raw TCP API test `creations_at_the_same_time_are_all_kept_or_refused` failed when two of its eight ports, each read from a closed port-0 listener, were equal, which the kernel gave in 38 runs out of 20,000. The first is the likely cause, not a proven one.
 
-**What.** Rerun the job on that commit with its log, name the failing test, and decide between E44 and a real break of one of the 7 crates. If it is E44, fix E44; the other dependency updates wait for a green run.
+**What.** Rerun the job on that commit with its log (a maintainer, with a token) and name the failing test; if it is neither of the two, open its ticket.
 
 **Done when.** The test that failed is named, and the Rust job is green on the commit that follows.
+
+### E50. Property tests that draw new cases on every CI run
+
+Size S
+
+**Why.** The property tests (`conflict_judge.rs`, `json_pointer/tests.rs`, `template.rs`, the two `proptests.rs` of `server/suggestion/`) draw new cases on every run. A defect they find then turns the CI red on whatever commit runs next, as a dependency update did with the conflict judge (E49), and the failing case is lost with the runner: the `proptest-regressions/` file stays on it, and the log needs a token. A fixed seed would keep the CI on known cases and leave exploration to a run by hand; a drawn seed keeps finding defects.
+
+**What.** Decide between a fixed seed in the CI (`PROPTEST_RNG_SEED`, read by proptest 1.12 when the test's config keeps the defaults), with an exploration run of many seeds when a judge or its subject changes, and drawn seeds printed in the job so a red run can be replayed. Write the decision where the tests are, then apply it to every property test, found by reading the code.
+
+**Done when.** Every property test runs on the chosen seeds in the CI, a test or check refuses one that does not, and a red run can be replayed from what the job shows.
