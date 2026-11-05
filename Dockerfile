@@ -1,5 +1,5 @@
 # Base images are pinned by digest (the tag is kept for readability); Dependabot proposes the updates.
-FROM node:24-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1 AS frontend
+FROM node:24-alpine@sha256:8a32c8cf649a49915a66e81e7a609223c708d0adabf288ee3f4077d765542f85 AS frontend
 WORKDIR /build/frontend
 COPY frontend/package.json frontend/package-lock.json ./
 # A package of the tree lives in the repository (package.json, `deepmerge`): npm ci installs it from there.
