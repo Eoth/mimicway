@@ -741,3 +741,13 @@ Size S
 **What.** Decide between a fixed seed in the CI (`PROPTEST_RNG_SEED`, read by proptest 1.12 when the test's config keeps the defaults), with an exploration run of many seeds when a judge or its subject changes, and drawn seeds printed in the job so a red run can be replayed. Write the decision where the tests are, then apply it to every property test, found by reading the code.
 
 **Done when.** Every property test runs on the chosen seeds in the CI, a test or check refuses one that does not, and a red run can be replayed from what the job shows.
+
+### E51. CodeQL for Rust red on the merge of the actions group
+
+Size S
+
+**Why.** The CI run on the merge of the `actions` group (#26, `github/codeql-action` 4.38.2 to 4.39.1 among others) failed in the `analyze` step of the CodeQL (rust) job after 7 minutes, with no annotation; the log cannot be read without a token. The same job passed with 4.38.2 on the commit before, which holds the same Rust code, and with 4.39.1 on the head of the pull request, which holds older Rust code. A failure of the service and a break of the new version on the current code both fit.
+
+**What.** Rerun the failed job on that commit (a maintainer, with a token) and read the log of the first attempt. If the rerun passes, note it here and close this; if it fails again, pin `github/codeql-action` back to 4.38.2 with a dated reason, or fix what the log names.
+
+**Done when.** The CodeQL (rust) job is green on the tip of `develop`, and the cause of the red run is written here.
