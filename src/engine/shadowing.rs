@@ -279,18 +279,23 @@ impl PathShape {
                 })
     }
 
-    /// What the pattern itself says of the segments it accepts: a literal fixes one, a parameter needs it present.
+    /// What the pattern itself says of the segments it accepts: a literal fixes one, a parameter needs it present and
+    /// not empty (`match_path` drops empty segments, so `{id}` never captures "").
     fn segment_literals(&self) -> Vec<Literal<'static>> {
+        let literal = |i, positive, op| Literal {
+            field: Field::Segment(i),
+            positive,
+            test: Cow::Owned(op),
+        };
         self.tokens
             .iter()
             .enumerate()
-            .map(|(i, token)| Literal {
-                field: Field::Segment(i),
-                positive: true,
-                test: Cow::Owned(match token {
-                    Token::Literal(text) => Operator::Eq(text.clone()),
-                    Token::Param(_) => Operator::Exists,
-                }),
+            .flat_map(|(i, token)| match token {
+                Token::Literal(text) => vec![literal(i, true, Operator::Eq(text.clone()))],
+                Token::Param(_) => vec![
+                    literal(i, true, Operator::Exists),
+                    literal(i, false, Operator::Eq(String::new())),
+                ],
             })
             .collect()
     }

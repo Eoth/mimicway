@@ -202,6 +202,38 @@ fn a_path_parameter_condition_reads_the_segment_its_rule_captures() {
 }
 
 #[test]
+fn a_captured_segment_is_never_empty() {
+    // Found by the conflict judge: `id` = "" was taken as a request the later rule answers alone, so the earlier rule,
+    // which takes every other one, was not reported as hiding it.
+    let header_ab = Condition {
+        source: ConditionSource::Header("H".into()),
+        operator: Operator::Contains("ab".into()),
+    };
+    let id_is = |v: &str| Condition {
+        source: ConditionSource::PathParam("id".into()),
+        operator: eq(v),
+    };
+    let first = group(vec![], vec![header_ab.clone()]);
+    let second = group(vec![], vec![id_is(""), header_ab.clone()]);
+    let captured = Some("/{id}/*".to_string());
+    assert!(hides(
+        &shape("GET", &None, &first),
+        &shape("GET", &captured, &second)
+    ));
+    // Without a sub-path that captures it, `id` is the listen path parameter, read as any text: not proven.
+    assert!(!hides(
+        &shape("GET", &None, &first),
+        &shape("GET", &None, &second)
+    ));
+    // A non-empty value stays possible.
+    let second = group(vec![], vec![id_is("a"), header_ab]);
+    assert!(!hides(
+        &shape("GET", &None, &first),
+        &shape("GET", &captured, &second)
+    ));
+}
+
+#[test]
 fn a_real_regular_expression_is_only_proven_against_itself() {
     let digits = group(vec![query("q", Operator::Regex("^[0-9]+$".into()))], vec![]);
     let digit = group(vec![query("q", Operator::Regex("^[0-9]$".into()))], vec![]);
