@@ -3388,10 +3388,8 @@ mod tests {
         .await;
         let client = reqwest::Client::new();
 
-        // The service needs a port that can be connected to: reserve a free one.
-        let probe = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let port = probe.local_addr().unwrap().port();
-        drop(probe);
+        // The service needs a port that can be connected to and that no other test receives meanwhile.
+        let port = crate::test_ports::reserve_port();
 
         let created = client
             .post(format!("{base}/tcp/services"))

@@ -20,6 +20,7 @@ static ALLOCATOR: mimicway_alloc::Counting = mimicway_alloc::Counting;
 //   messaging/ Kafka, compiled only with the "messaging-kafka" feature
 //   tcp/       raw TCP mocks, compiled only with the "tcp-mock" feature
 //   fuzzing    entry points of the fuzz targets (fuzz/), compiled by cargo-fuzz only
+//   test_ports ports that tests hand to a server they do not bind themselves, compiled for tests only
 pub mod auth;
 pub mod engine;
 #[cfg(fuzzing)]
@@ -33,3 +34,7 @@ pub(crate) mod settings;
 pub mod store;
 #[cfg(feature = "tcp-mock")]
 pub mod tcp;
+#[cfg(test)]
+pub(crate) mod test_ports;
+#[cfg(test)]
+mod test_ports_tests;

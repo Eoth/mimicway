@@ -2,6 +2,7 @@
 //! stored as they are checked.
 use crate::models::MockConfig;
 use crate::server::test_support::{auth_disabled, serve, temp_data_dir, test_state};
+use crate::test_ports::reserve_port;
 use reqwest::StatusCode;
 use serde_json::{Value, json};
 
@@ -10,13 +11,6 @@ async fn start() -> (String, reqwest::Client) {
     let state = test_state(&data_dir, MockConfig::empty(), auth_disabled()).await;
     let root = serve(crate::server::build_router(state, &data_dir)).await;
     (format!("{root}/api/tcp/services"), reqwest::Client::new())
-}
-
-fn free_port() -> u16 {
-    std::net::TcpListener::bind("127.0.0.1:0")
-        .and_then(|l| l.local_addr())
-        .map(|a| a.port())
-        .expect("free port")
 }
 
 fn tcp_service(name: &str, port: u16) -> Value {
@@ -44,7 +38,7 @@ async fn creations_at_the_same_time_are_all_kept_or_refused() {
     // one to finish erased the others, which had been answered 201.
     let creations = (0..8).map(|i| {
         let (url, client) = (url.clone(), client.clone());
-        let body = tcp_service(&format!("svc-{i}"), free_port());
+        let body = tcp_service(&format!("svc-{i}"), reserve_port());
         async move { client.post(&url).json(&body).send().await.unwrap().status() }
     });
     let statuses = futures_util::future::join_all(creations).await;
@@ -64,22 +58,22 @@ async fn a_name_that_differs_only_by_surrounding_spaces_is_the_same_tcp_service(
         async move { client.post(&url).json(&body).send().await.unwrap().status() }
     };
     assert_eq!(
-        status(tcp_service(" svc ", free_port())).await,
+        status(tcp_service(" svc ", reserve_port())).await,
         StatusCode::CREATED
     );
     assert_eq!(names(&url, &client).await, ["svc"]);
     assert_eq!(
-        status(tcp_service("svc", free_port())).await,
+        status(tcp_service("svc", reserve_port())).await,
         StatusCode::BAD_REQUEST
     );
     assert_eq!(
-        status(tcp_service("svc  ", free_port())).await,
+        status(tcp_service("svc  ", reserve_port())).await,
         StatusCode::BAD_REQUEST
     );
 
     let renamed = client
         .put(format!("{url}/svc"))
-        .json(&tcp_service("other ", free_port()))
+        .json(&tcp_service("other ", reserve_port()))
         .send()
         .await
         .unwrap();
@@ -92,14 +86,14 @@ async fn an_update_or_a_deletion_of_a_missing_tcp_service_changes_nothing() {
     let (url, client) = start().await;
     let created = client
         .post(&url)
-        .json(&tcp_service("svc", free_port()))
+        .json(&tcp_service("svc", reserve_port()))
         .send()
         .await
         .unwrap();
     assert_eq!(created.status(), StatusCode::CREATED);
     let updated = client
         .put(format!("{url}/missing"))
-        .json(&tcp_service("missing", free_port()))
+        .json(&tcp_service("missing", reserve_port()))
         .send()
         .await
         .unwrap();

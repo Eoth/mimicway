@@ -170,9 +170,7 @@ mod tests {
         let runtime = TcpRuntime::load_and_spawn(&dir, crate::tcp::LOOPBACK).await;
 
         // A real port (not 0), so that the second replace() reuses exactly the same one.
-        let probe = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let port = probe.local_addr().unwrap().port();
-        drop(probe);
+        let port = crate::test_ports::reserve_port();
 
         let config = TcpConfig {
             services: vec![TcpService {

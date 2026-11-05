@@ -5,18 +5,15 @@
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-fn free_port() -> u16 {
-    std::net::TcpListener::bind("127.0.0.1:0")
-        .and_then(|l| l.local_addr())
-        .map(|a| a.port())
-        .expect("free port")
-}
+#[path = "../src/test_ports.rs"]
+mod test_ports;
+use test_ports::reserve_port;
 
 #[tokio::test]
 async fn sigterm_drains_pending_writes_and_exits_cleanly() {
     let data_dir = std::env::temp_dir().join(format!("mimicway-sigterm-{}", fastrand::u64(..)));
     std::fs::create_dir_all(&data_dir).unwrap();
-    let port = free_port();
+    let port = reserve_port();
     let mut child = Command::new(env!("CARGO_BIN_EXE_mimicway"))
         .env("DATA_PATH", &data_dir)
         .env("STATIC_DIR", &data_dir)

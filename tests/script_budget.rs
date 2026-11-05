@@ -27,12 +27,9 @@ impl Drop for Server {
     }
 }
 
-fn free_port() -> u16 {
-    std::net::TcpListener::bind("127.0.0.1:0")
-        .and_then(|l| l.local_addr())
-        .map(|a| a.port())
-        .expect("free port")
-}
+#[path = "../src/test_ports.rs"]
+mod test_ports;
+use test_ports::reserve_port;
 
 // One mocked service whose rules each run one script on the request they match, by sub-path.
 async fn start(rules: &[(&str, &str)]) -> Server {
@@ -58,7 +55,7 @@ async fn start(rules: &[(&str, &str)]) -> Server {
     });
     // JSON is YAML: the configuration file takes it as it is.
     std::fs::write(data_dir.join("mock-config.yaml"), config.to_string()).unwrap();
-    let port = free_port();
+    let port = reserve_port();
     let child = Command::new(env!("CARGO_BIN_EXE_mimicway"))
         .env("DATA_PATH", &data_dir)
         .env("STATIC_DIR", &data_dir)
