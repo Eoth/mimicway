@@ -11,6 +11,8 @@
 //   node scripts/ci-plan.mjs plan      writes `jobs` and `codeql` (JSON arrays: jobs, CodeQL languages) to
 //                                      $GITHUB_OUTPUT. Reads GITHUB_EVENT_NAME and BEFORE (the commit a push starts
 //                                      from).
+//   node scripts/ci-plan.mjs base      prints the commit the change starts from (the same one `plan` diffs against),
+//                                      nothing when it is unknown. Reads GITHUB_EVENT_NAME and BEFORE.
 //   node scripts/ci-plan.mjs verdict   reads NEEDS (toJSON(needs)) and PLANNED (the `jobs` output), exits 1 on a
 //                                      planned job that did not pass, or on any failed or cancelled job.
 //   GITHUB_EVENT_NAME=push BEFORE=<sha> node scripts/ci-plan.mjs plan
@@ -38,6 +40,7 @@ export const JOBS = [
   'codeql',
   'fuzz',
   'fuzz-batch',
+  'mutants',
 ];
 
 // Always run on a push or a pull request: any file can hold a secret, a broken link or the former design system's
@@ -113,6 +116,9 @@ const RULES = {
   kubernetes: [/^k8s\//, /^scripts\/check-k8s-defaults\.mjs$/],
   workflows: [/^\.github\/workflows\//, /^\.github\/actions\//],
   fuzz: [...RUST, ...FUZZING],
+  // cargo-mutants on the engine files the gate covers (scripts/mutants-gate.sh), limited to the lines a change touches:
+  // a change elsewhere in src/ may remove a test that caught a mutant, which the weekly run of the whole scope finds.
+  mutants: [/^src\//, /^\.cargo\/mutants\.toml$/, /^scripts\/mutants-gate\.sh$/],
 };
 // For each language CodeQL analyses, its files.
 const CODEQL_RULES = {
@@ -153,8 +159,12 @@ const matches = (patterns, file) => patterns.some((pattern) => pattern.test(file
 export function planFor(event, files) {
   if (event === 'schedule') {
     // The weekly run: advisories published against unchanged lock files, the queries CodeQL added since, the long
-    // fuzzing campaign, and two builds of the release binary, which the changes of code since may have made differ.
-    return { jobs: ['supply-chain', 'reproducible', 'codeql', 'fuzz-batch'], codeql: [...CODEQL_LANGUAGES] };
+    // fuzzing campaign, two builds of the release binary, which the changes of code since may have made differ, and
+    // every mutant of the engine files the mutation gate covers.
+    return {
+      jobs: ['supply-chain', 'reproducible', 'codeql', 'fuzz-batch', 'mutants'],
+      codeql: [...CODEQL_LANGUAGES],
+    };
   }
   const jobs = new Set(ALWAYS);
   const codeql = new Set();
@@ -216,17 +226,25 @@ function hasCommit(sha, git) {
   }
 }
 
+// The commit a push or a pull request starts from, present in the clone; null when it is unknown (a new branch, a
+// force push whose start is gone, another event). Throws when it cannot be fetched.
+export function changeBase(event, before, git = defaultGit) {
+  // A pull request is checked out as a merge commit: its first parent is the target branch.
+  if (event === 'pull_request') return 'HEAD^1';
+  if (event === 'push' && before && !/^0+$/.test(before)) {
+    // A CI checkout (fetch-depth 2) lacks the commit a push of several commits starts from: it is fetched alone,
+    // shallow. A full clone, where a developer previews the plan, already has it, and that same fetch would mark
+    // the clone shallow at that commit, hiding every older one (merges and tags fail) until `git fetch --unshallow`.
+    if (!hasCommit(before, git)) git('fetch', '--no-tags', '--depth=1', 'origin', before);
+    return before;
+  }
+  return null;
+}
+
 export function changedFiles(event, before, git = defaultGit) {
   try {
-    // A pull request is checked out as a merge commit: its first parent is the target branch.
-    if (event === 'pull_request') return git('diff', '--name-only', 'HEAD^1', 'HEAD').split('\n').filter(Boolean);
-    if (event === 'push' && before && !/^0+$/.test(before)) {
-      // A CI checkout (fetch-depth 2) lacks the commit a push of several commits starts from: it is fetched alone,
-      // shallow. A full clone, where a developer previews the plan, already has it, and that same fetch would mark
-      // the clone shallow at that commit, hiding every older one (merges and tags fail) until `git fetch --unshallow`.
-      if (!hasCommit(before, git)) git('fetch', '--no-tags', '--depth=1', 'origin', before);
-      return git('diff', '--name-only', before, 'HEAD').split('\n').filter(Boolean);
-    }
+    const base = changeBase(event, before, git);
+    if (base !== null) return git('diff', '--name-only', base, 'HEAD').split('\n').filter(Boolean);
   } catch (error) {
     console.log(`Changed files unknown (${error.message.split('\n')[0]}): every job runs.`);
   }
@@ -245,6 +263,11 @@ function main(command) {
     if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `${lines.join('\n')}\n`);
     return 0;
   }
+  if (command === 'base') {
+    const base = changeBase(process.env.GITHUB_EVENT_NAME, process.env.BEFORE);
+    if (base !== null) console.log(base);
+    return 0;
+  }
   if (command === 'verdict') {
     const needs = JSON.parse(process.env.NEEDS);
     const planned = JSON.parse(process.env.PLANNED || '[]');
@@ -253,7 +276,7 @@ function main(command) {
     for (const problem of problems) console.error(`::error::${problem}`);
     return problems.length === 0 ? 0 : 1;
   }
-  console.error('usage: node scripts/ci-plan.mjs plan|verdict');
+  console.error('usage: node scripts/ci-plan.mjs plan|base|verdict');
   return 2;
 }
 

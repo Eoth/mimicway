@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { JOBS, READ_BY_UI_TESTS, changedFiles, planFor, verdict } from './ci-plan.mjs';
+import { JOBS, READ_BY_UI_TESTS, changeBase, changedFiles, planFor, verdict } from './ci-plan.mjs';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const jobsOf = (event, files) => planFor(event, files).jobs;
@@ -20,6 +20,15 @@ test('a change of server code runs the Rust, Kafka, end-to-end and image jobs, a
   assert.ok(!plan.jobs.includes('ui'));
   assert.ok(!plan.jobs.includes('miri'));
   assert.deepEqual(plan.codeql, ['rust']);
+});
+
+test('a change of server code or of the mutation gate runs the mutants, a lock file or a test file does not', () => {
+  for (const file of ['src/engine/matcher.rs', 'src/server/api.rs', '.cargo/mutants.toml', 'scripts/mutants-gate.sh']) {
+    assert.ok(jobsOf('push', [file]).includes('mutants'), file);
+  }
+  for (const file of ['Cargo.lock', 'tests/script_budget.rs', 'frontend/src/App.svelte']) {
+    assert.ok(!jobsOf('push', [file]).includes('mutants'), file);
+  }
 });
 
 test('a change of the allocator runs Miri, the Rust jobs, the image and the release builds', () => {
@@ -143,9 +152,9 @@ test('an unknown kind of file, the CI workflow or the plan itself runs every job
   assert.deepEqual(planFor('workflow_dispatch', []).codeql, ['actions', 'javascript-typescript', 'rust']);
 });
 
-test('the weekly run checks the advisories, compares two release builds, runs CodeQL and the long fuzzing', () => {
+test('the weekly run checks the advisories, compares two release builds, runs CodeQL, fuzzing and mutants', () => {
   assert.deepEqual(planFor('schedule', []), {
-    jobs: ['supply-chain', 'reproducible', 'codeql', 'fuzz-batch'],
+    jobs: ['supply-chain', 'reproducible', 'codeql', 'fuzz-batch', 'mutants'],
     codeql: ['actions', 'javascript-typescript', 'rust'],
   });
 });
@@ -280,4 +289,15 @@ test('a pull request diffs against its first parent, and a push of a new branch 
   assert.deepEqual(calls, [['diff', '--name-only', 'HEAD^1', 'HEAD']]);
   assert.equal(changedFiles('push', '0000000000000000000000000000000000000000', git), null);
   assert.equal(calls.length, 1);
+});
+
+test('the base of a change is the commit the plan diffs against, null for a new branch or another event', () => {
+  const { git, calls } = fakeGit(false);
+  assert.equal(changeBase('pull_request', undefined, git), 'HEAD^1');
+  assert.equal(changeBase('push', 'abc123', git), 'abc123');
+  assert.deepEqual(calls[1], ['fetch', '--no-tags', '--depth=1', 'origin', 'abc123']);
+  assert.equal(changeBase('push', '0000000000000000000000000000000000000000', git), null);
+  assert.equal(changeBase('push', undefined, git), null);
+  assert.equal(changeBase('schedule', 'abc123', git), null);
+  assert.equal(calls.length, 2);
 });

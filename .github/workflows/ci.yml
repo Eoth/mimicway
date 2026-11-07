@@ -11,7 +11,7 @@ on:
   pull_request:
   schedule:
     # Weekly, on develop: the advisories published since against lock files that did not change, the queries CodeQL
-    # added since, an hour of fuzzing, and two builds of the release binary compared.
+    # added since, an hour of fuzzing, two builds of the release binary compared, and the mutants of the rule engine.
     - cron: "41 3 * * 1"
   workflow_dispatch:
 
@@ -487,6 +487,50 @@ jobs:
           fuzz-seconds: 3600
           sanitizer: address
 
+  # cargo-mutants on the engine files that scripts/mutants-gate.sh covers: on a push or a pull request, the mutants of
+  # the lines the change touches; weekly, every mutant of those files, unless src/ did not change during the week.
+  mutants:
+    name: Mutation testing of the rule engine
+    needs: changes
+    if: contains(fromJSON(needs.changes.outputs.jobs), 'mutants')
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The commit the change starts from, and the week's history for the weekly run.
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable branch
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/develop' }}
+      # Kept in ~/.cargo/bin by the cache: reinstalled only when the version changes.
+      - run: cargo install --locked cargo-mutants@27.1.0
+      - name: No surviving mutant in the engine code the change touches (weekly, in every covered file)
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          # A disposable checkout: mutated in place, one mutant at a time, on the target/ the cache restored.
+          MUTANTS_IN_PLACE: "1"
+        run: |
+          if [ "$EVENT" = schedule ]; then
+            if [ -z "$(git log -1 --since='8 days ago' --format=%H -- src .cargo/mutants.toml scripts/mutants-gate.sh)" ]; then
+              echo "src/ did not change this week: last week's verdict stands."
+              exit 0
+            fi
+            scripts/mutants-gate.sh
+            exit
+          fi
+          base=$(GITHUB_EVENT_NAME=$EVENT node scripts/ci-plan.mjs base)
+          if [ -z "$base" ]; then
+            scripts/mutants-gate.sh
+          else
+            git diff "$base" HEAD > "$RUNNER_TEMP/change.diff"
+            scripts/mutants-gate.sh "$RUNNER_TEMP/change.diff"
+          fi
+
   ci-passed:
     name: CI passed
     needs:
@@ -507,6 +551,7 @@ jobs:
       - codeql
       - fuzz
       - fuzz-batch
+      - mutants
     if: always()
     runs-on: ubuntu-24.04
     steps:

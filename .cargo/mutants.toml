@@ -1,0 +1,16 @@
+# cargo-mutants, run by scripts/mutants-gate.sh (CI job "Mutation testing of the rule engine") or by hand.
+
+# The engine is judged by the library's tests, where its unit tests are: the binary's and the integration tests (whole
+# servers, memory peaks of scripts) would add their time to every mutant. A file that only they test is not ready for
+# the gate's scope.
+additional_cargo_test_args = ["--lib"]
+
+# A test run takes about 15 s; under load it can take several times that before a mutant is judged as hanging.
+minimum_test_timeout = 60
+
+# Equivalent mutants: they cannot change any result, so no test can catch them. Each one is explained in the test
+# module of its file, under "Equivalent mutants".
+exclude_re = [
+  # src/engine/matcher.rs
+  'matcher\.rs:\d+:\d+: replace \| with \^ in url_decode',
+]

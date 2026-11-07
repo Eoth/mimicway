@@ -23,7 +23,7 @@ Each item has an identifier that never changes, a size (S: a day or less, M: a f
 3. [Make it indispensable](#3-make-it-indispensable): U1, U2, then U3 to U18, in the listed order.
 4. [Engineering backlog](#4-engineering-backlog): taken alongside, when they unblock an item above.
 
-The judges come before the lists above: E39 and E40, tests whose verdict comes from outside the code under test (the real backend, axe-core, mutations, measured growth).
+The judges come before the lists above: E40 and E52, tests whose verdict comes from outside the code under test (measured growth, mutations).
 
 At the maintainers' request, templates in response headers then server-sent events came first, before the lists above; both are in the [changelog](CHANGELOG.md).
 
@@ -632,16 +632,6 @@ Size S
 
 **Done when.** A test stops a server holding an open stream and a long chaos delay, and sees it drain and flush within a second; a chaos delay past its bound is refused when saved.
 
-### E39. Mutation testing of the rule engine
-
-Size M
-
-**Why.** The rule engine (`src/engine/`: `matcher.rs`, `template.rs`, `renderer.rs`, `script.rs`) decides which rule answers a request and what it sends back. Its tests pass, but nothing says whether they would fail if that code were wrong.
-
-**What.** `cargo-mutants` on `src/engine/`, with a bounded number of jobs so that the machine stays usable. First a measure: each surviving mutant is either killed by a new test or explained as equivalent in the test module. Then a gate, whose scope (the code a change touches, or the whole engine on a schedule) is chosen from the measured time and from how many mutants each scope reaches.
-
-**Done when.** `src/engine/matcher.rs` has no unexplained surviving mutant, and a change that leaves one in the code the gate covers fails it.
-
 ### E40. Scale test: cost that grows with the input
 
 Size M
@@ -741,3 +731,13 @@ Size S
 **What.** Decide between a fixed seed in the CI (`PROPTEST_RNG_SEED`, read by proptest 1.12 when the test's config keeps the defaults), with an exploration run of many seeds when a judge or its subject changes, and drawn seeds printed in the job so a red run can be replayed. Write the decision where the tests are, then apply it to every property test, found by reading the code.
 
 **Done when.** Every property test runs on the chosen seeds in the CI, a test or check refuses one that does not, and a red run can be replayed from what the job shows.
+
+### E52. The rest of the rule engine in the mutation gate
+
+Size M (one file at a time, the largest first)
+
+**Why.** The mutation gate (`scripts/mutants-gate.sh`, CI job "Mutation testing of the rule engine") covers `src/engine/matcher.rs` only. There, 145 mutants left 6 survivors: five changes of behaviour that no test saw, now caught, and one equivalent. The other files of `src/engine/` hold 913 mutants that were never run (`cargo mutants --list`): `template.rs` 285, `script.rs` 167, `script_budget.rs` 104, `renderer.rs` 93, `template_dates.rs` 86, `shadowing.rs` 55, `script_json.rs` 45, `proxy.rs` 43, `json_pointer.rs` 25, `regex_cache.rs` 10. `matcher.rs` took 64 minutes with 3 jobs on a loaded machine, 53 seconds per caught mutant on average.
+
+**What.** For each file, `cargo mutants -f <file>`; each survivor is caught by a new test or explained as equivalent (in the test module of its file and in `.cargo/mutants.toml`), then the file joins `SCOPE` in `scripts/mutants-gate.sh`. A file whose code only the integration tests reach (`tests/script_budget.rs` runs scripts) gets the test arguments it needs. The weekly run of the whole scope is split into shards (`--shard k/n`, one job each) once it would pass the six hours of a GitHub job: at about 40 seconds a mutant, the whole engine is 12 hours in one job.
+
+**Done when.** Every file of `src/engine/` is in the gate's scope, and the weekly run of the whole scope passes within the job limits.

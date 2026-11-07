@@ -79,3 +79,4 @@ Choices that shape the design, with the options weighed and what would make them
 | End-to-end tests | `frontend/e2e/` | `npm run test:e2e`, against a running binary |
 | Fuzz targets | `fuzz/`, entry points in `src/fuzzing.rs` | `cargo +nightly fuzz run <target>` |
 | Repository checks | `scripts/*.test.mjs` | `node --test scripts/*.test.mjs` |
+| Mutation testing | The engine files listed in `scripts/mutants-gate.sh` | `scripts/mutants-gate.sh` (every mutant), `scripts/mutants-gate.sh <diff>` (the lines a diff changes), with `cargo install --locked cargo-mutants@27.1.0` |

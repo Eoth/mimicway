@@ -540,6 +540,10 @@ mod conflict_judge;
 
 #[cfg(test)]
 mod tests {
+    // Equivalent mutants (cargo-mutants, excluded in .cargo/mutants.toml):
+    // - `|` replaced by `^` in `url_decode`: `high << 4` has its four low bits at zero and `low` is below 16, so both
+    //   operators give the same byte.
+
     use super::*;
     use crate::models::*;
 
@@ -784,6 +788,28 @@ mod tests {
         let body = br#"<SOAP:Envelope><SOAP-ENV:Header/><SOAP-ENV:Body><ns3:mode/></SOAP-ENV:Body></SOAP:Envelope>"#;
         let result = MatchEngine::extract_xpath(body, "Envelope/Body/mode");
         assert_eq!(result, Some(String::new()));
+    }
+
+    #[test]
+    fn xpath_finds_nothing_past_a_syntax_error() {
+        // The reader could resume after the broken markup and reach `<b>`: a body that stops being XML is read no
+        // further, so a condition never matches on what follows the error.
+        for body in [
+            &br#"<root><!x><b>found</b></root>"#[..],
+            br#"<root></x><b>found</b></root>"#,
+        ] {
+            assert_eq!(MatchEngine::extract_xpath(body, "root/b"), None);
+        }
+    }
+
+    #[test]
+    fn xpath_absent_from_a_well_formed_body_is_none() {
+        // The whole document is read without finding the path: a sibling, a prefix of the path or a path one level too
+        // deep is no match.
+        let body = br#"<root><a>1</a><c/></root>"#;
+        for path in ["root/b", "a", "root/a/b", "root/c/d", "root/a/1"] {
+            assert_eq!(MatchEngine::extract_xpath(body, path), None, "{path}");
+        }
     }
 
     #[test]
@@ -1078,6 +1104,17 @@ mod tests {
         assert!(match_path("/", "/").is_none());
     }
 
+    #[test]
+    fn match_path_segment_with_one_brace_only_is_literal() {
+        // A parameter is a segment wrapped in both braces; one brace alone is part of a literal segment.
+        for pattern in ["/orders/{id", "/orders/id}"] {
+            let literal = pattern.trim_start_matches("/orders");
+            let (params, _) = match_path(pattern, &format!("/orders{literal}")).unwrap();
+            assert!(params.is_empty(), "{pattern}");
+            assert!(match_path(pattern, "/orders/42").is_none(), "{pattern}");
+        }
+    }
+
     // --- evaluate_group / ConditionEvaluation (rule tester) ---
 
     fn cg(all_of: Vec<Condition>, any_of: Vec<Condition>) -> ConditionGroup {
@@ -1140,6 +1177,54 @@ mod tests {
                 "'token' was not found as a path parameter, but it is present as a header in this request"
             )
         );
+    }
+
+    #[test]
+    fn evaluate_group_hint_names_every_other_source_holding_the_key() {
+        // Exhaustive over the four named sources and every set of places the key is present in: the hint names the
+        // other places holding the key, in the order path, query, header, and never the condition's own source. The
+        // header is stored with another case, which the lookup ignores.
+        let sources = [
+            (ConditionSource::PathParam("k".into()), "path parameter"),
+            (ConditionSource::QueryParam("k".into()), "query parameter"),
+            (ConditionSource::Header("k".into()), "header"),
+            (ConditionSource::FormField("k".into()), "form field"),
+        ];
+        let places = ["path parameter", "query parameter", "header"];
+        for (source, own_label) in &sources {
+            for present in 0..8u8 {
+                let held = |place: usize| present & (1 << place) != 0;
+                let mut req = make_req(&[], &[], b"", None);
+                if held(0) {
+                    req.path_params.insert("k".into(), "v".into());
+                }
+                if held(1) {
+                    req.query_params.insert("k".into(), "v".into());
+                }
+                if held(2) {
+                    req.headers.insert("K".into(), "v".into());
+                }
+                let condition = Condition {
+                    source: source.clone(),
+                    operator: Operator::Eq("never".into()),
+                };
+                let result = MatchEngine::evaluate_group(&cg(vec![condition], vec![]), &req);
+                let others: Vec<&str> = (0..3)
+                    .filter(|&p| held(p) && places[p] != *own_label)
+                    .map(|p| places[p])
+                    .collect();
+                let expected = (!others.is_empty()).then(|| {
+                    format!(
+                        "'k' was not found as a {own_label}, but it is present as a {} in this request",
+                        others.join(", ")
+                    )
+                });
+                assert_eq!(
+                    result.all_of[0].hint, expected,
+                    "source {own_label}, present {present:03b}"
+                );
+            }
+        }
     }
 
     #[test]
