@@ -488,7 +488,8 @@ jobs:
           sanitizer: address
 
   # cargo-mutants on the engine files that scripts/mutants-gate.sh covers: on a push or a pull request, the mutants of
-  # the lines the change touches; weekly, every mutant of those files, unless src/ did not change during the week.
+  # the lines the change touches; weekly, every mutant of those files, unless nothing they depend on changed during the
+  # week. A change that only removes a test is seen by the weekly run: test lines make no mutant.
   mutants:
     name: Mutation testing of the rule engine
     needs: changes
@@ -516,8 +517,9 @@ jobs:
           MUTANTS_IN_PLACE: "1"
         run: |
           if [ "$EVENT" = schedule ]; then
-            if [ -z "$(git log -1 --since='8 days ago' --format=%H -- src .cargo/mutants.toml scripts/mutants-gate.sh)" ]; then
-              echo "src/ did not change this week: last week's verdict stands."
+            # What decides the verdict: the code and its tests, the dependencies, the gate and this job.
+            if [ -z "$(git log -1 --since='8 days ago' --format=%H -- src Cargo.lock .cargo/mutants.toml scripts/mutants-gate.sh .github/workflows/ci.yml)" ]; then
+              echo "Nothing the verdict depends on changed this week: the code is the one the last weekly run judged."
               exit 0
             fi
             scripts/mutants-gate.sh

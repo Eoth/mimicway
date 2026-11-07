@@ -12,5 +12,5 @@ minimum_test_timeout = 60
 # module of its file, under "Equivalent mutants".
 exclude_re = [
   # src/engine/matcher.rs
-  'matcher\.rs:\d+:\d+: replace \| with \^ in url_decode',
+  '^src/engine/matcher\.rs:\d+:\d+: replace \| with \^ in url_decode$',
 ]

@@ -21,7 +21,11 @@ set -euo pipefail
 SCOPE=(src/engine/matcher.rs)
 
 args=()
-for file in "${SCOPE[@]}"; do args+=(--file "$file"); done
+for file in "${SCOPE[@]}"; do
+  # A file renamed or split would otherwise give no mutant, and a green gate that judged nothing.
+  [ -f "$file" ] || { echo "$file, covered by the gate, does not exist: update SCOPE" >&2; exit 1; }
+  args+=(--file "$file")
+done
 if [ $# -ge 1 ]; then args+=(--in-diff "$1"); fi
 if [ "${MUTANTS_IN_PLACE:-}" = 1 ]; then args+=(--in-place); else args+=(--jobs "${MUTANTS_JOBS:-1}"); fi
 out=${MUTANTS_OUT:-$(mktemp -d)}
@@ -43,6 +47,11 @@ missed="$out/mutants.out/missed.txt"
 if [ -s "$missed" ]; then
   echo "Surviving mutants: catch each one with a test, or exclude it in .cargo/mutants.toml if it is equivalent:" >&2
   sed 's/^/  /' "$missed" >&2
+  exit 1
+fi
+# Every covered file has mutants the tests catch: none caught on a full run means nothing was judged.
+if [ $# -eq 0 ] && [ ! -s "$out/mutants.out/caught.txt" ]; then
+  echo "No mutant was caught in the covered files: the gate judged nothing" >&2
   exit 1
 fi
 echo "No surviving mutant."
