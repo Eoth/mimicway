@@ -15,6 +15,9 @@ WORKDIR /build
 # Cargo.lock did not change reuses it. The placeholder's outputs are deleted, or Cargo could take the real sources, older
 # than them, for already built.
 COPY Cargo.toml Cargo.lock ./
+# The probe of the scale test: Cargo.toml declares it as a target, and cargo refuses a manifest whose target is missing.
+# Never built here (it needs the "scale-probe" feature).
+COPY tests/scale.rs tests/
 # The counting allocator is a crate of the workspace, a dependency like the others.
 COPY alloc/ alloc/
 RUN mkdir src && echo 'fn main() {}' > src/main.rs && cargo build --release --locked \
