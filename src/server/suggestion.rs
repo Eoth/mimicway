@@ -16,6 +16,7 @@ use crate::models::{
     BodyFragment, Condition, ConditionSource, HeaderEntry, MockResponse, Operator,
 };
 use crate::server::observation::{ObservationKey, ObservedExchange};
+use std::collections::hash_map::Entry;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 pub mod links;
@@ -211,16 +212,18 @@ fn suggest_route(method: &str, sub_path: &str, samples: &[Sample]) -> Option<Sug
         return None;
     }
 
-    // Groups of equivalent responses, as indices into `samples`, in order of first appearance.
+    // Groups of equivalent responses, as indices into `samples`, in order of first appearance. Found by signature in a
+    // map: comparing each sample with every group found so far costs samples × groups, quadratic when every response
+    // differs.
     let mut classes: Vec<Vec<usize>> = Vec::new();
+    let mut class_of: HashMap<(u16, &str), usize> = HashMap::new();
     for (i, sample) in samples.iter().enumerate() {
-        let signature = response_signature(sample.exchange);
-        match classes
-            .iter_mut()
-            .find(|class| response_signature(samples[class[0]].exchange) == signature)
-        {
-            Some(class) => class.push(i),
-            None => classes.push(vec![i]),
+        match class_of.entry(response_signature(sample.exchange)) {
+            Entry::Occupied(class) => classes[*class.get()].push(i),
+            Entry::Vacant(slot) => {
+                slot.insert(classes.len());
+                classes.push(vec![i]);
+            }
         }
     }
     let latest = |class: &[usize]| samples[class[class.len() - 1]].exchange;
