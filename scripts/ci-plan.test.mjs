@@ -152,6 +152,13 @@ test('an unknown kind of file, the CI workflow or the plan itself runs every job
   assert.deepEqual(planFor('workflow_dispatch', []).codeql, ['actions', 'javascript-typescript', 'rust']);
 });
 
+test('a change of server code, of a dependency or of the scale test runs the scale test, a change of the UI does not', () => {
+  for (const file of ['src/server/intercept.rs', 'tests/scale.rs', 'Cargo.lock', 'scripts/scale-test.mjs']) {
+    assert.ok(jobsOf('push', [file]).includes('scale'), file);
+  }
+  assert.ok(!jobsOf('push', ['frontend/src/App.svelte']).includes('scale'));
+});
+
 test('the weekly run checks the advisories, compares two release builds, runs CodeQL, fuzzing and mutants', () => {
   assert.deepEqual(planFor('schedule', []), {
     jobs: ['supply-chain', 'reproducible', 'codeql', 'fuzz-batch', 'mutants'],

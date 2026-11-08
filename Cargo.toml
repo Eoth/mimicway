@@ -72,6 +72,10 @@ url = "2"
 # librdkafka (C) from source, which needs cmake, a C toolchain and, on Linux, the libcurl headers.
 rdkafka = { version = "0.39", features = ["cmake-build"], optional = true }
 
+# Sends requests to the router without a socket (ServiceExt::oneshot), for the scale test only ("scale-probe"). Already
+# in the graph through axum, with this feature: nothing new to build.
+tower = { version = "0.5", features = ["util"], optional = true }
+
 [dev-dependencies]
 # Property-based tests of the code that reads untrusted backend responses (rule suggestions). Pure Rust, runs on
 # stable toolchains on every platform, never part of the shipped binary.
@@ -91,6 +95,15 @@ messaging-kafka = ["dep:rdkafka"]
 # why). Off by default: src/tcp/ is not even compiled. No extra dependency: byte matching uses regex::bytes.
 tcp-mock = ["tokio/io-util"]
 
+# Workloads of the scale test (src/scale_probe.rs, tests/scale.rs), counted by Callgrind from scripts/scale-test.mjs.
+# Never part of the shipped binary.
+scale-probe = ["dep:tower"]
+
+[[test]]
+name = "scale"
+harness = false
+required-features = ["scale-probe"]
+
 [lints.rust]
 # cargo-fuzz builds with `--cfg fuzzing`, which compiles src/fuzzing.rs, the entry points of the fuzz targets.
 unexpected_cfgs = { level = "warn", check-cfg = ["cfg(fuzzing)"] }
@@ -99,3 +112,10 @@ unexpected_cfgs = { level = "warn", check-cfg = ["cfg(fuzzing)"] }
 opt-level = 3
 lto = true
 strip = true
+
+# The scale test's build: optimised like the release, with the symbols Callgrind finds `measured` by, and without
+# LTO, which only costs build time here (the test compares growth, not absolute counts).
+[profile.scale]
+inherits = "release"
+lto = false
+strip = false

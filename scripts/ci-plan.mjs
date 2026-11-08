@@ -41,6 +41,7 @@ export const JOBS = [
   'fuzz',
   'fuzz-batch',
   'mutants',
+  'scale',
 ];
 
 // Always run on a push or a pull request: any file can hold a secret, a broken link or the former design system's
@@ -119,6 +120,8 @@ const RULES = {
   // cargo-mutants on the engine files the gate covers (scripts/mutants-gate.sh), limited to the lines a change touches:
   // a change elsewhere in src/ may remove a test that caught a mutant, which the weekly run of the whole scope finds.
   mutants: [/^src\//, /^\.cargo\/mutants\.toml$/, /^scripts\/mutants-gate\.sh$/],
+  // How the cost of each family of inputs grows (scripts/scale-test.mjs): any server code or dependency can change it.
+  scale: [...RUST, /^scripts\/scale-test\.mjs$/],
 };
 // For each language CodeQL analyses, its files.
 const CODEQL_RULES = {

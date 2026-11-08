@@ -90,7 +90,7 @@ grep -rhn "env::var(\"" src --include=*.rs | grep -o "\"[A-Z_]*\"" | sort -u
 | `tracing`, `tracing-subscriber` | Logs |
 | `rdkafka` (optional) | Kafka |
 
-Development only: `proptest` (property tests of the suggestion engine), `ring` and `base64` (signing tokens for the fake Keycloak realm of the tests).
+Development only: `proptest` (property tests of the suggestion engine), `ring` and `base64` (signing tokens for the fake Keycloak realm of the tests), and `tower` (requests sent to the router without a socket by the scale test; optional, behind the `scale-probe` feature, already in the graph through axum).
 
 ## Out of scope of the code
 

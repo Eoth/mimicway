@@ -533,6 +533,28 @@ jobs:
             scripts/mutants-gate.sh "$RUNNER_TEMP/change.diff"
           fi
 
+  scale:
+    name: Scale test (cost growth counted by Callgrind)
+    needs: changes
+    if: contains(fromJSON(needs.changes.outputs.jobs), 'scale')
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable branch
+        with:
+          toolchain: stable
+          components: clippy
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/develop' }}
+      - run: sudo apt-get update && sudo apt-get install -y valgrind
+      # The probe and its workloads compile with the "scale-probe" feature only, which the Rust job leaves out.
+      - run: cargo clippy --features scale-probe --all-targets -- -D warnings
+      - name: Each family of inputs costs no more at 4n than its expected growth allows
+        run: node scripts/scale-test.mjs
+
   ci-passed:
     name: CI passed
     needs:
@@ -554,6 +576,7 @@ jobs:
       - fuzz
       - fuzz-batch
       - mutants
+      - scale
     if: always()
     runs-on: ubuntu-24.04
     steps:

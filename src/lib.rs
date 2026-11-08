@@ -20,6 +20,7 @@ static ALLOCATOR: mimicway_alloc::Counting = mimicway_alloc::Counting;
 //   messaging/ Kafka, compiled only with the "messaging-kafka" feature
 //   tcp/       raw TCP mocks, compiled only with the "tcp-mock" feature
 //   fuzzing    entry points of the fuzz targets (fuzz/), compiled by cargo-fuzz only
+//   scale_probe workloads of the scale test (scripts/scale-test.mjs), compiled with the "scale-probe" feature only
 //   test_ports ports that tests hand to a server they do not bind themselves, compiled for tests only
 pub mod auth;
 pub mod engine;
@@ -29,6 +30,8 @@ pub mod i18n;
 #[cfg(feature = "messaging-kafka")]
 pub mod messaging;
 pub mod models;
+#[cfg(feature = "scale-probe")]
+pub mod scale_probe;
 pub mod server;
 pub(crate) mod settings;
 pub mod store;
