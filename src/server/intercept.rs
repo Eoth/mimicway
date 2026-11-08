@@ -54,14 +54,24 @@ pub async fn intercept_layer(
 
     let config = state.store.snapshot().await;
 
+    // Group codes by group name, gathered at the first grouped service: looking the group up for each service costs
+    // services × groups on every request. Inserted from the last group, so that the first of two groups with the same
+    // name wins, as a search in order would find it.
+    let mut group_codes: Option<HashMap<&str, &str>> = None;
     let matched = config.services.iter().find_map(|s| {
-        let group_code = s.group_name.as_ref().and_then(|gn| {
-            config
-                .groups
-                .iter()
-                .find(|g| &g.name == gn)
-                .map(|g| g.code.clone())
+        let group_code = s.group_name.as_deref().and_then(|gn| {
+            group_codes
+                .get_or_insert_with(|| {
+                    config
+                        .groups
+                        .iter()
+                        .rev()
+                        .map(|g| (g.name.as_str(), g.code.as_str()))
+                        .collect()
+                })
+                .get(gn)
                 .filter(|c| !c.trim().is_empty())
+                .map(|c| c.to_string())
         });
         let effective = build_effective_pattern(group_code.as_deref(), &s.name, &s.listen_path);
         match_path(&effective, &path)
