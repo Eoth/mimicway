@@ -23,7 +23,7 @@ Each item has an identifier that never changes, a size (S: a day or less, M: a f
 3. [Make it indispensable](#3-make-it-indispensable): U1, U2, then U3 to U18, in the listed order.
 4. [Engineering backlog](#4-engineering-backlog): taken alongside, when they unblock an item above.
 
-The judges come before the lists above: E40 and E52, tests whose verdict comes from outside the code under test (measured growth, mutations).
+The judges come before the lists above: E52, a test whose verdict comes from outside the code under test (mutations).
 
 At the maintainers' request, templates in response headers then server-sent events came first, before the lists above; both are in the [changelog](CHANGELOG.md).
 
@@ -632,16 +632,6 @@ Size S
 
 **Done when.** A test stops a server holding an open stream and a long chaos delay, and sees it drain and flush within a second; a chaos delay past its bound is refused when saved.
 
-### E40. Scale test: cost that grows with the input
-
-Size M
-
-**Why.** Mimicway is meant to stay light with many rules and much traffic, but no test measures how the cost grows: a step that becomes quadratic (a rule list scanned once per rule, a request log copied on each write) only shows on a large configuration.
-
-**What.** A test runs each family of inputs at n, 2n and 4n (rules matched for one request, requests against a fixed set of rules, conflict search for a draft rule, configuration load and save, suggestions from observed calls, script values) and counts the instructions with Callgrind, which gives the same number on every run. The expected growth of each family is written next to it; the test is red when the cost from n to 4n grows more than that, beyond a tolerance stated once.
-
-**Done when.** The test runs in the CI, every family has its expected growth, and a deliberately quadratic loop in rule matching turns it red.
-
 ### E41. Script XML items found under the parents of their path only
 
 Size S
@@ -731,6 +721,16 @@ Size S
 **What.** Decide between a fixed seed in the CI (`PROPTEST_RNG_SEED`, read by proptest 1.12 when the test's config keeps the defaults), with an exploration run of many seeds when a judge or its subject changes, and drawn seeds printed in the job so a red run can be replayed. Write the decision where the tests are, then apply it to every property test, found by reading the code.
 
 **Done when.** Every property test runs on the chosen seeds in the CI, a test or check refuses one that does not, and a red run can be replayed from what the job shows.
+
+### E53. Recording an observed exchange scans every followed endpoint
+
+Size S
+
+**Why.** `ObservationStore::record` (`src/server/observation.rs`) moves the endpoint of each exchange to the back of its eviction order by searching that order from the front: every exchange recorded costs one comparison per endpoint followed, and a burst of calls on new endpoints costs their number squared. `TRAFFIC_OBSERVATION_MAX_KEYS` bounds it (200 endpoints by default) but has no ceiling of its own. The scale test (`scripts/scale-test.mjs`) has no family for observed calls, so nothing measures it.
+
+**What.** A family of the scale test that records n exchanges on n endpoints, with a bound above 4n (the driver can pass the setting to the probe's environment), seen red on the current code; then an eviction order that moves an endpoint without a scan, such as a sequence number per endpoint and an ordered map from sequence to endpoint.
+
+**Done when.** The family is in the scale test and green, and it was red before the change.
 
 ### E52. The rest of the rule engine in the mutation gate
 
