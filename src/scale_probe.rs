@@ -23,7 +23,8 @@ use tower::ServiceExt;
 #[derive(Debug, Clone, Copy)]
 pub enum Growth {
     Linear,
-    /// n log n: a sort, or an ordered map (Rhai's maps are B-trees).
+    /// n log n: a sort, or an ordered map, when a measure shows it. A family whose count grows linearly stays linear, so
+    /// that its limit stays tight.
     LinearLog,
 }
 
@@ -48,7 +49,7 @@ pub struct Family {
 pub const FAMILIES: &[Family] = &[
     Family {
         name: "rules",
-        n: 200,
+        n: 800,
         growth: Growth::Linear,
         about: "one request through the router, matched by the last of n rules of its service",
         run: rules,
@@ -62,9 +63,9 @@ pub const FAMILIES: &[Family] = &[
     },
     Family {
         name: "requests",
-        n: 100,
+        n: 50,
         growth: Growth::Linear,
-        about: "n requests through the router against the same 20 rules, each one logged",
+        about: "n requests through the router against the same 20 rules, each one logged (4n stays within the log's 200 entries)",
         run: requests,
     },
     Family {
@@ -91,7 +92,7 @@ pub const FAMILIES: &[Family] = &[
     Family {
         name: "suggestions",
         n: 200,
-        growth: Growth::LinearLog,
+        growth: Growth::Linear,
         about: "suggestions from n observed endpoints of one route, 3 exchanges each",
         run: suggestions,
     },
@@ -100,7 +101,7 @@ pub const FAMILIES: &[Family] = &[
     Family {
         name: "script",
         n: 60,
-        growth: Growth::LinearLog,
+        growth: Growth::Linear,
         about: "one request whose rule script returns n values, all of them used by the response template",
         run: script,
     },
@@ -169,7 +170,8 @@ fn rule(name: &str, method: &str, sub_path: Option<&str>, conditions: Value, bod
     })
 }
 
-/// The rule `i` of a service: its own sub-path and a header condition, so that matching reads both.
+/// The rule `i` of a service: its own sub-path and a header condition. The rules before the one a request matches fail
+/// on their sub-path; the matching rule reads its condition too.
 fn numbered_rule(i: usize) -> Value {
     rule(
         &format!("rule-{i}"),

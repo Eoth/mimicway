@@ -1,12 +1,14 @@
 #!/usr/bin/env node
-// The scale test: runs every family of src/scale_probe.rs at n, 2n and 4n under Callgrind, which counts the same
-// instructions on every run whatever the load of the machine, and fails when a family's count grows from n to 4n faster
+// The scale test: runs every family of src/scale_probe.rs at n, 2n and 4n under Callgrind, which counts instructions
+// whatever the load of the machine (a count repeats within 0.01 % with the allocator setting below), and fails when a family's count grows from n to 4n faster
 // than the growth written next to it allows. A step that turns quadratic (a list scanned once per element, a log copied
 // on each write) shows here long before anyone notices it on a large configuration.
 //
 // What it does not see: a cost that grows only beyond 4n, or only with an input shape no family builds; time spent
-// waiting (disk, network, locks), which Callgrind does not count; and a fixed cost that grew, since only the ratio is
-// judged (absolute counts change with the compiler).
+// waiting (disk, network, locks), which Callgrind does not count; and a cost that grew by a constant factor, since only
+// the ratio is judged (absolute counts change with the compiler): copying the whole request log on each request, once
+// the log is full at its bound, multiplies the cost of a request by 4.7 and stays linear in the number of requests.
+// The count at 2n is shown, not judged.
 //
 // Usage: node scripts/scale-test.mjs [family...]     needs valgrind; builds the probe with cargo (profile "scale")
 import { execFileSync, spawn } from 'node:child_process';
@@ -22,10 +24,12 @@ const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 // meant to show. A share of quadratic work above about 8 % of the count at n is then enough to turn a linear family red.
 export const TOLERANCE = 1.25;
 
-// The C library's allocator without its per-thread cache and fast bins: with them, how much work a free or a malloc
-// does jumps with the size of the heap (merging free blocks, at 2n and not 4n for instance), by more than the
-// tolerance. Its instructions stay counted: a step that copies or allocates more is still seen.
-export const GLIBC_TUNABLES = 'glibc.malloc.tcache_count=0:glibc.malloc.mxfast=0';
+// The C library's allocator keeps every freed block in its per-thread cache (up to 65,535 of each size instead of 7):
+// with the default, a malloc or a free that misses the cache does work that depends on the order of earlier
+// allocations, which hash tables seeded at random change from run to run (up to 4.7 % of a count), and on the size of
+// the heap (one size jumping and not the next). With it, a count repeats within 0.01 %. The allocator's instructions
+// stay counted: a step that allocates or copies more is still seen.
+export const GLIBC_TUNABLES = 'glibc.malloc.tcache_count=65535';
 
 // The growth from n to 4n that each class of src/scale_probe.rs allows, before the tolerance.
 export function classRatio(growth, n) {

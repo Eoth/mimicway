@@ -549,6 +549,9 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: ${{ github.ref == 'refs/heads/develop' }}
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
       - run: sudo apt-get update && sudo apt-get install -y valgrind
       # The probe and its workloads compile with the "scale-probe" feature only, which the Rust job leaves out.
       - run: cargo clippy --features scale-probe --all-targets -- -D warnings
