@@ -632,16 +632,6 @@ Size S
 
 **Done when.** A test stops a server holding an open stream and a long chaos delay, and sees it drain and flush within a second; a chaos delay past its bound is refused when saved.
 
-### E41. Script XML items found under the parents of their path only
-
-Size S
-
-**Why.** `parse_xml_items` (`parse_xml_items_impl` in `src/engine/script.rs`) follows the parents of its path with a counter of its own (`parent_depth`, `in_parent`), separate from the XPath of rule conditions (`MatchEngine::walk_xml`), which once matched a sibling that was not on the path. The documented use, a path that stops at the element holding the values, was checked; a path that goes down to a leaf, or a parent name found again deeper in an unrelated branch, never was, and no test covers it.
-
-**What.** Property tests that generate XML documents and paths and compare `parse_xml_items` with the elements a reference walk finds under exactly that chain of parents; fix what they show.
-
-**Done when.** The property test passes in the CI, and a document where a parent's name appears in a sibling branch returns only the items under the real path.
-
 ### E42. Arrow keys in the response format selector
 
 Size S
@@ -732,7 +722,7 @@ Size M (one file at a time, the largest first)
 
 **Done when.** Every file of `src/engine/` is in the gate's scope, and the weekly run of the whole scope passes within the job limits.
 
-**Progress.** `matcher.rs` (145 mutants) and `template.rs` (285: 33 survivors caught, 2 equivalent) are in the scope: about 4.8 hours for the weekly run at 40 seconds a mutant. The weekly run is split into four shards (`MUTANT_SHARDS` in `scripts/ci-plan.mjs`, one matrix job each, round-robin), and the gate fails a CI job (a shard, or the diff of a push) of more than 400 mutants before judging any. The tests of a mutant get 2 GiB of data at most: the first weekly run on GitHub (2026-11-09, `matcher.rs` alone) was stopped after 55 minutes with exit code 143, and the endless loop of `url_decode` (`i *= 1`) fills 6 GB in 19 seconds without the limit, 7 seconds to its abort with it. `script.rs` (167), run on 2026-11-10 outside the scope: 122 caught, 5 timeouts, 2 unviable, 38 survivors to catch or explain before it joins: `parse_xml_items_impl` 23 (the depth counting that E41 doubts), `parse_date_impl` 8, `push_xml` 3, `seeded_int_impl` 2, `push_xml_text` 2 (the arms of `"` and `'`).
+**Progress.** `matcher.rs` (145 mutants) and `template.rs` (285: 33 survivors caught, 2 equivalent) are in the scope: about 4.8 hours for the weekly run at 40 seconds a mutant. The weekly run is split into four shards (`MUTANT_SHARDS` in `scripts/ci-plan.mjs`, one matrix job each, round-robin), and the gate fails a CI job (a shard, or the diff of a push) of more than 400 mutants before judging any. The tests of a mutant get 2 GiB of data at most: the first weekly run on GitHub (2026-11-09, `matcher.rs` alone) was stopped after 55 minutes with exit code 143, and the endless loop of `url_decode` (`i *= 1`) fills 6 GB in 19 seconds without the limit, 7 seconds to its abort with it. `script.rs` joined on 2026-11-10: its first run left 38 survivors, 23 of them in the depth counting of `parse_xml_items`, which was wrong (items lost after a sibling, found under a parent from another branch, self-closing ones skipped); it now follows its path from the root as XPath conditions do, judged against a walk of generated trees, and the other survivors (`parse_date`, `seeded_int`, `xml_element`) are caught by judges that generate their cases. The scope holds 595 mutants, 148 or 149 a shard.
 
 ### E54. A parenthesis alone in a quoted pipe argument breaks the expression
 
@@ -743,3 +733,23 @@ Size S
 **What.** Decide which quotes protect what an argument holds (double only, or double and single, each closing only itself), write it next to the parser, then change `find_closing_double_brace` and `split_pipes` together; the generated expressions of `an_expression_ends_at_its_own_closing_braces_whatever_its_texts_hold` then include parentheses in quoted arguments.
 
 **Done when.** Both templates above render `)` and `xa(b`, the single-quoted case keeps its rendering or its change is written in the changelog, and the judge generates the cases.
+
+### E55. A deeply nested XML body costs memory in proportion to its depth
+
+Size S
+
+**Why.** `MatchEngine::walk_xml` (`src/engine/matcher.rs`), which reads the XPath conditions of a rule, keeps the local name of every open element in a `Vec<String>`. Any client of a mocked service whose rules have an XPath condition can send a body of 10 MiB made of `<a>` only: measured on 2026-11-10 (debug build), one such request raised the peak memory of the process by 220 MiB and took 5.6 seconds, on top of the names quick-xml keeps to check end tags. Concurrent requests add up. Every reader of quick-xml also keeps, for each open element, its name and an 8-byte index to check end tags (about 30 MB for such a body, estimated, not measured), and so does `parse_xml_items`, which follows its own path with two counters.
+
+**What.** Follow the path in `walk_xml` with counters, as `parse_xml_items` does (open elements, and how many of them from the root are the segments); measure what the reader's own stack costs, and bound the depth of a body (an error past a depth no real document reaches) if it stays above the budget of a request; add the deep body to the memory test of `tests/script_budget.rs`, for a condition and for a script.
+
+**Done when.** A 10 MiB body of nested elements stays within the memory budget of a request, for an XPath condition and for `parse_xml_items`, seen red on the current code.
+
+### E56. CDATA text read by neither XPath conditions nor `parse_xml_items`
+
+Size S
+
+**Why.** `MatchEngine::xml_text` turns text and references into text, and nothing else: the text of a CDATA section (`<Siret><![CDATA[123]]></Siret>`) is dropped by XPath conditions, by the `{{xpath.path}}` template variable and by `parse_xml_items`, which give an empty value instead of `123`. A SOAP client that wraps a value, or an embedded document, in CDATA gets no match and no error.
+
+**What.** Read `Event::CData` as text in `xml_text`, and add CDATA sections to the documents the judges of `parse_xml_items` and of XPath conditions generate.
+
+**Done when.** `<Siret><![CDATA[123]]></Siret>` gives `123` to a condition, to `{{xpath.path}}` and to a script, and the judges generate CDATA.
