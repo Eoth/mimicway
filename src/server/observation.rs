@@ -7,7 +7,7 @@
 // - `ObservationStore`: the exchanges (request and backend response) captured meanwhile, grouped by service, method
 //   and literal path, bounded twice (number of endpoints, exchanges per endpoint) so memory never grows unbounded.
 use serde::Serialize;
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::sync::{Arc, RwLock};
 
 const DEFAULT_MAX_BODY_SIZE: usize = 16 * 1024;
@@ -148,11 +148,19 @@ impl ObservedExchange {
 }
 
 #[derive(Default)]
+struct Bucket {
+    /// The endpoint's place in `key_order`: the sequence number of its last update.
+    seq: u64,
+    exchanges: VecDeque<ObservedExchange>,
+}
+
+#[derive(Default)]
 struct ObservationInner {
-    buckets: HashMap<ObservationKey, VecDeque<ObservedExchange>>,
-    // Endpoints by last update (front = least recent), to evict when `max_keys()` is reached; recording an exchange
-    // moves its endpoint to the back.
-    key_order: VecDeque<ObservationKey>,
+    buckets: HashMap<ObservationKey, Bucket>,
+    // Endpoints by last update (first = least recent), to evict when `max_keys()` is reached. Recording an exchange
+    // moves its endpoint to a new, larger sequence number, found through its bucket: no scan of the order.
+    key_order: BTreeMap<u64, ObservationKey>,
+    next_seq: u64,
 }
 
 /// The bounded store of observed exchanges, by service, method and path (see the top of this file for both bounds).
@@ -169,27 +177,46 @@ impl ObservationStore {
     }
 
     pub fn record(&self, key: ObservationKey, exchange: ObservedExchange) {
-        let mut inner = self.inner.write().unwrap();
-        let is_new_key = !inner.buckets.contains_key(&key);
+        self.record_within(key, exchange, max_keys(), samples_per_key());
+    }
 
-        if is_new_key
-            && inner.buckets.len() >= max_keys()
-            && let Some(evicted) = inner.key_order.pop_front()
-        {
-            inner.buckets.remove(&evicted);
-        }
+    /// `record` with its two bounds given, so that tests can use small ones without changing the environment.
+    fn record_within(
+        &self,
+        key: ObservationKey,
+        exchange: ObservedExchange,
+        max_keys: usize,
+        samples_per_key: usize,
+    ) {
+        let mut guard = self.inner.write().unwrap();
+        let inner = &mut *guard;
+        let seq = inner.next_seq;
+        inner.next_seq += 1;
 
-        if let Some(pos) = inner.key_order.iter().position(|k| k == &key) {
-            inner.key_order.remove(pos);
+        let bucket = match inner.buckets.get_mut(&key) {
+            Some(bucket) => {
+                inner.key_order.remove(&bucket.seq);
+                inner.key_order.insert(seq, key);
+                bucket.seq = seq;
+                bucket
+            }
+            None => {
+                if inner.buckets.len() >= max_keys
+                    && let Some((_, evicted)) = inner.key_order.pop_first()
+                {
+                    inner.buckets.remove(&evicted);
+                }
+                inner.key_order.insert(seq, key.clone());
+                inner.buckets.entry(key).or_insert(Bucket {
+                    seq,
+                    exchanges: VecDeque::new(),
+                })
+            }
+        };
+        if bucket.exchanges.len() >= samples_per_key {
+            bucket.exchanges.pop_front();
         }
-        inner.key_order.push_back(key.clone());
-
-        let bucket = inner.buckets.entry(key).or_default();
-        let cap = samples_per_key();
-        if bucket.len() >= cap {
-            bucket.pop_front();
-        }
-        bucket.push_back(exchange);
+        bucket.exchanges.push_back(exchange);
     }
 
     /// The exchanges kept for an endpoint, oldest first; empty for an unknown endpoint.
@@ -198,7 +225,7 @@ impl ObservationStore {
         inner
             .buckets
             .get(key)
-            .map(|b| b.iter().cloned().collect())
+            .map(|b| b.exchanges.iter().cloned().collect())
             .unwrap_or_default()
     }
 
@@ -214,7 +241,7 @@ impl ObservationStore {
         let belongs =
             |k: &ObservationKey| k.group_name.as_deref() == group && k.service_name == service_name;
         inner.buckets.retain(|k, _| !belongs(k));
-        inner.key_order.retain(|k| !belongs(k));
+        inner.key_order.retain(|_, k| !belongs(k));
     }
 
     pub fn clear(&self) {
@@ -522,6 +549,119 @@ mod tests {
             store.observations(&other("/b")).is_empty(),
             "the oldest left"
         );
+    }
+
+    /// The eviction order as it was first written, a scan of a list by last update: the reference the store must agree
+    /// with, whatever it uses to find an endpoint's place.
+    #[derive(Default)]
+    struct ReferenceStore {
+        order: VecDeque<ObservationKey>,
+        buckets: HashMap<ObservationKey, VecDeque<String>>,
+    }
+
+    impl ReferenceStore {
+        fn record(&mut self, key: ObservationKey, body: String, max_keys: usize, cap: usize) {
+            if !self.buckets.contains_key(&key)
+                && self.buckets.len() >= max_keys
+                && let Some(evicted) = self.order.pop_front()
+            {
+                self.buckets.remove(&evicted);
+            }
+            if let Some(pos) = self.order.iter().position(|k| k == &key) {
+                self.order.remove(pos);
+            }
+            self.order.push_back(key.clone());
+            let bucket = self.buckets.entry(key).or_default();
+            if bucket.len() >= cap {
+                bucket.pop_front();
+            }
+            bucket.push_back(body);
+        }
+
+        fn forget_service(&mut self, service_name: &str) {
+            self.buckets.retain(|k, _| k.service_name != service_name);
+            self.order.retain(|k| k.service_name != service_name);
+        }
+    }
+
+    #[derive(Debug, Clone)]
+    enum Op {
+        Record { service: usize, path: usize },
+        Forget { service: usize },
+    }
+
+    const SERVICES: [&str; 2] = ["svc", "other"];
+    const PATHS: usize = 6;
+
+    fn key_of(service: usize, path: usize) -> ObservationKey {
+        ObservationKey {
+            service_name: SERVICES[service].into(),
+            ..sample_key(&format!("/{path}"))
+        }
+    }
+
+    fn arb_op() -> impl proptest::strategy::Strategy<Value = Op> {
+        use proptest::prelude::*;
+        prop_oneof![
+            8 => (0..SERVICES.len(), 0..PATHS).prop_map(|(service, path)| Op::Record { service, path }),
+            1 => (0..SERVICES.len()).prop_map(|service| Op::Forget { service }),
+        ]
+    }
+
+    #[test]
+    fn eviction_agrees_with_a_scan_of_the_endpoints_by_last_update() {
+        use proptest::prelude::*;
+        use proptest::test_runner::{Config, RngSeed, TestRunner};
+        let config = Config {
+            cases: 512,
+            rng_seed: RngSeed::Fixed(0x6f62_7365_7276_6564),
+            failure_persistence: None,
+            ..Config::default()
+        };
+        let strategy = (0..5usize, 1..4usize, prop::collection::vec(arb_op(), 0..40));
+        let result = TestRunner::new(config).run(&strategy, |(max_keys, cap, ops)| {
+            let store = ObservationStore::new();
+            let mut reference = ReferenceStore::default();
+            for (i, op) in ops.iter().enumerate() {
+                match *op {
+                    Op::Record { service, path } => {
+                        let body = i.to_string();
+                        store.record_within(
+                            key_of(service, path),
+                            sample_exchange(body.as_bytes()),
+                            max_keys,
+                            cap,
+                        );
+                        reference.record(key_of(service, path), body, max_keys, cap);
+                    }
+                    Op::Forget { service } => {
+                        store.forget_service(None, SERVICES[service]);
+                        reference.forget_service(SERVICES[service]);
+                    }
+                }
+                prop_assert_eq!(store.key_count(), reference.buckets.len());
+                for service in 0..SERVICES.len() {
+                    for path in 0..PATHS {
+                        let key = key_of(service, path);
+                        let kept: Vec<String> = store
+                            .observations(&key)
+                            .into_iter()
+                            .map(|e| e.response_body)
+                            .collect();
+                        let expected: Vec<String> = reference
+                            .buckets
+                            .get(&key)
+                            .map(|b| b.iter().cloned().collect())
+                            .unwrap_or_default();
+                        prop_assert_eq!(kept, expected, "{:?} after {:?}", key, &ops[..=i]);
+                    }
+                }
+            }
+            Ok(())
+        });
+        if let Err(e) = result {
+            panic!("{e}");
+        }
     }
 
     #[test]

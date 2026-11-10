@@ -12,7 +12,7 @@ A shared CI runner gives wall-clock times that vary by tens of percent from one 
 
 1. **Timed benchmarks (`criterion`) in CI, compared with a stored baseline.** Measures what a user feels, but a runner's noise is larger than most regressions worth catching, and the baseline goes stale with each runner image.
 2. **Instruction counts compared with a stored baseline.** Callgrind counts instructions, not time, so a threshold of a fraction of a percent works once the allocator is made repeatable (below). But every compiler release, dependency update or change of heap layout moves the counts with no change of the work: the baseline would need a new commit each time, and a red verdict would mostly mean "the toolchain changed".
-3. **The growth of instruction counts with the input.** Each family of inputs (rules for one request, services, requests, conflict search, configuration load and save, suggestions, script values) runs at n, 2n and 4n under Callgrind; the verdict is the ratio of the counts at 4n and n against the growth written next to the family (linear, n log n), with one tolerance. A compiler or dependency change moves all three counts together and leaves the ratio alone; a step that turns quadratic changes it by four.
+3. **The growth of instruction counts with the input.** Each family of inputs (rules for one request, services, requests, conflict search, configuration load and save, suggestions, script values, observed exchanges) runs at n, 2n and 4n under Callgrind; the verdict is the ratio of the counts at 4n and n against the growth written next to the family (linear, n log n), with one tolerance. A compiler or dependency change moves all three counts together and leaves the ratio alone; a step that turns quadratic changes it by four.
 
 ## Decision
 
@@ -26,7 +26,7 @@ The C library's allocator keeps every freed block in its per-thread cache under 
 
 - A cost that stays linear but grows by a constant factor is not seen by CI; only the one-off count of a change made for speed, or a user, sees it. For instance, copying the whole request log on each request multiplies the cost of a request by 4.7 once the log is full at its 200 entries, and stays linear in the number of requests; the request family therefore stays within the bound, where the same copy grows with the log and turns it red (7.45x).
 - A cost that grows only beyond 4n, with an input shape no family builds, or as time spent waiting (disk, network, locks), is not seen either. A new kind of input that can grow with use gets its family.
-- A family's sizes stay on one side of a threshold of a dependency: Rhai's string interner changes its behaviour beyond 256 strings, and Rhai refuses maps of more than 500 keys, so the script family stays under 256 values.
+- A family's sizes stay on one side of a threshold of a dependency: Rhai's string interner changes its behaviour beyond 256 strings, and Rhai refuses maps of more than 500 keys, so the script family stays under 256 values. A setting that bounds a family's input in production (`TRAFFIC_OBSERVATION_MAX_KEYS` for observed exchanges) is raised above 4n in the probe's environment, by the driver, so that the family measures the work under the bound and not the eviction at it.
 - The first run found two quadratic steps, fixed with it: finding the service of a request compared every service's group with every group, and grouping observed responses for a suggestion compared each response with every group found so far.
 
 ## What would make this decision wrong

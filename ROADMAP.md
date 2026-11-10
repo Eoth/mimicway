@@ -722,16 +722,6 @@ Size S
 
 **Done when.** Every property test runs on the chosen seeds in the CI, a test or check refuses one that does not, and a red run can be replayed from what the job shows.
 
-### E53. Recording an observed exchange scans every followed endpoint
-
-Size S
-
-**Why.** `ObservationStore::record` (`src/server/observation.rs`) moves the endpoint of each exchange to the back of its eviction order by searching that order from the front: every exchange recorded costs one comparison per endpoint followed, and a burst of calls on new endpoints costs their number squared. `TRAFFIC_OBSERVATION_MAX_KEYS` bounds it (200 endpoints by default) but has no ceiling of its own. The scale test (`scripts/scale-test.mjs`) has no family for observed calls, so nothing measures it.
-
-**What.** A family of the scale test that records n exchanges on n endpoints, with a bound above 4n (the driver can pass the setting to the probe's environment), seen red on the current code; then an eviction order that moves an endpoint without a scan, such as a sequence number per endpoint and an ordered map from sequence to endpoint.
-
-**Done when.** The family is in the scale test and green, and it was red before the change.
-
 ### E52. The rest of the rule engine in the mutation gate
 
 Size M (one file at a time, the largest first)

@@ -76,14 +76,25 @@ export function judge({ growth, n, counts }) {
   return { ok: true, ratio, allowed };
 }
 
-// Families as the probe lists them: name, n, growth class, what it measures.
+// Families as the probe lists them: name, n, growth class, what it measures, and the settings (`NAME=value`, separated
+// by spaces) that its runs receive in their environment.
 export function parseFamilies(text) {
   return text
     .trim()
     .split('\n')
     .map((line) => {
-      const [name, n, growth, about] = line.split('\t');
-      return { name, n: Number(n), growth, about };
+      const [name, n, growth, about, settings = ''] = line.split('\t');
+      const env = Object.fromEntries(
+        settings
+          .split(' ')
+          .filter(Boolean)
+          .map((pair) => {
+            const eq = pair.indexOf('=');
+            if (eq < 1) throw new Error(`${name}: setting without a value: ${pair}`);
+            return [pair.slice(0, eq), pair.slice(eq + 1)];
+          }),
+      );
+      return { name, n: Number(n), growth, about, env };
     });
 }
 
@@ -118,7 +129,7 @@ function buildProbe() {
   throw new Error('cargo built no scale probe');
 }
 
-function callgrind(probe, family, n, dir) {
+function callgrind(probe, { name: family, env }, n, dir) {
   const out = path.join(dir, `${family}-${n}.out`);
   const args = [
     '--tool=callgrind',
@@ -133,7 +144,7 @@ function callgrind(probe, family, n, dir) {
   return new Promise((resolve, reject) => {
     const child = spawn('valgrind', args, {
       stdio: ['ignore', 'ignore', 'pipe'],
-      env: { ...process.env, GLIBC_TUNABLES },
+      env: { ...process.env, ...env, GLIBC_TUNABLES },
     });
     let stderr = '';
     child.stderr.on('data', (chunk) => (stderr += chunk));
@@ -182,7 +193,7 @@ async function main(selected) {
   }
   const dir = mkdtempSync(path.join(os.tmpdir(), 'mimicway-scale-'));
   try {
-    const tasks = families.flatMap((f) => [1, 2, 4].map((k) => () => callgrind(probe, f.name, f.n * k, dir)));
+    const tasks = families.flatMap((f) => [1, 2, 4].map((k) => () => callgrind(probe, f, f.n * k, dir)));
     const counts = await pool(tasks, os.availableParallelism());
     let failed = 0;
     families.forEach((f, i) => {

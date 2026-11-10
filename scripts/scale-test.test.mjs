@@ -73,9 +73,13 @@ test('the totals of a Callgrind output are read', () => {
 });
 
 test('the families listed by the probe are read', () => {
-  const families = parseFamilies('rules\t200\tlinear\tone request\nscript\t60\tn log n\tvalues\n');
+  const families = parseFamilies(
+    'rules\t200\tlinear\tone request\t\nscript\t60\tn log n\tvalues\tA=1000 B=x=y\nold\t5\tlinear\tno settings column\n',
+  );
   assert.deepEqual(families, [
-    { name: 'rules', n: 200, growth: 'linear', about: 'one request' },
-    { name: 'script', n: 60, growth: 'n log n', about: 'values' },
+    { name: 'rules', n: 200, growth: 'linear', about: 'one request', env: {} },
+    { name: 'script', n: 60, growth: 'n log n', about: 'values', env: { A: '1000', B: 'x=y' } },
+    { name: 'old', n: 5, growth: 'linear', about: 'no settings column', env: {} },
   ]);
+  assert.throws(() => parseFamilies('f\t1\tlinear\tabout\tNOVALUE\n'), /setting without a value/);
 });

@@ -20,7 +20,15 @@ fn main() {
         }
         ["families"] => {
             for f in FAMILIES {
-                println!("{}\t{}\t{}\t{}", f.name, f.n, f.growth.name(), f.about);
+                let env: Vec<String> = f.env.iter().map(|(k, v)| format!("{k}={v}")).collect();
+                println!(
+                    "{}\t{}\t{}\t{}\t{}",
+                    f.name,
+                    f.n,
+                    f.growth.name(),
+                    f.about,
+                    env.join(" ")
+                );
             }
         }
         // Run by `cargo test --features scale-probe` with no argument: nothing to count outside Callgrind.

@@ -43,6 +43,8 @@ pub struct Family {
     pub n: usize,
     pub growth: Growth,
     pub about: &'static str,
+    /// Settings the driver puts in the probe's environment, read by production code as at startup (`crate::settings`).
+    pub env: &'static [(&'static str, &'static str)],
     run: fn(usize),
 }
 
@@ -52,6 +54,7 @@ pub const FAMILIES: &[Family] = &[
         n: 800,
         growth: Growth::Linear,
         about: "one request through the router, matched by the last of n rules of its service",
+        env: &[],
         run: rules,
     },
     Family {
@@ -59,6 +62,7 @@ pub const FAMILIES: &[Family] = &[
         n: 400,
         growth: Growth::Linear,
         about: "one request through the router, for the last of n services, each in a group of its own",
+        env: &[],
         run: services,
     },
     Family {
@@ -66,6 +70,7 @@ pub const FAMILIES: &[Family] = &[
         n: 50,
         growth: Growth::Linear,
         about: "n requests through the router against the same 20 rules, each one logged (4n stays within the log's 200 entries)",
+        env: &[],
         run: requests,
     },
     Family {
@@ -73,6 +78,7 @@ pub const FAMILIES: &[Family] = &[
         n: 200,
         growth: Growth::Linear,
         about: "conflict search for a draft rule among n rules of its service",
+        env: &[],
         run: conflicts,
     },
     Family {
@@ -80,6 +86,7 @@ pub const FAMILIES: &[Family] = &[
         n: 50,
         growth: Growth::Linear,
         about: "loading a configuration file of n services of 4 rules",
+        env: &[],
         run: load,
     },
     Family {
@@ -87,6 +94,7 @@ pub const FAMILIES: &[Family] = &[
         n: 50,
         growth: Growth::Linear,
         about: "saving one change to a configuration of n services of 4 rules, backup and disk write included",
+        env: &[],
         run: save,
     },
     Family {
@@ -94,6 +102,7 @@ pub const FAMILIES: &[Family] = &[
         n: 200,
         growth: Growth::Linear,
         about: "suggestions from n observed endpoints of one route, 3 exchanges each",
+        env: &[],
         run: suggestions,
     },
     // 4n stays under 256 values, where Rhai's string interner starts to evict (`throttle_cache`): a step at a threshold,
@@ -103,7 +112,18 @@ pub const FAMILIES: &[Family] = &[
         n: 60,
         growth: Growth::Linear,
         about: "one request whose rule script returns n values, all of them used by the response template",
+        env: &[],
         run: script,
+    },
+    // The bound on followed endpoints stays above 4n, so that every exchange opens or moves an endpoint and none is
+    // evicted: the family measures the eviction order kept up to date, not the eviction itself.
+    Family {
+        name: "observations",
+        n: 200,
+        growth: Growth::Linear,
+        about: "n observed exchanges on n new endpoints, then one more on each of them, in the same order",
+        env: &[("TRAFFIC_OBSERVATION_MAX_KEYS", "1000")],
+        run: observations,
     },
 ];
 
@@ -443,6 +463,42 @@ fn suggestions(n: usize) {
         .collect();
     warm_then_measure(&mut || {
         black_box(crate::server::suggestion::suggest_for_service(&endpoints));
+    });
+}
+
+fn observations(n: usize) {
+    assert!(
+        crate::server::observation::max_keys() >= n,
+        "TRAFFIC_OBSERVATION_MAX_KEYS must stay above the family's sizes"
+    );
+    let key = |i: usize| ObservationKey {
+        group_name: None,
+        service_name: "svc".into(),
+        method: "GET".into(),
+        sub_path: format!("/orders/{i}"),
+    };
+    let exchange = ObservedExchange::new(
+        HashMap::new(),
+        HashMap::new(),
+        b"",
+        None,
+        200,
+        HashMap::new(),
+        b"{}",
+        Some("application/json".into()),
+    );
+    let calls = || -> Vec<(ObservationKey, ObservedExchange)> {
+        (0..2 * n).map(|i| (key(i % n), exchange.clone())).collect()
+    };
+    // One batch for the warm-up run, one for the counted run: each records into a store of its own.
+    let mut batches = vec![calls(), calls()];
+    warm_then_measure(&mut || {
+        let store = crate::server::observation::ObservationStore::new();
+        for (key, exchange) in batches.pop().expect("a batch per run") {
+            store.record(key, exchange);
+        }
+        assert_eq!(store.key_count(), n, "no endpoint evicted");
+        black_box(store);
     });
 }
 
