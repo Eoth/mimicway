@@ -180,8 +180,9 @@ impl ObservationStore {
         self.record_within(key, exchange, max_keys(), samples_per_key());
     }
 
-    /// `record` with its two bounds given, so that tests can use small ones without changing the environment.
-    fn record_within(
+    /// `record` with its two bounds given, so that tests and the scale test (`scale_probe`) can set them without changing
+    /// the environment.
+    pub(crate) fn record_within(
         &self,
         key: ObservationKey,
         exchange: ObservedExchange,
@@ -578,9 +579,11 @@ mod tests {
             bucket.push_back(body);
         }
 
-        fn forget_service(&mut self, service_name: &str) {
-            self.buckets.retain(|k, _| k.service_name != service_name);
-            self.order.retain(|k| k.service_name != service_name);
+        fn forget_service(&mut self, (group, name): (Option<&str>, &str)) {
+            let belongs =
+                |k: &ObservationKey| k.group_name.as_deref() == group && k.service_name == name;
+            self.buckets.retain(|k, _| !belongs(k));
+            self.order.retain(|k| !belongs(k));
         }
     }
 
@@ -590,12 +593,16 @@ mod tests {
         Forget { service: usize },
     }
 
-    const SERVICES: [&str; 2] = ["svc", "other"];
-    const PATHS: usize = 6;
+    /// A service is its group and its name: the same name in a group is another service.
+    const SERVICES: [(Option<&str>, &str); 3] =
+        [(None, "svc"), (Some("g"), "svc"), (None, "other")];
+    const PATHS: usize = 5;
 
     fn key_of(service: usize, path: usize) -> ObservationKey {
+        let (group, name) = SERVICES[service];
         ObservationKey {
-            service_name: SERVICES[service].into(),
+            group_name: group.map(str::to_string),
+            service_name: name.into(),
             ..sample_key(&format!("/{path}"))
         }
     }
@@ -618,7 +625,7 @@ mod tests {
             failure_persistence: None,
             ..Config::default()
         };
-        let strategy = (0..5usize, 1..4usize, prop::collection::vec(arb_op(), 0..40));
+        let strategy = (0..5usize, 0..4usize, prop::collection::vec(arb_op(), 0..40));
         let result = TestRunner::new(config).run(&strategy, |(max_keys, cap, ops)| {
             let store = ObservationStore::new();
             let mut reference = ReferenceStore::default();
@@ -635,7 +642,8 @@ mod tests {
                         reference.record(key_of(service, path), body, max_keys, cap);
                     }
                     Op::Forget { service } => {
-                        store.forget_service(None, SERVICES[service]);
+                        let (group, name) = SERVICES[service];
+                        store.forget_service(group, name);
                         reference.forget_service(SERVICES[service]);
                     }
                 }

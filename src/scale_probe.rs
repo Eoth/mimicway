@@ -121,9 +121,17 @@ pub const FAMILIES: &[Family] = &[
         name: "observations",
         n: 200,
         growth: Growth::Linear,
-        about: "n observed exchanges on n new endpoints, then one more on each of them, in the same order",
+        about: "n observed exchanges on n new endpoints, then one more on each of them, the last created first",
         env: &[("TRAFFIC_OBSERVATION_MAX_KEYS", "1000")],
         run: observations,
+    },
+    Family {
+        name: "evictions",
+        n: 200,
+        growth: Growth::Linear,
+        about: "2n observed exchanges on 2n new endpoints, with room for n: each of the last n evicts one",
+        env: &[],
+        run: evictions,
     },
 ];
 
@@ -471,12 +479,38 @@ fn observations(n: usize) {
         crate::server::observation::max_keys() >= n,
         "TRAFFIC_OBSERVATION_MAX_KEYS must stay above the family's sizes"
     );
-    let key = |i: usize| ObservationKey {
-        group_name: None,
-        service_name: "svc".into(),
-        method: "GET".into(),
-        sub_path: format!("/orders/{i}"),
-    };
+    // The second pass goes backwards: each endpoint it updates is then as far from the front of the eviction order as
+    // from its back, so that a scan from either end costs its length.
+    let order: Vec<usize> = (0..n).chain((0..n).rev()).collect();
+    let mut batches = vec![observed_calls(&order), observed_calls(&order)];
+    warm_then_measure(&mut || {
+        let store = crate::server::observation::ObservationStore::new();
+        for (key, exchange) in batches.pop().expect("a batch per run") {
+            store.record(key, exchange);
+        }
+        assert_eq!(store.key_count(), n, "no endpoint evicted");
+        black_box(store);
+    });
+}
+
+/// The bound is given to the store directly rather than through the environment: it has to follow n, at half the
+/// endpoints, so that a step that searches the endpoints to evict one grows with n.
+fn evictions(n: usize) {
+    let order: Vec<usize> = (0..2 * n).collect();
+    let mut batches = vec![observed_calls(&order), observed_calls(&order)];
+    warm_then_measure(&mut || {
+        let store = crate::server::observation::ObservationStore::new();
+        for (key, exchange) in batches.pop().expect("a batch per run") {
+            store.record_within(key, exchange, n, 8);
+        }
+        assert_eq!(store.key_count(), n, "the first n endpoints evicted");
+        black_box(store);
+    });
+}
+
+/// One small exchange per endpoint number of `order`, built before the count. One batch serves the warm-up run and
+/// another the counted run, each into a store of its own.
+fn observed_calls(order: &[usize]) -> Vec<(ObservationKey, ObservedExchange)> {
     let exchange = ObservedExchange::new(
         HashMap::new(),
         HashMap::new(),
@@ -487,19 +521,18 @@ fn observations(n: usize) {
         b"{}",
         Some("application/json".into()),
     );
-    let calls = || -> Vec<(ObservationKey, ObservedExchange)> {
-        (0..2 * n).map(|i| (key(i % n), exchange.clone())).collect()
-    };
-    // One batch for the warm-up run, one for the counted run: each records into a store of its own.
-    let mut batches = vec![calls(), calls()];
-    warm_then_measure(&mut || {
-        let store = crate::server::observation::ObservationStore::new();
-        for (key, exchange) in batches.pop().expect("a batch per run") {
-            store.record(key, exchange);
-        }
-        assert_eq!(store.key_count(), n, "no endpoint evicted");
-        black_box(store);
-    });
+    order
+        .iter()
+        .map(|i| {
+            let key = ObservationKey {
+                group_name: None,
+                service_name: "svc".into(),
+                method: "GET".into(),
+                sub_path: format!("/orders/{i}"),
+            };
+            (key, exchange.clone())
+        })
+        .collect()
 }
 
 fn script(n: usize) {
