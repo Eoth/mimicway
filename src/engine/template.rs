@@ -407,6 +407,12 @@ mod catalog_judge;
 
 #[cfg(test)]
 mod tests {
+    // Equivalent mutants (cargo-mutants, excluded in .cargo/mutants.toml):
+    // - `at + 1` replaced by `at * 1` in `eval_expression`: the pipes then start with the `|` itself, which
+    //   `split_pipes` turns into an empty first pipe, and `apply_pipes` skips empty pipes.
+    // - the guard `!in_quotes` of `)` replaced by `true` in `find_closing_double_brace`: a quote toggles only at depth 0
+    //   and `(` counts only outside quotes, so the depth is 0 inside quotes, where `saturating_sub` leaves it at 0.
+
     use super::*;
 
     fn make_ctx<'a>(
@@ -559,8 +565,34 @@ mod tests {
     fn now_epoch_numeric() {
         let (p, q, h) = empty_ctx();
         let ctx = make_ctx(&p, &q, &h, b"", 0);
+        let before = now_secs_of_clock();
         let out = render_template("{{now_epoch}}", &ctx);
-        assert!(out.parse::<u64>().is_ok());
+        let after = now_secs_of_clock();
+        let epoch: u64 = out.parse().expect("a number");
+        assert!(
+            (before..=after).contains(&epoch),
+            "{epoch} is the current second"
+        );
+    }
+
+    fn now_secs_of_clock() -> u64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+    }
+
+    #[test]
+    fn now_iso_is_the_current_second() {
+        let (p, q, h) = empty_ctx();
+        let ctx = make_ctx(&p, &q, &h, b"", 0);
+        let before = now_secs_of_clock();
+        let out = render_template("{{now_iso}}", &ctx);
+        let after = now_secs_of_clock();
+        assert!(
+            (before..=after).any(|s| epoch_to_iso(s) == out),
+            "{out} is between {before} and {after}"
+        );
     }
 
     #[test]
@@ -717,8 +749,8 @@ mod tests {
         let (q, h) = (HashMap::new(), HashMap::new());
         let ctx = make_ctx(&p, &q, &h, b"", 0);
         assert_eq!(
-            render_template("{{path.siret | first(9) | upper}}", &ctx),
-            "443061841"
+            render_template("{{path.siret | first(9) | append(\"-\") | upper}}", &ctx),
+            "443061841-"
         );
     }
 
@@ -750,6 +782,115 @@ mod tests {
             let ctx = make_ctx(&p, &q, &h, b"", 0);
             proptest::prop_assert_eq!(render_template(&literal_template(&text), &ctx), text);
         }
+    }
+
+    /// One expression whose rendering follows from how it is built: a quoted text, which may hold `}}`, `|` and
+    /// parentheses, or an unknown name holding a single `}`, which renders empty; then an `append` whose argument, quoted
+    /// or not, may hold `}}` and `|`; and a second pipe after it.
+    fn generated_expression(
+        text: &str,
+        quoted: bool,
+        suffix: &str,
+        suffix_quoted: bool,
+    ) -> (String, String) {
+        let (head, value) = if quoted {
+            (format!(r#""{text}""#), text)
+        } else {
+            (format!("no{}", text.replace("}}", "}x")), "")
+        };
+        let argument = if suffix_quoted {
+            format!(r#""{suffix}""#)
+        } else {
+            suffix.replace(' ', "")
+        };
+        (
+            format!(r#"{{{{ {head} | append({argument}) | prepend("<") }}}}"#),
+            format!("<{value}{}", argument.trim_matches('"')),
+        )
+    }
+
+    // The end of an expression is the first `}}` outside a quoted text and outside parentheses: the generated texts put
+    // braces, bars and parentheses where they must not end it, and a single `}` where only a pair may end it. The same
+    // expression cut before its end is no expression, and renders as it is written. A parenthesis alone inside a quoted
+    // pipe argument is left out: it breaks the expression today.
+    #[test]
+    fn an_expression_ends_at_its_own_closing_braces_whatever_its_texts_hold() {
+        use proptest::prelude::*;
+        use proptest::test_runner::{Config, RngSeed, TestRunner};
+        let config = Config {
+            cases: 512,
+            rng_seed: RngSeed::Fixed(0x7465_6d70_6c61_7465),
+            failure_persistence: None,
+            ..Config::default()
+        };
+        let part = (
+            "[a-z }]{0,4}",
+            prop_oneof![
+                "[a-z{}|() ]{0,8}".prop_map(|t| (t, true)),
+                "[a-z}]{0,6}".prop_map(|t| (t, false))
+            ],
+            "[a-z{}| ]{0,8}",
+            any::<bool>(),
+            any::<prop::sample::Index>(),
+        );
+        let strategy = prop::collection::vec(part, 1..4);
+        let (p, q, h) = empty_ctx();
+        let ctx = make_ctx(&p, &q, &h, b"", 0);
+        let result = TestRunner::new(config).run(&strategy, |parts| {
+            let (mut template, mut expected) = (String::new(), String::new());
+            for (plain, (text, quoted), suffix, suffix_quoted, cut) in &parts {
+                let (expression, value) =
+                    generated_expression(text, *quoted, suffix, *suffix_quoted);
+                template.push_str(plain);
+                expected.push_str(plain);
+
+                let cut: String = expression
+                    .chars()
+                    .take(cut.index(expression.chars().count()))
+                    .collect();
+                prop_assert_eq!(
+                    render_template(&format!("{template}{cut}"), &ctx),
+                    format!("{expected}{cut}")
+                );
+
+                template.push_str(&expression);
+                expected.push_str(&value);
+            }
+            prop_assert_eq!(render_template(&template, &ctx), expected);
+            Ok(())
+        });
+        if let Err(e) = result {
+            panic!("{e}");
+        }
+    }
+
+    #[test]
+    fn an_expression_without_a_variable_renders_its_pipes_on_an_empty_value() {
+        let (p, q, h) = empty_ctx();
+        let ctx = make_ctx(&p, &q, &h, b"", 0);
+        assert_eq!(render_template("[{{|upper}}]", &ctx), "[]");
+        assert_eq!(
+            render_template(r#"[{{ | default("none") }}]"#, &ctx),
+            "[none]"
+        );
+    }
+
+    // Only double quotes protect what an expression holds; a single-quoted argument may hold one alone.
+    #[test]
+    fn a_double_quote_inside_a_single_quoted_argument_keeps_the_expression() {
+        let (p, q, h) = empty_ctx();
+        let ctx = make_ctx(&p, &q, &h, b"", 0);
+        assert_eq!(
+            render_template(r#"[{{ "" | default('5" screen') }}]"#, &ctx),
+            r#"[5" screen]"#
+        );
+    }
+
+    #[test]
+    fn the_fake_values_of_scripts_are_those_of_templates() {
+        assert!(resolve_fake_public("Email").contains('@'));
+        assert_eq!(resolve_fake_public("PostcodeFR").len(), 5);
+        assert_eq!(resolve_fake_public("NoSuchKind"), "");
     }
 
     #[test]
@@ -802,6 +943,60 @@ mod tests {
     fn days_from_civil_round_trips_for_leap_day() {
         let days = days_from_civil(2028, 2, 29);
         assert_eq!(civil_from_days(days), (2028, 2, 29));
+    }
+
+    /// The calendar as it is written, without arithmetic: the next day of a date, by the length of its month and the
+    /// Gregorian leap year rule.
+    fn next_day((y, m, d): (i64, u32, u32)) -> (i64, u32, u32) {
+        let leap = (y % 4 == 0 && y % 100 != 0) || y % 400 == 0;
+        let length = match m {
+            2 if leap => 29,
+            2 => 28,
+            4 | 6 | 9 | 11 => 30,
+            _ => 31,
+        };
+        match (d < length, m < 12) {
+            (true, _) => (y, m, d + 1),
+            (false, true) => (y, m + 1, 1),
+            (false, false) => (y + 1, 1, 1),
+        }
+    }
+
+    // Every day from the year -800 to 2800 (nine 400-year cycles, years before and after zero, every leap rule), walked
+    // one at a time from 1970-01-01, which is day 0: both conversions must agree with the walk on each of them.
+    #[test]
+    fn the_calendar_arithmetic_agrees_with_a_walk_through_every_day() {
+        let start = days_from_civil(-800, 1, 1);
+        let mut date = (-800, 1, 1);
+        let mut days = start;
+        while date.0 < 2800 {
+            if date == (1970, 1, 1) {
+                assert_eq!(days, 0, "1970-01-01 is day 0");
+            }
+            assert_eq!(civil_from_days(days), date, "day {days}");
+            assert_eq!(days_from_civil(date.0, date.1, date.2), days, "{date:?}");
+            date = next_day(date);
+            days += 1;
+        }
+        assert!(days > 0, "the walk went through 1970");
+    }
+
+    // From 1970 on, each day at a time of day that changes from one day to the next, every hour, minute and second.
+    #[test]
+    fn epoch_to_iso_agrees_with_the_walk_through_every_day() {
+        let mut date = (1970, 1, 1);
+        for day in 0..(2800 - 1970) * 366 {
+            let second_of_day = (day * 7919) % 86_400;
+            let (y, m, d) = date;
+            let expected = format!(
+                "{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}Z",
+                second_of_day / 3600,
+                second_of_day % 3600 / 60,
+                second_of_day % 60
+            );
+            assert_eq!(epoch_to_iso(day * 86_400 + second_of_day), expected);
+            date = next_day(date);
+        }
     }
 
     #[test]

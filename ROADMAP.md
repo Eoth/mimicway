@@ -731,3 +731,15 @@ Size M (one file at a time, the largest first)
 **What.** For each file, `cargo mutants -f <file>`; each survivor is caught by a new test or explained as equivalent (in the test module of its file and in `.cargo/mutants.toml`), then the file joins `SCOPE` in `scripts/mutants-gate.sh`. A file whose code only the integration tests reach (`tests/script_budget.rs` runs scripts) gets the test arguments it needs. The weekly run of the whole scope is split into shards (`--shard k/n`, one job each) once it would pass the six hours of a GitHub job: at about 40 seconds a mutant, the whole engine is 12 hours in one job.
 
 **Done when.** Every file of `src/engine/` is in the gate's scope, and the weekly run of the whole scope passes within the job limits.
+
+**Progress.** `matcher.rs` (145 mutants) and `template.rs` (285: 33 survivors caught, 2 equivalent) are in the scope: about 4.8 hours for the weekly run at 40 seconds a mutant. The next file, `script.rs` (167), takes it past six hours: shard the weekly run first.
+
+### E54. A parenthesis alone in a quoted pipe argument breaks the expression
+
+Size S
+
+**Why.** `find_closing_double_brace` (`src/engine/template.rs`) counts parentheses outside double quotes, and reads a double quote only outside parentheses. Inside a pipe argument, a quoted text that holds a parenthesis alone therefore changes the depth: `{{ "x" | replace("x", ")") }}` and `{{ "x" | append("a(b") }}` are not expressions, and render as they are written. Balanced parentheses (`append(" (beta)")`) work. Recognising double quotes at every depth would fix it, but would break a single-quoted argument that holds a double quote alone (`default('5" screen')`), which works today and which a test now keeps.
+
+**What.** Decide which quotes protect what an argument holds (double only, or double and single, each closing only itself), write it next to the parser, then change `find_closing_double_brace` and `split_pipes` together; the generated expressions of `an_expression_ends_at_its_own_closing_braces_whatever_its_texts_hold` then include parentheses in quoted arguments.
+
+**Done when.** Both templates above render `)` and `xa(b`, the single-quoted case keeps its rendering or its change is written in the changelog, and the judge generates the cases.

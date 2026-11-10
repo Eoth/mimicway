@@ -13,4 +13,7 @@ minimum_test_timeout = 60
 exclude_re = [
   # src/engine/matcher.rs
   '^src/engine/matcher\.rs:\d+:\d+: replace \| with \^ in url_decode$',
+  # src/engine/template.rs (the guard of `)` is anchored on its line: the same mutation of the guard of `(` is caught)
+  '^src/engine/template\.rs:\d+:\d+: replace \+ with \* in eval_expression$',
+  '^src/engine/template\.rs:60:\d+: replace match guard !in_quotes with true in find_closing_double_brace$',
 ]
