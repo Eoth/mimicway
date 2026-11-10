@@ -2,8 +2,17 @@
 
 Most versions upgrade in place: stop the old one, start the new one on the same data directory. This page lists the changes that need something from you, newest first.
 
+- [After 0.4.0: parse_xml_items reads its path from the root](#after-040-parse_xml_items-reads-its-path-from-the-root)
 - [After 0.3.0: one script per rule](#after-030-one-script-per-rule)
 - [From lightMock to Mimicway](#from-lightmock-to-mimicway)
+
+## After 0.4.0: parse_xml_items reads its path from the root
+
+The path given to `parse_xml_items` in a script now reads as in XPath conditions: from the root element of the body down, each segment a child of the one before. It used to find each segment at any depth below the one before, which also found items outside the list meant (under a parent of the same name elsewhere in the body), and lost every item placed after another child of their parent.
+
+**What changes for your scripts.** A path written from the root, as the documentation always showed (`Envelope/Body/GetOrderTotalsRequest/articles/article`), finds the same items as before, plus any it used to lose. A path that starts below the root or skips a level now finds **nothing, without an error**: `"article"` or `"articles/article"` in a SOAP envelope used to find the articles, and now gives an empty array, so a response built from it loses its items.
+
+**What to do.** Look for `parse_xml_items` in the scripts of your rules (in `mock-config.yaml`, or in the rule form), and write each path from the root element of the body that the rule receives, without namespace prefixes: `Envelope/Body/GetOrderTotalsRequest/articles/article`. The [rule tester](docs/en/rule-tester-and-conflicts.md) shows what a script returns for a captured request: an empty list where you expect items means a path to complete.
 
 ## After 0.3.0: one script per rule
 

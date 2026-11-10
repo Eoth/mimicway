@@ -496,7 +496,7 @@
   "to_json(value)": "to_json(valeur)",
   "Serializes a Rhai list or object to JSON text, to insert through {{script.field}}.": "Serialise une liste/objet Rhai en texte JSON, a inserer via {{script.champ}}.",
   "parse_xml_items(text, \"path/to/item\")": "parse_xml_items(texte, \"chemin/vers/item\")",
-  "Extracts every XML element repeated at a path into a list of Rhai objects (one level of child fields).": "Extrait tous les elements XML repetes a un chemin en liste d'objets Rhai (un niveau de champs enfants).",
+  "Extracts every XML element repeated at a path, written from the root element as in XPath conditions, into a list of Rhai objects (one level of child fields).": "Extrait tous les elements XML repetes a un chemin, ecrit depuis l'element racine comme dans les conditions XPath, en liste d'objets Rhai (un niveau de champs enfants).",
   "parse_xml_items(request.body, \"path/to/item\")": "parse_xml_items(request.body, \"chemin/vers/item\")",
   "xml_element(tag, value)": "xml_element(tag, valeur)",
   "Builds an XML element <tag>...</tag> from a Rhai list or object (recursive).": "Construit un element XML <tag>...</tag> a partir d'une liste/objet Rhai (recursif).",

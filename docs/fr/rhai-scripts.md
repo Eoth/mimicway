@@ -321,6 +321,8 @@ for a in articles {
 
 `unitPrice` vaut `445` pour `REF-001` dans les deux exemples : `seeded_int` donne la même valeur quel que soit le format source, puisque le SKU est le même.
 
+> **Comment `parse_xml_items` lit son chemin** : comme une condition XPath, depuis l'élément racine, chaque segment étant un enfant du précédent ; les segments s'écrivent sans préfixe d'espace de noms, et les préfixes du corps sont ignorés. `Envelope/Body/GetOrderTotalsRequest/articles/article` trouve les articles de cette liste seulement, quels que soient les autres éléments du corps autour d'eux, et aucun de ceux d'un `<articles>` placé ailleurs. Un élément auto-fermant est un élément vide : `<qty/>` donne un texte vide, et `<article/>` un élément sans champ.
+
 > **Limite de `parse_xml_items`** : seul le premier niveau d'enfants de chaque élément répété est capturé (des champs à plat, comme `<sku>` et `<qty>` ci-dessus). Une structure plus profonde à l'intérieur d'un article n'est pas extraite : gardez les éléments répétés simples, ou appelez `parse_xml_items` plusieurs fois avec des chemins différents.
 
 ## Cas d'usage : recopier une valeur de la requête SOAP dans la réponse

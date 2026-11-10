@@ -443,12 +443,15 @@ fn dynamic_field_to_string(value: &rhai::Dynamic) -> Result<String, Box<rhai::Ev
 
 // --- XML: extracting repeated elements, building elements (parse_xml_items, xml_element) ---
 
-// Extracts every element repeated at `path` (segments separated by "/", the last one being the repeated tag;
-// namespace prefixes ignored, as in XPath conditions) as an array of maps: one entry per child element, keyed by
-// its tag, valued by its text. Only the first level of children is read, which fits flat SOAP items such as
-// `<product><sku>A</sku><qty>2</qty></product>`; deeper structure inside an item is ignored, since a generic XML
-// tree would be out of proportion with this need. Extraction stops at the first item, field or byte of text over the
-// limits of a value (field names count with the text), rather than gathering a large body whole before Rhai checks it.
+// Extracts every element repeated at `path` as an array of maps: one entry per child element, keyed by its tag, valued
+// by its text. The path reads as in XPath conditions: segments separated by "/", from the root element down, each one
+// a child of the one before, the last one being the repeated tag, namespace prefixes ignored. Only the first level of
+// children is read, which fits flat SOAP items such as `<product><sku>A</sku><qty>2</qty></product>`; deeper structure
+// inside an item is ignored, since a generic XML tree would be out of proportion with this need. A self-closing
+// element is the same as an empty one (`<qty/>` gives an empty text, `<product/>` an empty item). Extraction stops
+// at the first item, field or byte of text over the limits of a value (field names count with the text), rather than
+// gathering a large body whole before Rhai checks it, and at the first malformed part of the text, keeping the items
+// read before it.
 fn parse_xml_items_impl(xml: &str, path: &str) -> Result<rhai::Array, Box<rhai::EvalAltResult>> {
     use super::script_budget::{
         ARRAY_TOO_LARGE, MAP_TOO_LARGE, MAX_ARRAY_SIZE, MAX_MAP_SIZE, MAX_STRING_SIZE,
@@ -463,8 +466,9 @@ fn parse_xml_items_impl(xml: &str, path: &str) -> Result<rhai::Array, Box<rhai::
     };
 
     let mut reader = Reader::from_str(xml);
-    let mut parent_depth = 0usize;
-    let mut in_parent = parent_segments.is_empty();
+    // Outside the items, two counters stand for the stack of open elements, whatever its depth: `depth` elements are
+    // open, and the first `on_path` of them, from the root, are the first parents of the path.
+    let (mut depth, mut on_path) = (0usize, 0usize);
     let mut items = rhai::Array::new();
 
     // item_depth: 0 outside an item, 1 inside the item element, 2 inside one of its children (the captured text).
@@ -475,31 +479,17 @@ fn parse_xml_items_impl(xml: &str, path: &str) -> Result<rhai::Array, Box<rhai::
     let (mut fields, mut text_bytes) = (0usize, 0usize);
 
     loop {
-        match reader.read_event() {
-            Ok(Event::Start(e)) => {
-                let local = crate::engine::matcher::MatchEngine::local_name(&e);
-                if item_depth == 0 {
-                    if in_parent {
-                        if local == *item_tag {
-                            item_depth = 1;
-                            current_item = rhai::Map::new();
-                        }
-                    } else if parent_depth < parent_segments.len()
-                        && local == parent_segments[parent_depth]
-                    {
-                        parent_depth += 1;
-                        if parent_depth == parent_segments.len() {
-                            in_parent = true;
-                        }
-                    }
-                } else if item_depth == 1 {
-                    current_field = local;
-                    current_text.clear();
-                    item_depth = 2;
-                } else {
-                    item_depth += 1;
-                }
-            }
+        // A self-closing element is read as its start followed by its end.
+        let (opened, closes) = match reader.read_event() {
+            Ok(Event::Start(e)) => (
+                Some(crate::engine::matcher::MatchEngine::local_name(&e)),
+                false,
+            ),
+            Ok(Event::Empty(e)) => (
+                Some(crate::engine::matcher::MatchEngine::local_name(&e)),
+                true,
+            ),
+            Ok(Event::End(_)) => (None, true),
             Ok(event @ (Event::Text(_) | Event::GeneralRef(_))) => {
                 if item_depth == 2
                     && let Some(text) = crate::engine::matcher::MatchEngine::xml_text(&event)
@@ -511,38 +501,67 @@ fn parse_xml_items_impl(xml: &str, path: &str) -> Result<rhai::Array, Box<rhai::
                     }
                     current_text.push_str(&text);
                 }
+                continue;
             }
-            Ok(Event::End(_)) => {
-                if item_depth == 2 {
+            Ok(Event::Eof) | Err(_) => break,
+            Ok(_) => continue,
+        };
+        if let Some(local) = opened {
+            if item_depth == 0 {
+                if on_path == parent_segments.len() && depth == on_path && local == *item_tag {
+                    item_depth = 1;
+                    current_item = rhai::Map::new();
+                } else {
+                    if on_path == depth
+                        && depth < parent_segments.len()
+                        && local == parent_segments[depth]
+                    {
+                        on_path += 1;
+                    }
+                    depth += 1;
+                }
+            } else if item_depth == 1 {
+                current_field = local;
+                current_text.clear();
+                item_depth = 2;
+            } else {
+                item_depth += 1;
+            }
+        }
+        if closes {
+            match item_depth {
+                0 => {
+                    // The reader, as configured by default (`allow_unmatched_ends` off), refuses an end tag that
+                    // closes no open element: `depth` is never 0 here.
+                    depth -= 1;
+                    on_path = on_path.min(depth);
+                }
+                1 => {
+                    if items.len() == MAX_ARRAY_SIZE {
+                        return Err(too_large(ARRAY_TOO_LARGE));
+                    }
+                    items.push(rhai::Dynamic::from_map(std::mem::take(&mut current_item)));
+                    item_depth = 0;
+                }
+                2 => {
                     fields += 1;
                     if fields > MAX_MAP_SIZE {
                         return Err(too_large(MAP_TOO_LARGE));
                     }
+                    // A field without text (`<qty/>`, `<qty></qty>`) brings its name alone, checked here.
                     text_bytes += current_field.len() + current_text.trim().len();
+                    if text_bytes > MAX_STRING_SIZE {
+                        return Err(too_large(TEXT_TOO_LARGE));
+                    }
                     current_item.insert(
                         std::mem::take(&mut current_field).into(),
                         rhai::Dynamic::from(current_text.trim().to_string()),
                     );
                     current_text.clear();
                     item_depth = 1;
-                } else if item_depth == 1 {
-                    if items.len() == MAX_ARRAY_SIZE {
-                        return Err(too_large(ARRAY_TOO_LARGE));
-                    }
-                    items.push(rhai::Dynamic::from_map(std::mem::take(&mut current_item)));
-                    item_depth = 0;
-                } else if item_depth > 2 {
-                    item_depth -= 1;
-                } else if in_parent {
-                    parent_depth = parent_depth.saturating_sub(1);
-                    if parent_depth < parent_segments.len() {
-                        in_parent = false;
-                    }
                 }
+                _ => item_depth -= 1,
             }
-            Ok(Event::Eof) => break,
-            Err(_) => break,
-            _ => {}
         }
     }
     Ok(items)
@@ -999,7 +1018,89 @@ mod tests {
         let engine = ScriptEngine::new();
         let result = engine.execute(r#"parse_date("15/03/26", "dd/MM/yyyy")"#, &empty_ctx());
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("too short"));
+        assert!(result.unwrap_err().contains(
+            "too short for the pattern 'dd/MM/yyyy' (2 digit(s) missing for the field 'yyyy')"
+        ));
+    }
+
+    /// Days from 1970-01-01, counted year by year and month by month from a table of month lengths.
+    fn counted_days(year: i64, month: u32, day: u32) -> i64 {
+        let leap = |y: i64| (y % 4 == 0 && y % 100 != 0) || y % 400 == 0;
+        let year_length = |y: i64| if leap(y) { 366 } else { 365 };
+        let mut days: i64 = if year >= 1970 {
+            (1970..year).map(year_length).sum()
+        } else {
+            -(year..1970).map(year_length).sum::<i64>()
+        };
+        days += (1..month)
+            .map(|m| month_length(year, m) as i64)
+            .sum::<i64>();
+        days + day as i64 - 1
+    }
+
+    fn month_length(year: i64, month: u32) -> u32 {
+        let leap = (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
+        [
+            31,
+            if leap { 29 } else { 28 },
+            31,
+            30,
+            31,
+            30,
+            31,
+            31,
+            30,
+            31,
+            30,
+            31,
+        ][month as usize - 1]
+    }
+
+    // Each field is drawn around its limits (one under, at, one over) or anywhere in a range a little wider than its
+    // valid one; a date is valid when every field is, by the table of month lengths, and gives its milliseconds.
+    #[test]
+    fn parse_date_accepts_a_date_exactly_when_each_field_is_valid() {
+        use proptest::prelude::*;
+        use proptest::test_runner::{Config, RngSeed, TestRunner};
+        let config = Config {
+            cases: 1024,
+            rng_seed: RngSeed::Fixed(0x7061_7273_655f_6474),
+            failure_persistence: None,
+            ..Config::default()
+        };
+        let around = |limits: Vec<u32>, wide: std::ops::RangeInclusive<u32>| {
+            prop_oneof![prop::sample::select(limits), wide]
+        };
+        let strategy = (
+            prop_oneof![
+                prop::sample::select(vec![0i64, 1900, 1969, 1970, 2000, 2028, 9999]),
+                0..=9999i64
+            ],
+            around(vec![0, 1, 2, 12, 13], 0..=13),
+            around(vec![0, 1, 28, 29, 30, 31, 32], 0..=32),
+            around(vec![0, 23, 24], 0..=25),
+            around(vec![0, 59, 60], 0..=61),
+            around(vec![0, 59, 60], 0..=61),
+        );
+        let result = TestRunner::new(config).run(&strategy, |(y, mo, d, h, mi, s)| {
+            let text = format!("{y:04}-{mo:02}-{d:02} {h:02}:{mi:02}:{s:02}");
+            let valid = (1..=12).contains(&mo)
+                && d >= 1
+                && d <= month_length(y, mo)
+                && h <= 23
+                && mi <= 59
+                && s <= 59;
+            let parsed = parse_date_impl(&text, "yyyy-MM-dd HH:mm:ss").ok();
+            let expected = valid.then(|| {
+                (counted_days(y, mo, d) * 86_400 + h as i64 * 3_600 + mi as i64 * 60 + s as i64)
+                    * 1_000
+            });
+            prop_assert_eq!(parsed, expected, "{}", text);
+            Ok(())
+        });
+        if let Err(failure) = result {
+            panic!("{failure}");
+        }
     }
 
     #[test]
@@ -1043,6 +1144,25 @@ mod tests {
             let result = engine.execute(&script, &empty_ctx()).unwrap();
             let val: i64 = result.value.parse().unwrap();
             assert!((10..=20).contains(&val), "seeded_int out of bounds: {val}");
+        }
+    }
+
+    // Over 64 seeds, a range of a few values gives each of them, and nothing outside, wherever the range lies; a
+    // range of one value gives that value.
+    #[test]
+    fn seeded_int_reaches_every_value_of_its_range() {
+        for (min, max) in [
+            (0, 1),
+            (0, 2),
+            (-3, 2),
+            (i64::MIN, i64::MIN + 3),
+            (i64::MAX - 4, i64::MAX),
+            (7, 7),
+        ] {
+            let values: std::collections::BTreeSet<i64> = (0..64)
+                .map(|i| seeded_int_impl(&format!("seed-{i}"), min, max))
+                .collect();
+            assert_eq!(values, (min..=max).collect(), "{min}..={max}");
         }
     }
 
@@ -1332,6 +1452,346 @@ mod tests {
         assert_eq!(result.value, "0");
     }
 
+    /// The items `parse_xml_items` finds, each as its (field, text) pairs in tag order.
+    fn xml_items(xml: &str, path: &str) -> Vec<Vec<(String, String)>> {
+        parse_xml_items_impl(xml, path)
+            .unwrap()
+            .into_iter()
+            .map(|item| {
+                item.cast::<rhai::Map>()
+                    .into_iter()
+                    .map(|(key, value)| {
+                        (
+                            key.to_string(),
+                            value.cast::<rhai::ImmutableString>().to_string(),
+                        )
+                    })
+                    .collect()
+            })
+            .collect()
+    }
+
+    fn fields(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
+        pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn parse_xml_items_reads_items_after_a_sibling_that_is_no_item() {
+        let xml = "<products><count>2</count><product><sku>A</sku></product><product><sku>B</sku></product></products>";
+        assert_eq!(
+            xml_items(xml, "products/product"),
+            vec![fields(&[("sku", "A")]), fields(&[("sku", "B")])]
+        );
+        // A path down to the leaf: each Siret is an item, whatever sibling comes before it.
+        let xml = "<r><Nom>Test</Nom><Siret>123</Siret></r>";
+        assert_eq!(xml_items(xml, "r/Siret").len(), 1);
+    }
+
+    #[test]
+    fn parse_xml_items_ignores_a_parent_that_closed_before_the_rest_of_the_path() {
+        let xml = "<d><root></root><list><item><v>1</v></item></list></d>";
+        assert_eq!(
+            xml_items(xml, "d/root/list/item"),
+            Vec::<Vec<(String, String)>>::new()
+        );
+    }
+
+    #[test]
+    fn parse_xml_items_reads_a_path_from_the_root_element() {
+        let xml = "<e><b><list><item><v>1</v></item></list></b></e>";
+        assert_eq!(xml_items(xml, "e/b/list/item"), vec![fields(&[("v", "1")])]);
+        for below_the_root_or_skipping_a_level in ["item", "list/item", "e/list/item"] {
+            assert!(xml_items(xml, below_the_root_or_skipping_a_level).is_empty());
+        }
+    }
+
+    #[test]
+    fn parse_xml_items_ignores_a_parent_name_found_in_a_sibling_branch() {
+        let xml = "<root><other><list><item><v>X</v></item></list></other><list><item><v>Y</v></item></list></root>";
+        assert_eq!(
+            xml_items(xml, "root/list/item"),
+            vec![fields(&[("v", "Y")])]
+        );
+    }
+
+    #[test]
+    fn parse_xml_items_reads_a_self_closing_item_or_field_as_an_empty_one() {
+        let xml = "<r><i><a/><b>2</b></i><i/><i><a></a></i></r>";
+        assert_eq!(
+            xml_items(xml, "r/i"),
+            vec![
+                fields(&[("a", ""), ("b", "2")]),
+                vec![],
+                fields(&[("a", "")])
+            ]
+        );
+        // A self-closing parent holds no item, and closes at once.
+        assert_eq!(
+            xml_items("<r><p/><i><a>1</a></i></r>", "r/p/i"),
+            Vec::<Vec<(String, String)>>::new()
+        );
+    }
+
+    #[test]
+    fn parse_xml_items_stops_at_the_first_malformed_part_keeping_the_items_before_it() {
+        let xml = "<r><i><v>1</v></i></x><i><v>2</v></i></r>";
+        assert_eq!(xml_items(xml, "r/i"), vec![fields(&[("v", "1")])]);
+    }
+
+    fn xml_error(xml: &str, path: &str) -> String {
+        parse_xml_items_impl(xml, path).unwrap_err().to_string()
+    }
+
+    #[test]
+    fn parse_xml_items_counts_the_fields_of_all_its_items_against_the_size_of_a_map() {
+        use crate::engine::script_budget::{MAP_TOO_LARGE, MAX_MAP_SIZE};
+        let document = |fields: usize| {
+            let items: String = (0..fields / 2).map(|_| "<i><a>1</a><b/></i>").collect();
+            format!(
+                "<r>{items}{}</r>",
+                if fields % 2 == 1 {
+                    "<i><a>1</a></i>"
+                } else {
+                    ""
+                }
+            )
+        };
+        assert_eq!(
+            parse_xml_items_impl(&document(MAX_MAP_SIZE), "r/i")
+                .unwrap()
+                .len(),
+            MAX_MAP_SIZE / 2
+        );
+        assert!(xml_error(&document(MAX_MAP_SIZE + 1), "r/i").contains(MAP_TOO_LARGE));
+    }
+
+    // Field names count with the texts, the texts of the fields already read once trimmed; a text read in several
+    // pieces (`ab`, then the reference `&amp;`, then the rest) counts each piece as it comes.
+    #[test]
+    fn parse_xml_items_counts_field_names_and_texts_against_the_size_of_a_text() {
+        use crate::engine::script_budget::{MAX_STRING_SIZE, TEXT_TOO_LARGE};
+        let document = |total: usize| {
+            let rest = "z".repeat(total - "a".len() - "xx".len() - "bb".len() - "ab&".len());
+            format!("<r><i><a> xx </a><bb>ab&amp;{rest}</bb></i></r>")
+        };
+        let items = xml_items(&document(MAX_STRING_SIZE), "r/i");
+        assert_eq!(items[0][0], ("a".to_string(), "xx".to_string()));
+        assert_eq!(items[0][1].1.len(), MAX_STRING_SIZE - 5);
+        assert!(xml_error(&document(MAX_STRING_SIZE + 1), "r/i").contains(TEXT_TOO_LARGE));
+    }
+
+    // The name of a field without text counts too, written self-closing or in full.
+    #[test]
+    fn parse_xml_items_counts_the_name_of_a_field_without_text_against_the_size_of_a_text() {
+        use crate::engine::script_budget::{MAX_STRING_SIZE, TEXT_TOO_LARGE};
+        for self_closing in [true, false] {
+            let document = |length: usize| {
+                let name = "x".repeat(length);
+                let field = if self_closing {
+                    format!("<{name}/>")
+                } else {
+                    format!("<{name}></{name}>")
+                };
+                format!("<r><i>{field}</i></r>")
+            };
+            let items = xml_items(&document(MAX_STRING_SIZE), "r/i");
+            assert_eq!(items[0][0].0.len(), MAX_STRING_SIZE);
+            assert!(xml_error(&document(MAX_STRING_SIZE + 1), "r/i").contains(TEXT_TOO_LARGE));
+        }
+    }
+
+    /// A node of a generated document. An element has a local name, maybe a namespace prefix and an attribute, and
+    /// its children, written self-closing or not when it has none.
+    #[derive(Clone, Debug)]
+    enum XmlNode {
+        Element {
+            name: &'static str,
+            prefix: Option<&'static str>,
+            attribute: bool,
+            self_closing: bool,
+            children: Vec<XmlNode>,
+        },
+        Text(String),
+        Comment,
+    }
+
+    fn write_xml_node(node: &XmlNode, out: &mut String) {
+        match node {
+            // `é` as a character reference, any other character beyond ASCII as it is.
+            XmlNode::Text(text) => text.chars().for_each(|c| match c {
+                '&' => out.push_str("&amp;"),
+                '<' => out.push_str("&lt;"),
+                '>' => out.push_str("&gt;"),
+                'é' => out.push_str("&#233;"),
+                _ => out.push(c),
+            }),
+            XmlNode::Comment => out.push_str("<!-- <i>c</i> -->"),
+            XmlNode::Element {
+                name,
+                prefix,
+                attribute,
+                self_closing,
+                children,
+            } => {
+                let tag = prefix.map_or(name.to_string(), |p| format!("{p}:{name}"));
+                let attribute = if *attribute {
+                    r#" i="b&amp;&quot;""#
+                } else {
+                    ""
+                };
+                if children.is_empty() && *self_closing {
+                    out.push_str(&format!("<{tag}{attribute}/>"));
+                } else {
+                    out.push_str(&format!("<{tag}{attribute}>"));
+                    children.iter().for_each(|child| write_xml_node(child, out));
+                    out.push_str(&format!("</{tag}>"));
+                }
+            }
+        }
+    }
+
+    /// The reference walk: the elements named as the last segment whose chain of ancestors, from the top of the
+    /// document, is exactly the rest of the path; each one gives its child elements, valued by their own texts.
+    fn reference_items(
+        nodes: &[XmlNode],
+        ancestors: &mut Vec<&'static str>,
+        path: &[&str],
+        found: &mut Vec<Vec<(String, String)>>,
+    ) {
+        for node in nodes {
+            let XmlNode::Element { name, children, .. } = node else {
+                continue;
+            };
+            if ancestors.len() + 1 == path.len() && ancestors.iter().chain([name]).eq(path.iter()) {
+                let mut item = std::collections::BTreeMap::new();
+                for child in children {
+                    if let XmlNode::Element {
+                        name,
+                        children: texts,
+                        ..
+                    } = child
+                    {
+                        let text: String = texts
+                            .iter()
+                            .filter_map(|t| match t {
+                                XmlNode::Text(text) => Some(text.as_str()),
+                                _ => None,
+                            })
+                            .collect();
+                        item.insert(name.to_string(), text.trim().to_string());
+                    }
+                }
+                found.push(item.into_iter().collect());
+            } else {
+                ancestors.push(name);
+                reference_items(children, ancestors, path, found);
+                ancestors.pop();
+            }
+        }
+    }
+
+    /// The chain of names from the top of the document down to each element.
+    fn element_chains(
+        nodes: &[XmlNode],
+        ancestors: &mut Vec<&'static str>,
+        chains: &mut Vec<Vec<&'static str>>,
+    ) {
+        for node in nodes {
+            if let XmlNode::Element { name, children, .. } = node {
+                ancestors.push(name);
+                chains.push(ancestors.clone());
+                element_chains(children, ancestors, chains);
+                ancestors.pop();
+            }
+        }
+    }
+
+    // Documents of a few elements whose names repeat at every level (a parent's name in a sibling branch, deeper, or
+    // closed before the rest of the path), with prefixes, attributes, comments, self-closing elements, and texts that
+    // need escaping, hold references, line breaks and characters beyond ASCII; paths of one to four segments over the
+    // same names. A quarter of the cases at least must expect items, and some of them a text: a judge whose cases all
+    // expect nothing would pass on any code. Not generated: CDATA, processing instructions, a DTD, malformed documents,
+    // the limits of a value, prefixes in the path.
+    #[test]
+    fn parse_xml_items_finds_what_a_walk_of_the_tree_finds() {
+        use proptest::prelude::*;
+        use proptest::test_runner::{Config, RngSeed, TestRunner};
+        let config = Config {
+            cases: 1024,
+            rng_seed: RngSeed::Fixed(0x786d_6c5f_6974_656d),
+            failure_persistence: None,
+            ..Config::default()
+        };
+        let name = prop::sample::select(vec!["a", "b", "i"]);
+        let text = "[a-c &<>\"' \n\téü]{0,4}".prop_map(XmlNode::Text);
+        let leaf = prop_oneof![
+            4 => text.clone(),
+            1 => Just(XmlNode::Comment),
+            4 => (name.clone(), any::<bool>(), any::<bool>()).prop_map(|(name, attribute, self_closing)| {
+                XmlNode::Element {
+                    name,
+                    prefix: None,
+                    attribute,
+                    self_closing,
+                    children: vec![],
+                }
+            }),
+        ];
+        let node = leaf.prop_recursive(5, 48, 4, move |inner| {
+            (
+                name.clone(),
+                prop::option::of(prop::sample::select(vec!["n", "soap"])),
+                any::<bool>(),
+                any::<bool>(),
+                prop::collection::vec(inner, 0..4),
+            )
+                .prop_map(|(name, prefix, attribute, self_closing, children)| {
+                    XmlNode::Element {
+                        name,
+                        prefix,
+                        attribute,
+                        self_closing,
+                        children,
+                    }
+                })
+        });
+        let strategy = (
+            prop::collection::vec(node, 1..3),
+            prop::collection::vec(prop::sample::select(vec!["a", "b", "i"]), 1..5),
+            prop::option::of(any::<prop::sample::Index>()),
+        );
+        let (with_items, with_text) = (std::cell::Cell::new(0), std::cell::Cell::new(0));
+        let result = TestRunner::new(config).run(&strategy, |(nodes, drawn, in_tree)| {
+            // Half the paths are the chain of an element of the document, which likely holds items; the other half
+            // are drawn freely.
+            let mut chains = Vec::new();
+            element_chains(&nodes, &mut Vec::new(), &mut chains);
+            let path = match in_tree {
+                Some(index) if !chains.is_empty() => chains[index.index(chains.len())].clone(),
+                _ => drawn,
+            };
+            let mut xml = String::new();
+            nodes.iter().for_each(|node| write_xml_node(node, &mut xml));
+            let mut expected = Vec::new();
+            reference_items(&nodes, &mut Vec::new(), &path, &mut expected);
+            with_items.set(with_items.get() + usize::from(!expected.is_empty()));
+            let has_text = expected.iter().flatten().any(|(_, text)| !text.is_empty());
+            with_text.set(with_text.get() + usize::from(has_text));
+            prop_assert_eq!(xml_items(&xml, &path.join("/")), expected, "{}", xml);
+            Ok(())
+        });
+        if let Err(failure) = result {
+            panic!("{failure}");
+        }
+        assert!(
+            with_items.get() >= 256 && with_text.get() >= 64,
+            "{with_items:?} {with_text:?}"
+        );
+    }
+
     #[test]
     fn xml_element_scalar_escapes_special_chars() {
         let engine = ScriptEngine::new();
@@ -1339,6 +1799,51 @@ mod tests {
             .execute(r#"xml_element("name", "A & <B>")"#, &empty_ctx())
             .unwrap();
         assert_eq!(result.value, "<name>A &amp; &lt;B&gt;</name>");
+    }
+
+    // Any text comes back whole when the element is read, and none of the five characters of XML markup is left as
+    // it is between the tags.
+    #[test]
+    fn xml_element_escapes_every_markup_character_of_a_text() {
+        use proptest::prelude::*;
+        use proptest::test_runner::{Config, RngSeed, TestRunner};
+        let config = Config {
+            cases: 256,
+            rng_seed: RngSeed::Fixed(0x6573_6361_7065_5f74),
+            failure_persistence: None,
+            ..Config::default()
+        };
+        let result = TestRunner::new(config).run(&"[a-c&<>\"' é]{0,12}", |text| {
+            let xml = xml_element_impl("t", &rhai::Dynamic::from(text.clone())).unwrap();
+            let inner = &xml["<t>".len()..xml.len() - "</t>".len()];
+            prop_assert!(!inner.contains(['<', '>', '"', '\'']), "{}", xml);
+            prop_assert_eq!(
+                crate::engine::matcher::MatchEngine::extract_xpath(xml.as_bytes(), "t"),
+                Some(text.clone())
+            );
+            Ok(())
+        });
+        if let Err(failure) = result {
+            panic!("{failure}");
+        }
+    }
+
+    #[test]
+    fn xml_element_builds_a_text_up_to_the_size_of_a_text_and_not_one_byte_more() {
+        use crate::engine::script_budget::{MAX_STRING_SIZE, TEXT_TOO_LARGE};
+        let element = |length: usize| {
+            xml_element_impl(
+                "t",
+                &rhai::Dynamic::from("x".repeat(length - "<t></t>".len())),
+            )
+        };
+        assert_eq!(element(MAX_STRING_SIZE).unwrap().len(), MAX_STRING_SIZE);
+        assert!(
+            element(MAX_STRING_SIZE + 1)
+                .unwrap_err()
+                .to_string()
+                .contains(TEXT_TOO_LARGE)
+        );
     }
 
     #[test]

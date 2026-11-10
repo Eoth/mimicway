@@ -198,7 +198,7 @@ export const RHAI_FUNCTIONS = [
     },
     get description() {
       return t(
-        'Extracts every XML element repeated at a path into a list of Rhai objects (one level of child fields).',
+        'Extracts every XML element repeated at a path, written from the root element as in XPath conditions, into a list of Rhai objects (one level of child fields).',
       );
     },
     get insertText() {
