@@ -7,7 +7,16 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { JOBS, READ_BY_UI_TESTS, changeBase, changedFiles, planFor, verdict } from './ci-plan.mjs';
+import {
+  JOBS,
+  MUTANT_SHARDS,
+  READ_BY_UI_TESTS,
+  changeBase,
+  changedFiles,
+  mutantShards,
+  planFor,
+  verdict,
+} from './ci-plan.mjs';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const jobsOf = (event, files) => planFor(event, files).jobs;
@@ -164,6 +173,29 @@ test('the weekly run checks the advisories, compares two release builds, runs Co
     jobs: ['supply-chain', 'reproducible', 'codeql', 'fuzz-batch', 'mutants'],
     codeql: ['actions', 'javascript-typescript', 'rust'],
   });
+});
+
+test('the weekly or manual run and unknown changes split the mutants into shards, a known change judges its diff alone', () => {
+  const whole = Array.from({ length: MUTANT_SHARDS }, (_, k) => `${k}/${MUTANT_SHARDS}`);
+  assert.ok(MUTANT_SHARDS > 1);
+  assert.deepEqual(mutantShards('schedule', []), whole);
+  assert.deepEqual(mutantShards('workflow_dispatch', []), whole);
+  assert.deepEqual(mutantShards('push', null), whole);
+  assert.deepEqual(mutantShards('push', ['src/engine/matcher.rs']), ['0/1']);
+  assert.deepEqual(mutantShards('pull_request', ['src/engine/template.rs']), ['0/1']);
+});
+
+test('ci.yml runs one mutants job per shard the plan gives, and hands the shard to the gate', () => {
+  const jobs = workflowJobs();
+  assert.match(jobs.get('changes'), /^ {6}mutantShards: \$\{\{ steps\.plan\.outputs\.mutantShards \}\}$/m);
+  const mutants = jobs.get('mutants');
+  assert.match(mutants, /^ {8}shard: \$\{\{ fromJSON\(needs\.changes\.outputs\.mutantShards\) \}\}$/m);
+  assert.match(mutants, /^ {10}SHARD: \$\{\{ matrix\.shard \}\}$/m);
+  assert.match(mutants, /MUTANTS_SHARD=\$SHARD scripts\/mutants-gate\.sh/);
+  // The one shard of a diff, which the job names and judges apart.
+  const [diffShard] = mutantShards('push', ['src/engine/matcher.rs']);
+  assert.match(mutants, new RegExp(`matrix\\.shard != '${diffShard}'`));
+  assert.match(mutants, new RegExp(`if \\[ "\\$SHARD" != ${diffShard} \\]`));
 });
 
 test('every file outside frontend/ that a UI test reads runs the UI job', () => {

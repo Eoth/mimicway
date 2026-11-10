@@ -732,7 +732,7 @@ Size M (one file at a time, the largest first)
 
 **Done when.** Every file of `src/engine/` is in the gate's scope, and the weekly run of the whole scope passes within the job limits.
 
-**Progress.** `matcher.rs` (145 mutants) and `template.rs` (285: 33 survivors caught, 2 equivalent) are in the scope: about 4.8 hours for the weekly run at 40 seconds a mutant. The next file, `script.rs` (167), takes it past six hours: shard the weekly run first.
+**Progress.** `matcher.rs` (145 mutants) and `template.rs` (285: 33 survivors caught, 2 equivalent) are in the scope: about 4.8 hours for the weekly run at 40 seconds a mutant. The weekly run is split into four shards (`MUTANT_SHARDS` in `scripts/ci-plan.mjs`, one matrix job each, round-robin), and the gate fails a CI job (a shard, or the diff of a push) of more than 400 mutants before judging any. The tests of a mutant get 2 GiB of data at most: the first weekly run on GitHub (2026-11-09, `matcher.rs` alone) was stopped after 55 minutes with exit code 143, and the endless loop of `url_decode` (`i *= 1`) fills 6 GB in 19 seconds without the limit, 7 seconds to its abort with it. Next: `script.rs` (167).
 
 ### E54. A parenthesis alone in a quoted pipe argument breaks the expression
 

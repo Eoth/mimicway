@@ -8,9 +8,9 @@
 // job that a wrong condition skips cannot pass for a green run.
 //
 // Usage (in .github/workflows/ci.yml):
-//   node scripts/ci-plan.mjs plan      writes `jobs` and `codeql` (JSON arrays: jobs, CodeQL languages) to
-//                                      $GITHUB_OUTPUT. Reads GITHUB_EVENT_NAME and BEFORE (the commit a push starts
-//                                      from).
+//   node scripts/ci-plan.mjs plan      writes `jobs`, `codeql` and `mutantShards` (JSON arrays: jobs, CodeQL
+//                                      languages, shards of the mutants job) to $GITHUB_OUTPUT. Reads GITHUB_EVENT_NAME
+//                                      and BEFORE (the commit a push starts from).
 //   node scripts/ci-plan.mjs base      prints the commit the change starts from (the same one `plan` diffs against),
 //                                      nothing when it is unknown. Reads GITHUB_EVENT_NAME and BEFORE.
 //   node scripts/ci-plan.mjs verdict   reads NEEDS (toJSON(needs)) and PLANNED (the `jobs` output), exits 1 on a
@@ -203,6 +203,20 @@ export function planFor(event, files) {
   };
 }
 
+// The mutants job judging every mutant of the gate's scope runs for hours, and a GitHub job stops at six: it is split
+// into this many shards, one job each. scripts/mutants-gate.sh fails a shard that holds more mutants than a job can
+// judge, the signal to raise this number.
+export const MUTANT_SHARDS = 4;
+
+// The shards of the mutants job, each `k/n` as `cargo mutants --shard` reads it: the weekly or manual run, and a change
+// whose files are unknown, judge every mutant of the scope, in MUTANT_SHARDS jobs; a push or a pull request judges the
+// lines it changes, in one job.
+export function mutantShards(event, files) {
+  const whole = event === 'schedule' || event === 'workflow_dispatch' || files === null;
+  const total = whole ? MUTANT_SHARDS : 1;
+  return Array.from({ length: total }, (_, k) => `${k}/${total}`);
+}
+
 // What is wrong with a finished run: `needs` is the workflow's needs context, `planned` the jobs the plan scheduled.
 export function verdict(needs, planned) {
   const problems = [];
@@ -258,7 +272,7 @@ function main(command) {
   if (command === 'plan') {
     const event = process.env.GITHUB_EVENT_NAME;
     const files = ['push', 'pull_request'].includes(event) ? changedFiles(event, process.env.BEFORE) : [];
-    const plan = planFor(event, files);
+    const plan = { ...planFor(event, files), mutantShards: mutantShards(event, files) };
     console.log(`${event}, ${files === null ? 'unknown changes' : `${files.length} changed files`}`);
     for (const file of files ?? []) console.log(`  ${file}`);
     const lines = Object.entries(plan).map(([name, value]) => `${name}=${JSON.stringify(value)}`);

@@ -32,6 +32,7 @@ jobs:
     outputs:
       jobs: ${{ steps.plan.outputs.jobs }}
       codeql: ${{ steps.plan.outputs.codeql }}
+      mutantShards: ${{ steps.plan.outputs.mutantShards }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -488,13 +489,19 @@ jobs:
           sanitizer: address
 
   # cargo-mutants on the engine files that scripts/mutants-gate.sh covers: on a push or a pull request, the mutants of
-  # the lines the change touches; weekly, every mutant of those files, unless nothing they depend on changed during the
-  # week. A change that only removes a test is seen by the weekly run: test lines make no mutant.
+  # the lines the change touches, in one job; weekly, every mutant of those files, unless nothing they depend on changed
+  # during the week, split into shards that each fit in a job (scripts/ci-plan.mjs). A change that only removes a test
+  # is seen by the weekly run: test lines make no mutant.
   mutants:
-    name: Mutation testing of the rule engine
+    name: ${{ format('Mutation testing of the rule engine{0}', matrix.shard != '0/1' && format(' (shard {0})', matrix.shard) || '') }}
     needs: changes
     if: contains(fromJSON(needs.changes.outputs.jobs), 'mutants')
     runs-on: ubuntu-24.04
+    strategy:
+      # Each shard judges its own mutants: one that fails does not stop the others.
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(needs.changes.outputs.mutantShards) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -506,23 +513,26 @@ jobs:
           toolchain: stable
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
-          save-if: ${{ github.ref == 'refs/heads/develop' }}
+          # The shards restore the same cache: the first one saves it.
+          save-if: ${{ github.ref == 'refs/heads/develop' && startsWith(matrix.shard, '0/') }}
       # Kept in ~/.cargo/bin by the cache: reinstalled only when the version changes.
       - run: cargo install --locked cargo-mutants@27.1.0
       - name: No surviving mutant in the engine code the change touches (weekly, in every covered file)
         env:
           EVENT: ${{ github.event_name }}
           BEFORE: ${{ github.event.before }}
+          SHARD: ${{ matrix.shard }}
           # A disposable checkout: mutated in place, one mutant at a time, on the target/ the cache restored.
           MUTANTS_IN_PLACE: "1"
         run: |
-          if [ "$EVENT" = schedule ]; then
-            # What decides the verdict: the code and its tests, the dependencies, the gate and this job.
-            if [ -z "$(git log -1 --since='8 days ago' --format=%H -- src Cargo.lock .cargo/mutants.toml scripts/mutants-gate.sh .github/workflows/ci.yml)" ]; then
-              echo "Nothing the verdict depends on changed this week: the code is the one the last weekly run judged."
-              exit 0
-            fi
-            scripts/mutants-gate.sh
+          # What decides the verdict: the code and its tests, the dependencies, the gate and this job.
+          if [ "$EVENT" = schedule ] && [ -z "$(git log -1 --since='8 days ago' --format=%H -- src Cargo.lock .cargo/mutants.toml scripts/mutants-gate.sh scripts/ci-plan.mjs .github/workflows/ci.yml)" ]; then
+            echo "Nothing the verdict depends on changed this week: the code is the one the last weekly run judged."
+            exit 0
+          fi
+          if [ "$SHARD" != 0/1 ]; then
+            # Every mutant of the covered files: this job's share of them.
+            MUTANTS_SHARD=$SHARD scripts/mutants-gate.sh
             exit
           fi
           base=$(GITHUB_EVENT_NAME=$EVENT node scripts/ci-plan.mjs base)

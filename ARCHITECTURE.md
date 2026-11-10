@@ -81,4 +81,4 @@ Choices that shape the design, with the options weighed and what would make them
 | Fuzz targets | `fuzz/`, entry points in `src/fuzzing.rs` | `cargo +nightly fuzz run <target>` |
 | Repository checks | `scripts/*.test.mjs` | `node --test scripts/*.test.mjs` |
 | Scale test | Families of inputs in `src/scale_probe.rs` (feature `scale-probe`), probe `tests/scale.rs` | `node scripts/scale-test.mjs [family...]`, with valgrind: each family at n, 2n and 4n, red when its count grows faster than the growth written next to it |
-| Mutation testing | The engine files listed in `scripts/mutants-gate.sh` | `scripts/mutants-gate.sh` (every mutant), `scripts/mutants-gate.sh <diff>` (the lines a diff changes), with `cargo install --locked cargo-mutants@27.1.0` |
+| Mutation testing | The engine files listed in `scripts/mutants-gate.sh` | `scripts/mutants-gate.sh` (every mutant), `scripts/mutants-gate.sh <diff>` (the lines a diff changes), `MUTANTS_SHARD=k/n scripts/mutants-gate.sh` (one of the n shares of every mutant, as each weekly CI job), on Linux (`prlimit` bounds the memory of the tests), with `cargo install --locked cargo-mutants@27.1.0` |
