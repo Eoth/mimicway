@@ -6,6 +6,10 @@
 //   without anyone's approval;
 // - every `npm audit` fails from a high advisory on and audits every package, development tools included: a high
 //   advisory of the build tooling (vite) once went through a step that only failed on critical ones.
+// - every artifact the release workflow uploads, and the record of its Docker build, expires within a week: a
+//   rehearsal is read the day it runs and a tag publishes copies of them as release assets, while GitHub keeps an
+//   artifact 90 days by default (56 MB a run). The CI's reports of a failed run keep the default: they may be read
+//   later.
 // Every .yml file of .github/workflows/ is read, so a new workflow is checked without being listed, and the summary
 // counts what was checked: a reading that found no checkout or no job would show.
 // Run with: node scripts/check-workflows.mjs; its tests: node --test scripts/*.test.mjs
@@ -52,14 +56,62 @@ export function jobsOf(text) {
   return jobs;
 }
 
+/** The workflows whose artifacts expire within a week. */
+export const SHORT_LIVED = ['release.yml'];
+const WEEK = 7;
+
+/** The steps of a job: the trimmed lines of each item of its `steps:` list, comments and blank lines left out. */
+function stepsOf(jobLines) {
+  const at = jobLines.findIndex((line) => /^steps:\s*$/.test(line.trim()));
+  if (at < 0) return [];
+  const steps = [];
+  const block = blockUnder(jobLines, at);
+  const itemIndent = block.length > 0 ? indentOf(block[0]) : 0;
+  for (const line of block) {
+    if (indentOf(line) === itemIndent && line.trimStart().startsWith('-')) steps.push([]);
+    steps.at(-1)?.push(line.trim().replace(/^-\s+/, ''));
+  }
+  return steps;
+}
+
+/** The value of `key:` among the lines of a step, as a number, or NaN. */
+const numberOf = (step, key) =>
+  Number(
+    step
+      .find((line) => line.startsWith(`${key}:`))
+      ?.slice(key.length + 1)
+      .trim(),
+  );
+
 /** The problems of one workflow (`file` names it in each message), with what was checked. */
 export function checkWorkflow(file, text) {
   const problems = [];
   let checkouts = 0;
   let publishers = 0;
   let audits = 0;
+  let shortLived = 0;
   const jobs = jobsOf(text);
   for (const job of jobs) {
+    if (SHORT_LIVED.includes(file)) {
+      for (const step of stepsOf(job.lines)) {
+        const uses = step.find((line) => line.startsWith('uses:')) ?? '';
+        if (/^uses:\s*actions\/upload-artifact@/.test(uses)) {
+          shortLived++;
+          if (!(numberOf(step, 'retention-days') <= WEEK)) {
+            problems.push(`${file}, job ${job.name}: an artifact kept longer than a week (retention-days: ${WEEK})`);
+          }
+        }
+        if (/^uses:\s*docker\/build-push-action@/.test(uses)) {
+          shortLived++;
+          if (!(numberOf(step, 'DOCKER_BUILD_RECORD_RETENTION_DAYS') <= WEEK)) {
+            problems.push(
+              `${file}, job ${job.name}: a Docker build record kept longer than a week ` +
+                `(DOCKER_BUILD_RECORD_RETENTION_DAYS: ${WEEK} in the step's env)`,
+            );
+          }
+        }
+      }
+    }
     for (const line of job.lines) {
       // A command, in a `run:` line or the lines of its block; never the `name:` of a step.
       if (!/\bnpm audit\b/.test(line) || /^\s*(-\s+)?name:/.test(line)) continue;
@@ -97,13 +149,30 @@ export function checkWorkflow(file, text) {
       }
     }
   }
-  return { problems, jobs: jobs.length, checkouts, publishers, audits };
+  if (SHORT_LIVED.includes(file) && shortLived === 0) {
+    problems.push(`${file}: no artifact upload nor Docker build found, where its artifacts are checked`);
+  }
+  return {
+    problems,
+    jobs: jobs.length,
+    checkouts,
+    publishers,
+    audits,
+    shortLived,
+  };
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '.github', 'workflows');
   const files = readdirSync(dir).filter((name) => /\.ya?ml$/.test(name));
-  const totals = { problems: [], jobs: 0, checkouts: 0, publishers: 0, audits: 0 };
+  const totals = {
+    problems: [],
+    jobs: 0,
+    checkouts: 0,
+    publishers: 0,
+    audits: 0,
+    shortLived: 0,
+  };
   for (const file of files) {
     const result = checkWorkflow(file, readFileSync(path.join(dir, file), 'utf8'));
     totals.problems.push(...result.problems);
@@ -111,6 +180,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     totals.checkouts += result.checkouts;
     totals.publishers += result.publishers;
     totals.audits += result.audits;
+    totals.shortLived += result.shortLived;
   }
   for (const problem of totals.problems) console.error(problem);
   if (totals.audits === 0) console.error('no npm audit in any workflow: the UI packages are not audited');
@@ -119,6 +189,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   }
   console.log(
     `${files.length} workflows, ${totals.jobs} jobs: ${totals.checkouts} checkouts keep no token, ` +
-      `${totals.publishers} publishing jobs run in an environment, ${totals.audits} npm audits fail from high on.`,
+      `${totals.publishers} publishing jobs run in an environment, ${totals.audits} npm audits fail from high on, ` +
+      `${totals.shortLived} release artifacts expire within a week.`,
   );
 }

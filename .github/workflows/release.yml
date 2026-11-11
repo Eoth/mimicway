@@ -89,6 +89,7 @@ jobs:
         with:
           name: binary-${{ matrix.target }}
           path: out/mimicway
+          retention-days: 7
 
   ui:
     name: UI
@@ -109,6 +110,7 @@ jobs:
         with:
           name: ui
           path: frontend/dist
+          retention-days: 7
 
   binaries:
     name: Binary (${{ matrix.target }})
@@ -138,6 +140,7 @@ jobs:
         with:
           name: binary-${{ matrix.target }}
           path: target/${{ matrix.target }}/release/mimicway${{ contains(matrix.target, 'windows') && '.exe' || '' }}
+          retention-days: 7
 
   archives:
     name: Archives
@@ -165,6 +168,7 @@ jobs:
         with:
           name: archives
           path: dist/*
+          retention-days: 7
 
   reproduce:
     name: Rebuild (${{ matrix.target }}) and compare
@@ -243,6 +247,7 @@ jobs:
         with:
           name: sbom
           path: dist/*
+          retention-days: 7
 
   release:
     name: GitHub release
@@ -340,6 +345,8 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
       - id: build
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        env:
+          DOCKER_BUILD_RECORD_RETENTION_DAYS: 7
         with:
           context: image
           platforms: linux/amd64,linux/arm64

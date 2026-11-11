@@ -99,3 +99,59 @@ test('an npm audit passes only when it fails from high on and audits every packa
     assert.equal(result.audits, 1, command);
   }
 });
+
+const release = (uploadWith, buildEnv) => `name: Release
+on: push
+jobs:
+  binary:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@0123456789abcdef
+        with:
+          name: ui
+      - run: cargo build
+      # The binary, for the jobs after this one.
+      - uses: actions/upload-artifact@0123456789abcdef # v7
+        with:
+          name: binary
+${uploadWith}  image:
+    runs-on: ubuntu-24.04
+    steps:
+      - id: build
+        uses: docker/build-push-action@0123456789abcdef # v7
+${buildEnv}        with:
+          push: true
+`;
+const KEPT_A_WEEK = '          path: out/mimicway\n          retention-days: 7\n';
+const RECORD_A_WEEK = '        env:\n          DOCKER_BUILD_RECORD_RETENTION_DAYS: 7\n';
+
+test('the release workflow passes when each upload and build record expires within a week', () => {
+  const result = checkWorkflow('release.yml', release(KEPT_A_WEEK, RECORD_A_WEEK));
+  assert.deepEqual(result.problems, []);
+  assert.equal(result.shortLived, 2);
+});
+
+test('an upload of the release workflow without retention-days, or kept longer, fails', () => {
+  for (const uploadWith of ['          path: out/mimicway\n', '          path: out\n          retention-days: 30\n']) {
+    const result = checkWorkflow('release.yml', release(uploadWith, RECORD_A_WEEK));
+    assert.equal(result.problems.length, 1, uploadWith);
+    assert.match(result.problems[0], /job binary: an artifact kept longer than a week/);
+  }
+});
+
+test('a Docker build of the release workflow whose record keeps the default fails', () => {
+  const result = checkWorkflow('release.yml', release(KEPT_A_WEEK, ''));
+  assert.equal(result.problems.length, 1);
+  assert.match(result.problems[0], /job image: a Docker build record kept longer than a week/);
+});
+
+test('the CI keeps the default retention of its failure reports', () => {
+  const result = checkWorkflow('ci.yml', release('          path: out/mimicway\n', ''));
+  assert.deepEqual(result.problems, []);
+  assert.equal(result.shortLived, 0);
+});
+
+test('a release workflow where no upload is found is refused rather than passed', () => {
+  const result = checkWorkflow('release.yml', workflow());
+  assert.match(result.problems.join('\n'), /no artifact upload nor Docker build found/);
+});
