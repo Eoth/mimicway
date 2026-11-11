@@ -36,6 +36,26 @@ test.describe('Documentation screenshots: the image must show its whole subject'
     expect(box.y + box.height).toBeLessThanOrEqual(page.viewportSize().height);
   });
 
+  test('a subject pushed back out of view by content that arrives after the scroll is framed again', async ({
+    page,
+  }) => {
+    // As a list fetched from the API, shown above the subject once the page has scrolled: 40 px more push the subject,
+    // framed at the bottom of the view, out of it.
+    await page.evaluate(() =>
+      window.addEventListener(
+        'scroll',
+        () =>
+          document
+            .getElementById('below')
+            .before(Object.assign(document.createElement('div'), { style: 'height: 40px' })),
+        { once: true },
+      ),
+    );
+    await docsScreenshot(page, 'late.png', '#below');
+    const box = await page.locator('#below').boundingBox();
+    expect(box.y + box.height).toBeLessThanOrEqual(page.viewportSize().height);
+  });
+
   test('a subject already in view is not scrolled', async ({ page }) => {
     await docsScreenshot(page, 'top.png', '#top');
     expect(await page.evaluate(() => window.scrollY)).toBe(0);

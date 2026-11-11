@@ -6,8 +6,8 @@
 // test hook.
 //
 // Every image names its subject, the element(s) it is taken to show. The subject is scrolled into view when it is not
-// entirely there, and the call fails when it still is not, in any language: an image cut before its subject is
-// refused rather than published. This framing runs in every run, the standard one included, so that CI catches a
+// entirely there, again while content arriving late moves it, and the call fails when it still is not, in any
+// language: an image cut before its subject is refused rather than published. This framing runs in every run, the standard one included, so that CI catches a
 // subject pushed out of view by a change of the interface, without taking any screenshot.
 //
 // Capturing is disabled by default: it only happens when DOCS_SCREENSHOTS is set, which
@@ -98,27 +98,35 @@ async function assertSubjectInView(page, filename, subject, language) {
   }
 }
 
-// Scrolls the subject into view, only when it is not entirely there and only as far as needed (with a small margin):
-// a screen already framed keeps its position and its open popups, and a subject just below the fold keeps the
+// Scrolls the subject into view, only as far as needed (with a small margin): a subject just below the fold keeps the
 // context above it, the navigation bar included. scrollIntoView reaches the subject through any scrolling container;
 // the window then moves so that the whole subject, not only its first element, ends up in view, its top first.
+function scrollIntoFrame(selector) {
+  const margin = 16;
+  const elements = [...document.querySelectorAll(selector)];
+  const rects = elements.map((element) => element.getBoundingClientRect());
+  const first = elements[rects.findIndex((rect) => rect.top === Math.min(...rects.map((r) => r.top)))];
+  first.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
+  const after = elements.map((element) => element.getBoundingClientRect());
+  const top = Math.min(...after.map((rect) => rect.top));
+  const below = Math.max(...after.map((rect) => rect.bottom)) - (window.innerHeight - margin);
+  window.scrollBy({
+    top: below > 0 ? Math.min(below, top - margin) : Math.min(0, top - margin),
+    behavior: 'instant',
+  });
+}
+
+// Content that arrives while the subject is framed (a list fetched from the API, shown above it) can push it out of
+// view again: it is framed again, for FRAMING_MS at most, before the call fails. A screen already framed is not scrolled, and keeps its position and its open popups.
+const FRAMING_MS = 2000;
+
 async function frameSubject(page, filename, subject, language) {
-  const box = await page.evaluate(subjectBox, subject);
-  if (!box.problem && !fitsInView(box)) {
-    await page.evaluate((selector) => {
-      const margin = 16;
-      const elements = [...document.querySelectorAll(selector)];
-      const rects = elements.map((element) => element.getBoundingClientRect());
-      const first = elements[rects.findIndex((rect) => rect.top === Math.min(...rects.map((r) => r.top)))];
-      first.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
-      const after = elements.map((element) => element.getBoundingClientRect());
-      const top = Math.min(...after.map((rect) => rect.top));
-      const below = Math.max(...after.map((rect) => rect.bottom)) - (window.innerHeight - margin);
-      window.scrollBy({
-        top: below > 0 ? Math.min(below, top - margin) : Math.min(0, top - margin),
-        behavior: 'instant',
-      });
-    }, subject);
+  const deadline = Date.now() + FRAMING_MS;
+  for (let attempt = 0; ; attempt++) {
+    const box = await page.evaluate(subjectBox, subject);
+    if (box.problem || fitsInView(box) || Date.now() > deadline) break;
+    if (attempt > 0) await page.waitForTimeout(100);
+    await page.evaluate(scrollIntoFrame, subject);
     await nextFrames(page);
   }
   await assertSubjectInView(page, filename, subject, language);
