@@ -450,13 +450,14 @@ fn dynamic_field_to_string(value: &rhai::Dynamic) -> Result<String, Box<rhai::Ev
 // inside an item is ignored, since a generic XML tree would be out of proportion with this need. A self-closing
 // element is the same as an empty one (`<qty/>` gives an empty text, `<product/>` an empty item). Extraction stops
 // at the first item, field or byte of text over the limits of a value (field names count with the text), rather than
-// gathering a large body whole before Rhai checks it, and at the first malformed part of the text, keeping the items
-// read before it.
+// gathering a large body whole before Rhai checks it, and at the first element nested deeper than `XML_DEPTH_LIMIT`;
+// it stops at the first malformed part of the text, keeping the items read before it.
 fn parse_xml_items_impl(xml: &str, path: &str) -> Result<rhai::Array, Box<rhai::EvalAltResult>> {
     use super::script_budget::{
         ARRAY_TOO_LARGE, MAP_TOO_LARGE, MAX_ARRAY_SIZE, MAX_MAP_SIZE, MAX_STRING_SIZE,
-        TEXT_TOO_LARGE, too_large,
+        TEXT_TOO_LARGE, XML_TOO_DEEP, too_large,
     };
+    use crate::engine::matcher::XML_DEPTH_LIMIT;
     use quick_xml::events::Event;
     use quick_xml::reader::Reader;
 
@@ -481,14 +482,26 @@ fn parse_xml_items_impl(xml: &str, path: &str) -> Result<rhai::Array, Box<rhai::
     loop {
         // A self-closing element is read as its start followed by its end.
         let (opened, closes) = match reader.read_event() {
-            Ok(Event::Start(e)) => (
-                Some(crate::engine::matcher::MatchEngine::local_name(&e)),
-                false,
-            ),
-            Ok(Event::Empty(e)) => (
-                Some(crate::engine::matcher::MatchEngine::local_name(&e)),
-                true,
-            ),
+            Ok(Event::Start(e)) => {
+                // `depth + item_depth` elements are open: the parents outside the items, and the item with its
+                // open children inside one. A self-closing element below counts the same.
+                if depth + item_depth as usize >= XML_DEPTH_LIMIT {
+                    return Err(too_large(XML_TOO_DEEP));
+                }
+                (
+                    Some(crate::engine::matcher::MatchEngine::local_name(&e)),
+                    false,
+                )
+            }
+            Ok(Event::Empty(e)) => {
+                if depth + item_depth as usize >= XML_DEPTH_LIMIT {
+                    return Err(too_large(XML_TOO_DEEP));
+                }
+                (
+                    Some(crate::engine::matcher::MatchEngine::local_name(&e)),
+                    true,
+                )
+            }
             Ok(Event::End(_)) => (None, true),
             Ok(event @ (Event::Text(_) | Event::GeneralRef(_))) => {
                 if item_depth == 2
@@ -1545,6 +1558,46 @@ mod tests {
         parse_xml_items_impl(xml, path).unwrap_err().to_string()
     }
 
+    // The parents outside an item count with the item and its open children: the field of an item under
+    // `XML_DEPTH_LIMIT - 2` parents is the deepest element read, one parent more refuses the text, and so does one
+    // element more than the limit beside the path or inside a field.
+    #[test]
+    fn parse_xml_items_reads_up_to_the_depth_limit_and_refuses_a_text_past_it() {
+        use crate::engine::matcher::XML_DEPTH_LIMIT;
+        use crate::engine::script_budget::XML_TOO_DEEP;
+        let document = |parents: usize| {
+            format!(
+                "{}<i><f>x</f></i>{}",
+                "<a>".repeat(parents),
+                "</a>".repeat(parents)
+            )
+        };
+        let path = |parents: usize| format!("{}i", "a/".repeat(parents));
+        let deepest = XML_DEPTH_LIMIT - 2;
+        assert_eq!(
+            xml_items(&document(deepest), &path(deepest)),
+            vec![vec![("f".to_string(), "x".to_string())]]
+        );
+        assert!(xml_error(&document(deepest + 1), &path(deepest + 1)).contains(XML_TOO_DEEP));
+        let beside = format!("<r>{}</r>", "<z>".repeat(XML_DEPTH_LIMIT));
+        assert!(xml_error(&beside, "r/i").contains(XML_TOO_DEEP));
+        let in_a_field = format!("<r><i><f>{}</f></i></r>", "<z>".repeat(XML_DEPTH_LIMIT - 2));
+        assert!(xml_error(&in_a_field, "r/i").contains(XML_TOO_DEEP));
+        // A self-closing item or field is an element too.
+        let self_closing = |parents: usize| format!("{}<i/>", "<a>".repeat(parents));
+        assert_eq!(
+            xml_items(
+                &self_closing(XML_DEPTH_LIMIT - 1),
+                &path(XML_DEPTH_LIMIT - 1)
+            ),
+            vec![vec![]]
+        );
+        assert!(
+            xml_error(&self_closing(XML_DEPTH_LIMIT), &path(XML_DEPTH_LIMIT))
+                .contains(XML_TOO_DEEP)
+        );
+    }
+
     #[test]
     fn parse_xml_items_counts_the_fields_of_all_its_items_against_the_size_of_a_map() {
         use crate::engine::script_budget::{MAP_TOO_LARGE, MAX_MAP_SIZE};
@@ -1709,22 +1762,15 @@ mod tests {
         }
     }
 
-    // Documents of a few elements whose names repeat at every level (a parent's name in a sibling branch, deeper, or
-    // closed before the rest of the path), with prefixes, attributes, comments, self-closing elements, and texts that
-    // need escaping, hold references, line breaks and characters beyond ASCII; paths of one to four segments over the
-    // same names. A quarter of the cases at least must expect items, and some of them a text: a judge whose cases all
-    // expect nothing would pass on any code. Not generated: CDATA, processing instructions, a DTD, malformed documents,
-    // the limits of a value, prefixes in the path.
-    #[test]
-    fn parse_xml_items_finds_what_a_walk_of_the_tree_finds() {
+    /// Documents of a few elements whose names repeat at every level (a parent's name in a sibling branch, deeper,
+    /// or closed before the rest of the path), with prefixes, attributes, comments, self-closing elements, and texts
+    /// that need escaping, hold references, line breaks and characters beyond ASCII; with each, a path of one to four
+    /// segments over the same names, half of them the chain of an element of the document. Not generated: CDATA,
+    /// processing instructions, a DTD, malformed documents, the limits of a value, prefixes in the path, depths near
+    /// `XML_DEPTH_LIMIT`.
+    fn generated_documents()
+    -> impl proptest::strategy::Strategy<Value = (Vec<XmlNode>, Vec<&'static str>)> {
         use proptest::prelude::*;
-        use proptest::test_runner::{Config, RngSeed, TestRunner};
-        let config = Config {
-            cases: 1024,
-            rng_seed: RngSeed::Fixed(0x786d_6c5f_6974_656d),
-            failure_persistence: None,
-            ..Config::default()
-        };
         let name = prop::sample::select(vec!["a", "b", "i"]);
         let text = "[a-c &<>\"' \n\téü]{0,4}".prop_map(XmlNode::Text);
         let leaf = prop_oneof![
@@ -1758,23 +1804,43 @@ mod tests {
                     }
                 })
         });
-        let strategy = (
+        (
             prop::collection::vec(node, 1..3),
             prop::collection::vec(prop::sample::select(vec!["a", "b", "i"]), 1..5),
             prop::option::of(any::<prop::sample::Index>()),
-        );
+        )
+            .prop_map(|(nodes, drawn, in_tree)| {
+                let mut chains = Vec::new();
+                element_chains(&nodes, &mut Vec::new(), &mut chains);
+                let path = match in_tree {
+                    Some(index) if !chains.is_empty() => chains[index.index(chains.len())].clone(),
+                    _ => drawn,
+                };
+                (nodes, path)
+            })
+    }
+
+    fn written(nodes: &[XmlNode]) -> String {
+        let mut xml = String::new();
+        nodes.iter().for_each(|node| write_xml_node(node, &mut xml));
+        xml
+    }
+
+    // A quarter of the cases at least must expect items, and some of them a text: a judge whose cases all expect
+    // nothing would pass on any code.
+    #[test]
+    fn parse_xml_items_finds_what_a_walk_of_the_tree_finds() {
+        use proptest::prelude::*;
+        use proptest::test_runner::{Config, RngSeed, TestRunner};
+        let config = Config {
+            cases: 1024,
+            rng_seed: RngSeed::Fixed(0x786d_6c5f_6974_656d),
+            failure_persistence: None,
+            ..Config::default()
+        };
         let (with_items, with_text) = (std::cell::Cell::new(0), std::cell::Cell::new(0));
-        let result = TestRunner::new(config).run(&strategy, |(nodes, drawn, in_tree)| {
-            // Half the paths are the chain of an element of the document, which likely holds items; the other half
-            // are drawn freely.
-            let mut chains = Vec::new();
-            element_chains(&nodes, &mut Vec::new(), &mut chains);
-            let path = match in_tree {
-                Some(index) if !chains.is_empty() => chains[index.index(chains.len())].clone(),
-                _ => drawn,
-            };
-            let mut xml = String::new();
-            nodes.iter().for_each(|node| write_xml_node(node, &mut xml));
+        let result = TestRunner::new(config).run(&generated_documents(), |(nodes, path)| {
+            let xml = written(&nodes);
             let mut expected = Vec::new();
             reference_items(&nodes, &mut Vec::new(), &path, &mut expected);
             with_items.set(with_items.get() + usize::from(!expected.is_empty()));
@@ -1789,6 +1855,87 @@ mod tests {
         assert!(
             with_items.get() >= 256 && with_text.get() >= 64,
             "{with_items:?} {with_text:?}"
+        );
+    }
+
+    /// The reference reading of an XPath condition: the first element, in the order of the document, whose chain of
+    /// names from the top is the path. Its value is the text from its start tag to the first end tag after it: its
+    /// own, or the end tag of the first child written with one, read the same way.
+    fn reference_xpath(
+        nodes: &[XmlNode],
+        ancestors: &mut Vec<&'static str>,
+        path: &[&str],
+    ) -> Option<String> {
+        for node in nodes {
+            let XmlNode::Element { name, children, .. } = node else {
+                continue;
+            };
+            ancestors.push(name);
+            let found = if ancestors.iter().eq(path.iter()) {
+                let mut text = String::new();
+                text_to_the_first_end_tag(children, &mut text);
+                Some(text)
+            } else {
+                reference_xpath(children, ancestors, path)
+            };
+            ancestors.pop();
+            if found.is_some() {
+                return found;
+            }
+        }
+        None
+    }
+
+    fn text_to_the_first_end_tag(nodes: &[XmlNode], out: &mut String) {
+        for node in nodes {
+            match node {
+                XmlNode::Text(text) => out.push_str(text),
+                XmlNode::Element {
+                    children,
+                    self_closing,
+                    ..
+                } if !(children.is_empty() && *self_closing) => {
+                    text_to_the_first_end_tag(children, out);
+                    return;
+                }
+                _ => {}
+            }
+        }
+    }
+
+    // The reader of XPath conditions and `{{xpath.…}}` variables (`MatchEngine::extract_xpath`), judged on the
+    // documents above. A quarter of the cases at least must find a value, and some of them a text.
+    #[test]
+    fn extract_xpath_finds_what_a_walk_of_the_tree_finds() {
+        use proptest::prelude::*;
+        use proptest::test_runner::{Config, RngSeed, TestRunner};
+        let config = Config {
+            cases: 1024,
+            rng_seed: RngSeed::Fixed(0x7870_6174_685f_6a64),
+            failure_persistence: None,
+            ..Config::default()
+        };
+        let (with_value, with_text) = (std::cell::Cell::new(0), std::cell::Cell::new(0));
+        let result = TestRunner::new(config).run(&generated_documents(), |(nodes, path)| {
+            let xml = written(&nodes);
+            let expected = reference_xpath(&nodes, &mut Vec::new(), &path);
+            with_value.set(with_value.get() + usize::from(expected.is_some()));
+            let has_text = expected.as_deref().is_some_and(|text| !text.is_empty());
+            with_text.set(with_text.get() + usize::from(has_text));
+            prop_assert_eq!(
+                crate::engine::matcher::MatchEngine::extract_xpath(xml.as_bytes(), &path.join("/")),
+                expected,
+                "{}",
+                xml
+            );
+            Ok(())
+        });
+        if let Err(failure) = result {
+            panic!("{failure}");
+        }
+        assert!(
+            with_value.get() >= 256 && with_text.get() >= 64,
+            "{with_value:?} {with_text:?}"
         );
     }
 

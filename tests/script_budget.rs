@@ -31,21 +31,35 @@ impl Drop for Server {
 mod test_ports;
 use test_ports::reserve_port;
 
+// A rule of the mocked service: on a POST to its sub-path that meets every condition of `all_of`, it runs its
+// script and answers 200 with `template`.
+fn rule(
+    name: &str,
+    path: &str,
+    script: &str,
+    all_of: serde_json::Value,
+    template: &str,
+) -> serde_json::Value {
+    serde_json::json!({
+        "name": name, "method": "POST", "sub_path": format!("/{path}"), "action": "mock",
+        "script": script, "conditions": {"all_of": all_of, "any_of": []},
+        "response": {"status": 200, "headers": [], "body": [{"type": "Template", "template": template}]}
+    })
+}
+
 // One mocked service whose rules each run one script on the request they match, by sub-path.
 async fn start(rules: &[(&str, &str)]) -> Server {
+    let rules = rules
+        .iter()
+        .map(|(path, script)| rule(path, path, script, serde_json::json!([]), "{{script}}"))
+        .collect();
+    start_rules(rules).await
+}
+
+async fn start_rules(rules: Vec<serde_json::Value>) -> Server {
     let data_dir =
         std::env::temp_dir().join(format!("mimicway-script-budget-{}", fastrand::u64(..)));
     std::fs::create_dir_all(&data_dir).unwrap();
-    let rules: Vec<_> = rules
-        .iter()
-        .map(|(path, script)| {
-            serde_json::json!({
-                "name": path, "method": "POST", "sub_path": format!("/{path}"), "action": "mock",
-                "script": script, "conditions": {"all_of": [], "any_of": []},
-                "response": {"status": 200, "headers": [], "body": [{"type": "Template", "template": "{{script}}"}]}
-            })
-        })
-        .collect();
     let config = serde_json::json!({
         "groups": [],
         "services": [{
@@ -102,6 +116,12 @@ fn peak_mib(server: &Server) -> u64 {
         .and_then(|value| value.trim().trim_end_matches("kB").trim().parse().ok())
         .expect("VmHWM");
     kib / 1024
+}
+
+// The next peak read is that of what runs from now on (Linux 4.0 and later).
+fn reset_peak(server: &Server) {
+    std::fs::write(format!("/proc/{}/clear_refs", server.child.id()), "5")
+        .expect("reset the memory peak of the server");
 }
 
 async fn post(server: &Server, path: &str, body: String) -> Duration {
@@ -228,4 +248,102 @@ async fn values_held_outside_the_variables_stay_within_the_memory_budget_of_a_ru
             "{path}: memory peak {peak} MiB, {reference} MiB for a trivial script"
         );
     }
+}
+
+// A server of its own, without scripts that hold memory: the peaks above would hide what the readers of XML keep for
+// each open element of a body (the elements they follow along the path, the names the reader checks end tags
+// against). Every body is 10 MiB of start tags never closed, nested to a depth of 1, 4, 16... 4^10, then one element
+// per three bytes, each name as long as the size allows: the shallow ones hold the most bytes of names, the deep ones
+// the most elements.
+#[tokio::test]
+async fn a_deeply_nested_xml_body_stays_within_the_memory_budget_of_a_request() {
+    let without_script = |mut rule: serde_json::Value| {
+        rule["script"] = serde_json::Value::Null;
+        rule
+    };
+    let never_met = serde_json::json!([
+        {"source": {"type": "XPath", "key": "a/a/b"}, "operator": {"type": "Exists"}}
+    ]);
+    let server = start_rules(vec![
+        // A script holds copies of the body that a condition or a variable never holds, which would hide 30 MiB of
+        // what they keep: they are compared with a request that runs no script either.
+        without_script(rule("bare", "bare", "", serde_json::json!([]), "ok")),
+        // An XPath condition that no body below meets, and the rule that answers then.
+        without_script(rule("condition", "condition", "", never_met, "ok")),
+        without_script(rule(
+            "otherwise",
+            "condition",
+            "",
+            serde_json::json!([]),
+            "ok",
+        )),
+        without_script(rule(
+            "template",
+            "template",
+            "",
+            serde_json::json!([]),
+            "{{xpath.a/a/b}}",
+        )),
+        rule(
+            "reference",
+            "reference",
+            "1",
+            serde_json::json!([]),
+            "{{script}}",
+        ),
+        rule(
+            "script",
+            "script",
+            "parse_xml_items(request.body, \"a/a/b\").len()",
+            serde_json::json!([]),
+            "{{script}}",
+        ),
+        rule(
+            "holding",
+            "holding",
+            &format!(
+                "{DOUBLED} {}parse_xml_items(request.body, \"a/a/b\").len() + v0.len()",
+                (0..8)
+                    .map(|i| format!("let v{i} = s + \"{i}\"; "))
+                    .collect::<String>()
+            ),
+            serde_json::json!([]),
+            "{{script}}",
+        ),
+    ])
+    .await;
+
+    post(&server, "bare", "x".repeat(BODY)).await;
+    let bare = peak_mib(&server);
+    reset_peak(&server);
+    post(&server, "reference", "x".repeat(BODY)).await;
+    let scripted = peak_mib(&server);
+    let depths = (0..=10).map(|k| 4usize.pow(k)).chain([BODY / 3]);
+    let mut cases: Vec<(&str, usize, u64)> = depths
+        .flat_map(|depth| {
+            [
+                ("condition", depth, bare),
+                ("template", depth, bare),
+                ("script", depth, scripted),
+            ]
+        })
+        .collect();
+    // The reference with a script holds copies of its body that `parse_xml_items` no longer needs when it reads it:
+    // before the depth limit, the 30 MiB it kept for the deepest body stayed within the budget 3 runs out of 5. A
+    // script that holds 8 MiB of texts while it calls it adds them to the peak of the call (+21 MiB became +28).
+    cases.push(("holding", BODY / 3, scripted));
+    let mut over = Vec::new();
+    for (path, depth, reference) in cases {
+        let name = "a".repeat(BODY / depth - 2);
+        reset_peak(&server);
+        post(&server, path, format!("<{name}>").repeat(depth)).await;
+        let peak = peak_mib(&server);
+        if peak > reference + BUDGET_MIB {
+            over.push(format!("{path}, depth {depth}: {peak} MiB for {reference}"));
+        }
+    }
+    assert!(
+        over.is_empty(),
+        "memory peaks over the same request with no script or a trivial one, + {BUDGET_MIB} MiB: {over:?}"
+    );
 }

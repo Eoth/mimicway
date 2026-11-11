@@ -232,6 +232,13 @@ fn parse_xml_items_stops_at_the_limits_of_a_value() {
         error.contains("a text longer than 1048576 bytes"),
         "{error}"
     );
+
+    let deep = format!("<r>{}", "<i>".repeat(1_024));
+    let error = run_with_body("parse_xml_items(request.body, \"r/i\")", &deep).unwrap_err();
+    assert!(
+        error.contains("an XML text nested more than 1024 elements deep"),
+        "{error}"
+    );
 }
 
 #[test]

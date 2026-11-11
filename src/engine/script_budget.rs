@@ -42,6 +42,8 @@ pub(crate) const MEMORY_BUDGET_MIB: i64 = 16;
 pub(crate) const TEXT_TOO_LARGE: &str = "Length of string";
 pub(crate) const ARRAY_TOO_LARGE: &str = "Size of array/BLOB";
 pub(crate) const MAP_TOO_LARGE: &str = "Size of object map";
+// Not one of Rhai's: an XML text nested deeper than `matcher::XML_DEPTH_LIMIT`, refused by `parse_xml_items`.
+pub(crate) const XML_TOO_DEEP: &str = "Depth of XML";
 
 // Why on_progress stopped a run: the value it returns becomes the token of Rhai's `ErrorTerminated`.
 const OUT_OF_TIME: &str = "time";
@@ -310,6 +312,10 @@ pub(crate) fn describe(error: &EvalAltResult) -> String {
             MAP_TOO_LARGE => crate::i18n::tr(
                 "Script stopped: a map of more than {0} entries, the limit of a value{1}",
                 &[&MAX_MAP_SIZE, &at(*position)],
+            ),
+            XML_TOO_DEEP => crate::i18n::tr(
+                "Script stopped: an XML text nested more than {0} elements deep, the limit of an XML document{1}",
+                &[&crate::engine::matcher::XML_DEPTH_LIMIT, &at(*position)],
             ),
             _ => error.to_string(),
         },

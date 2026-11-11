@@ -5,6 +5,18 @@ use std::collections::HashMap;
 
 pub struct MatchEngine;
 
+/// How deep an element of an XML body may be nested (the root at 1) for the readers of XPath conditions,
+/// `{{xpath.…}}` variables and `parse_xml_items`. Every reader of quick-xml keeps the name of each open element and an
+/// 8-byte index to check end tags, whatever its configuration, so a 10 MiB body of `<a>` alone held about 28 MB of
+/// indexes on top of the names (counted). Decision: the reading stops at the first element nested deeper, self-closing
+/// or not; a condition or a variable then finds nothing it has not found before, as after a syntax error, and
+/// `parse_xml_items` stops the script with an error naming the limit. The value costs no memory of its own below about 100,000 (8
+/// bytes an element; the names never hold more than the body): it is chosen so that no real document is refused,
+/// four times the default limit of libxml2 (256, which the SOAP stacks built on it apply) and half of its "huge"
+/// mode (2,048). To raise when a real document is refused; the memory test of `tests/script_budget.rs` sends bodies
+/// nested from 1 to one element per three bytes deep, and fails without a limit (+31 MiB for a condition).
+pub(crate) const XML_DEPTH_LIMIT: usize = 1024;
+
 #[derive(Debug, Clone)]
 pub struct RequestData {
     pub query_params: HashMap<String, String>,
@@ -339,41 +351,50 @@ impl MatchEngine {
         Self::walk_xml(text, &segments)
     }
 
-    // Tracks the real stack of ancestors (local names, in nesting order) and compares the whole stack with the expected
-    // segments. A flat depth counter, moved on any end event, broke as soon as an unrelated sibling element (an empty
-    // <Header></Header> written in full before <Body>) closed between two matched segments.
+    // Follows the path with two counters standing for the stack of open elements, whatever its depth: `depth`
+    // elements are open, and the first `on_path` of them, from the root, are the first segments. A flat depth counter
+    // alone broke as soon as an unrelated sibling element (an empty <Header></Header> written in full before <Body>)
+    // closed between two matched segments. The value is the text from the start of the first element at the path to
+    // the first end tag after it. The reading stops, finding nothing, at the first malformed part of the text and
+    // at the first element nested deeper than `XML_DEPTH_LIMIT`.
     fn walk_xml(xml: &str, segments: &[&str]) -> Option<String> {
         use quick_xml::events::Event;
         use quick_xml::reader::Reader;
 
         let mut reader = Reader::from_str(xml);
-        let mut stack: Vec<String> = Vec::new();
+        let (mut depth, mut on_path) = (0usize, 0usize);
         let mut capture = false;
         let mut result = String::new();
-
-        let path_matches = |stack: &[String]| {
-            stack.len() == segments.len()
-                && stack
-                    .iter()
-                    .map(String::as_str)
-                    .eq(segments.iter().copied())
+        // The element at depth `depth` (0 for the root) continues the path when every element above it does.
+        let continues_path = |depth: usize, on_path: usize, local: &str| {
+            on_path == depth && segments.get(depth) == Some(&local)
         };
 
         loop {
             match reader.read_event() {
                 Ok(Event::Start(e)) => {
-                    stack.push(Self::local_name(&e));
-                    if !capture && path_matches(&stack) {
-                        capture = true;
+                    // A self-closing element below counts the same: no element deeper than the limit is read.
+                    if depth >= XML_DEPTH_LIMIT {
+                        break;
                     }
+                    // Once the value is being captured, `depth` is past the last segment: nothing continues
+                    // the path.
+                    if continues_path(depth, on_path, Self::local_name_ref(&e)) {
+                        on_path += 1;
+                        capture = on_path == segments.len();
+                    }
+                    depth += 1;
                 }
                 Ok(Event::Empty(e)) => {
                     // A self-closing element (`<tag/>`): no separate text or end event follows.
-                    stack.push(Self::local_name(&e));
-                    if path_matches(&stack) {
+                    if depth >= XML_DEPTH_LIMIT {
+                        break;
+                    }
+                    if depth + 1 == segments.len()
+                        && continues_path(depth, on_path, Self::local_name_ref(&e))
+                    {
                         return Some(result);
                     }
-                    stack.pop();
                 }
                 Ok(event @ (Event::Text(_) | Event::GeneralRef(_))) => {
                     if capture && let Some(text) = Self::xml_text(&event) {
@@ -384,7 +405,10 @@ impl MatchEngine {
                     if capture {
                         return Some(result);
                     }
-                    stack.pop();
+                    // The reader, as configured by default (`allow_unmatched_ends` off), refuses an end tag that
+                    // closes no open element: `depth` is never 0 here.
+                    depth -= 1;
+                    on_path = on_path.min(depth);
                 }
                 Ok(Event::Eof) => break,
                 Err(_) => break,
@@ -397,9 +421,14 @@ impl MatchEngine {
     // Also used by the parse_xml_items script function, so namespace prefixes (`soap:Body` -> `Body`) are dropped in
     // one place.
     pub(crate) fn local_name(e: &quick_xml::events::BytesStart<'_>) -> String {
-        let name = e.name();
-        let full: &str = name.as_ref();
-        full.split(':').next_back().unwrap_or(full).to_string()
+        Self::local_name_ref(e).to_string()
+    }
+
+    // The same name borrowed from the event, for a comparison: an element name may be as long as the body, and a copy
+    // of each one would hold it once more.
+    fn local_name_ref<'a>(e: &'a quick_xml::events::BytesStart<'_>) -> &'a str {
+        let full = e.name().into_inner();
+        full.rsplit(':').next().unwrap_or(full)
     }
 
     /// The text a text or reference event stands for. The reader reports `&amp;`, `&#233;`... as reference
@@ -800,6 +829,46 @@ mod tests {
         ] {
             assert_eq!(MatchEngine::extract_xpath(body, "root/b"), None);
         }
+    }
+
+    // The deepest element read is the one `XML_DEPTH_LIMIT` elements down, self-closing or not, whether the path leads
+    // to it or the value being captured holds it; one level more finds nothing.
+    #[test]
+    fn xpath_reads_up_to_the_depth_limit_and_finds_nothing_past_it() {
+        let nested = |depth: usize| format!("{}x{}", "<a>".repeat(depth), "</a>".repeat(depth));
+        let path = |depth: usize| vec!["a"; depth].join("/");
+        let limit = XML_DEPTH_LIMIT;
+        assert_eq!(
+            MatchEngine::extract_xpath(nested(limit).as_bytes(), &path(limit)),
+            Some("x".to_string())
+        );
+        assert_eq!(
+            MatchEngine::extract_xpath(nested(limit + 1).as_bytes(), &path(limit + 1)),
+            None
+        );
+        let self_closing = |depth: usize| {
+            format!(
+                "{}<a/>{}",
+                "<a>".repeat(depth - 1),
+                "</a>".repeat(depth - 1)
+            )
+        };
+        assert_eq!(
+            MatchEngine::extract_xpath(self_closing(limit).as_bytes(), &path(limit)),
+            Some(String::new())
+        );
+        assert_eq!(
+            MatchEngine::extract_xpath(self_closing(limit + 1).as_bytes(), &path(limit + 1)),
+            None
+        );
+        let under_the_value = |depth: usize| format!("<v>y{}", "<b>".repeat(depth - 1));
+        let body = format!("{}</b>", under_the_value(limit));
+        assert_eq!(
+            MatchEngine::extract_xpath(body.as_bytes(), "v"),
+            Some("y".to_string())
+        );
+        let body = format!("{}</b>", under_the_value(limit + 1));
+        assert_eq!(MatchEngine::extract_xpath(body.as_bytes(), "v"), None);
     }
 
     #[test]
