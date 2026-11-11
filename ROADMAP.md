@@ -542,16 +542,6 @@ Size S
 
 **Done when.** The CI fails on a shellcheck finding in a shell script of the repository, and the two findings of today are fixed or justified where they are.
 
-### E17. Release artifacts kept a week
-
-Size S
-
-**Why.** Every run of the release workflow keeps its intermediate artifacts for GitHub's default of 90 days: on the rehearsal of 06c595c, eight of them, 56.1 MB, the five binaries, their archives, the UI and the SBOMs; on the `v0.2.0` tag, nine (the Docker build record added), 56.1 MB, kept until 2027-01-05. A tag publishes copies of them as release assets, and a rehearsal is read the day it runs, so after a week they only take space.
-
-**What.** `retention-days: 7` on each upload of `.github/workflows/release.yml`, a week being enough to rerun a failed job of the same run. Made with the next change of that file: a change of it on `develop` starts a rehearsal, 31.5 job-minutes on 06c595c, which costs more than the storage it would save.
-
-**Done when.** The artifacts of a release run expire a week after it.
-
 ### E19. A listen path check in the service form that refuses nothing
 
 Size S
@@ -692,6 +682,8 @@ Size S
 
 **Done when.** The judge is red on a layer that drops or replaces `Vary`, green on the current one, and tower-http 0.7 passes it with one copy in `cargo tree --locked -d`.
 
+**Blocked** on the single copy: every published reqwest still requires tower-http `^0.6.8`, the newest (0.13.5, 2026-09-08) as well as the one in use (0.12.28), so tower-http 0.7 would add a second copy today whatever reqwest version is taken. The judge part can be done before; the upgrade waits for a reqwest release on tower-http 0.7 (`curl https://crates.io/api/v1/crates/reqwest/<version>/dependencies`).
+
 ### E49. A red run of the Rust job on the merge of the Rust minor and patch group
 
 Size S
@@ -734,16 +726,6 @@ Size S
 
 **Done when.** Both templates above render `)` and `xa(b`, the single-quoted case keeps its rendering or its change is written in the changelog, and the judge generates the cases.
 
-### E55. A deeply nested XML body costs memory in proportion to its depth
-
-Size S
-
-**Why.** `MatchEngine::walk_xml` (`src/engine/matcher.rs`), which reads the XPath conditions of a rule, keeps the local name of every open element in a `Vec<String>`. Any client of a mocked service whose rules have an XPath condition can send a body of 10 MiB made of `<a>` only: measured on 2026-11-10 (debug build), one such request raised the peak memory of the process by 220 MiB and took 5.6 seconds, on top of the names quick-xml keeps to check end tags. Concurrent requests add up. Every reader of quick-xml also keeps, for each open element, its name and an 8-byte index to check end tags (about 30 MB for such a body, estimated, not measured), and so does `parse_xml_items`, which follows its own path with two counters.
-
-**What.** Follow the path in `walk_xml` with counters, as `parse_xml_items` does (open elements, and how many of them from the root are the segments); measure what the reader's own stack costs, and bound the depth of a body (an error past a depth no real document reaches) if it stays above the budget of a request; add the deep body to the memory test of `tests/script_budget.rs`, for a condition and for a script.
-
-**Done when.** A 10 MiB body of nested elements stays within the memory budget of a request, for an XPath condition and for `parse_xml_items`, seen red on the current code.
-
 ### E56. CDATA text read by neither XPath conditions nor `parse_xml_items`
 
 Size S
@@ -753,3 +735,24 @@ Size S
 **What.** Read `Event::CData` as text in `xml_text`, and add CDATA sections to the documents the judges of `parse_xml_items` and of XPath conditions generate.
 
 **Done when.** `<Siret><![CDATA[123]]></Siret>` gives `123` to a condition, to `{{xpath.path}}` and to a script, and the judges generate CDATA.
+
+### E57. A long element name copied twice by `parse_xml_items`, outside the memory of a run
+
+Size S
+
+**Why.** `parse_xml_items` reads its body with quick-xml, which keeps the name of each open element to check end tags, and `MatchEngine::local_name` copies each name into a `String` of its own before it is compared (XPath conditions compare the borrowed name, `local_name_ref`). A 10 MiB body made of one element name is then held three times while the function runs. Measured on 2026-11-11 (release build, `MALLOC_ARENA_MAX=1`): a script that holds 8 texts of 0.9 MiB and calls `parse_xml_items` on such a body raises the peak 16 to 19 MiB above the same request with a trivial script, within the 20 MiB the memory test of `tests/script_budget.rs` allows by 1 to 4 MiB, while one operation may add 4 MiB to what a run holds. The depth limit of XML (`XML_DEPTH_LIMIT`) does not bound it: one element is enough.
+
+**What.** Compare local names without copying them, as XPath conditions do, keep a copy only for the name of a field, counted against the limit of a text before it is made, and add the long-name body to the case of `tests/script_budget.rs` where the script holds half its budget.
+
+**Done when.** That case, with the body of one 10 MiB name, stays 10 MiB or more below the budget, seen at its edge on the current code.
+
+### E58. The XML skeleton of observed bodies, bounded in events but not in bytes
+
+Size S
+
+**Why.** Suggestions from observed traffic compare the shape of XML bodies with `xml_skeleton` (`src/server/suggestion/routes.rs`), which reads at most `MAX_XML_EVENTS` events and records each path of at most `MAX_XML_DEPTH` levels, but inserts `stack.join("/")` for every start or self-closing tag: a body of 63 long parent names and many short self-closing children makes each path as long as all its ancestors' names, and the set of paths grows to 1,000 to 2,700 times the size of the body. Measured on 2026-11-11 with the function copied as it is: a body of 16,380 bytes (the default `TRAFFIC_OBSERVATION_MAX_BODY_SIZE` is 16 KiB) holds 13.6 MB (+13 MiB of peak memory, 16 ms); 46,614 bytes hold 91.5 MB; 538,140 bytes, 1.46 GB in 3.7 seconds. The bodies are those a backend or a client sent through an observed service, read by `GET /api/services/{name}/suggestions`, once per exchange compared. The cap of the output (`MAX_SKELETON`) applies only after every path is gathered.
+
+**What.** Stop gathering paths once their total length reaches `MAX_SKELETON` (and keep the stack as counters or slices of the body, not joined strings), and add the shape above to the scale test or a memory test of the suggestions.
+
+**Done when.** The body above, at 16 KiB and at the largest `TRAFFIC_OBSERVATION_MAX_BODY_SIZE` allowed, adds less than its own size again to the memory a suggestion request holds, seen above it on the current code.
+
