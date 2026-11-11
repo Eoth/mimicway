@@ -1596,6 +1596,17 @@ mod tests {
             xml_error(&self_closing(XML_DEPTH_LIMIT), &path(XML_DEPTH_LIMIT))
                 .contains(XML_TOO_DEEP)
         );
+        // Inside an item, the item counts too: a self-closing field under `XML_DEPTH_LIMIT - 1` parents is one level
+        // too deep.
+        let field = |parents: usize| format!("{}<i><f/></i>", "<a>".repeat(parents));
+        assert_eq!(
+            xml_items(&field(XML_DEPTH_LIMIT - 2), &path(XML_DEPTH_LIMIT - 2)),
+            vec![vec![("f".to_string(), String::new())]]
+        );
+        assert!(
+            xml_error(&field(XML_DEPTH_LIMIT - 1), &path(XML_DEPTH_LIMIT - 1))
+                .contains(XML_TOO_DEEP)
+        );
     }
 
     #[test]
