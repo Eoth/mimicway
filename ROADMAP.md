@@ -746,13 +746,12 @@ Size S
 
 **Done when.** That case, with the body of one 10 MiB name, stays 10 MiB or more below the budget, seen at its edge on the current code.
 
-### E58. The XML skeleton of observed bodies, bounded in events but not in bytes
+### E59. The shapes of observed responses, described again at every level of a path
 
 Size S
 
-**Why.** Suggestions from observed traffic compare the shape of XML bodies with `xml_skeleton` (`src/server/suggestion/routes.rs`), which reads at most `MAX_XML_EVENTS` events and records each path of at most `MAX_XML_DEPTH` levels, but inserts `stack.join("/")` for every start or self-closing tag: a body of 63 long parent names and many short self-closing children makes each path as long as all its ancestors' names, and the set of paths grows to 1,000 to 2,700 times the size of the body. Measured on 2026-11-11 with the function copied as it is: a body of 16,380 bytes (the default `TRAFFIC_OBSERVATION_MAX_BODY_SIZE` is 16 KiB) holds 13.6 MB (+13 MiB of peak memory, 16 ms); 46,614 bytes hold 91.5 MB; 538,140 bytes, 1.46 GB in 3.7 seconds. The bodies are those a backend or a client sent through an observed service, read by `GET /api/services/{name}/suggestions`, once per exchange compared. The cap of the output (`MAX_SKELETON`) applies only after every path is gathered.
+**Why.** `same_shape_words` (`src/server/suggestion/routes.rs`) describes the response of every exchange under a group of words (`dominant_shape`, then `shape`, which parses a JSON body or reads an XML one up to 4,096 events) each time the inference meets two words or more at one place of the paths, and keeps no result: an exchange is described once for each level of its path where its group holds several words, up to `MAX_SEGMENTS` (32). Estimated from the code, not measured end to end: an XML body built to cost the most to describe takes 0.64 ms at 16 KiB (release build, the function alone, 2026-11-12), and the store keeps up to 1,600 exchanges (200 endpoints of 8 samples), so one suggestion request could spend about a second of CPU per level, and up to about thirty. The request runs on a worker thread of the async runtime (`get_service_suggestions_impl`, `src/server/api.rs`), not on a blocking task, and holds that thread meanwhile.
 
-**What.** Stop gathering paths once their total length reaches `MAX_SKELETON` (and keep the stack as counters or slices of the body, not joined strings), and add the shape above to the scale test or a memory test of the suggestions.
+**What.** Measure first: the family of suggestions in the scale test, over paths of many levels of words answered by costly XML bodies. Then describe each exchange once per request, before the inference, and move the computation off the async workers if it still takes more than a few milliseconds.
 
-**Done when.** The body above, at 16 KiB and at the largest `TRAFFIC_OBSERVATION_MAX_BODY_SIZE` allowed, adds less than its own size again to the memory a suggestion request holds, seen above it on the current code.
-
+**Done when.** Each exchange is described once per suggestion request, counted by the scale probe or a test, and a request over the largest store above stays within a bound written next to its test, seen above it on the current code.

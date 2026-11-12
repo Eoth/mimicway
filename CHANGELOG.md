@@ -6,6 +6,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Security
+- Suggestions from observed traffic no longer hold hundreds to thousands of times the size of an XML body to describe it. To tell whether two paths answer the same kind of document, they gather the paths of its elements (`Envelope/Body/getUrlResponse`), each as long as the names of all its ancestors, and cut the list to 4 KiB only once it was whole: a body of long parent names over many short self-closing children, sent by a backend or by a client through an observed service, raised the peak memory of a suggestion request by about 9 MiB at the default size of an observed body (16 KiB, release build), a body of 538 KB held 1.46 GB, and one of 10 MiB, observed with a larger `TRAFFIC_OBSERVATION_MAX_BODY_SIZE`, would have asked for about 42 GB (the server died under a limit of 4 GiB). The description now stops at the first path that would not fit in its 4 KiB, before copying a name into it. A test sends such bodies, 16 KiB and 10 MiB, through an observed service: they add less than 1 MiB to the peak of the request, and a body made of one 10 MiB element name adds its own size, the copy that the XML reader keeps of the name of an open element. Bodies whose paths fit in 4 KiB are described as before; for larger ones, the paths kept are the first ones in the document rather than the first ones in alphabetical order, and an element more than 90 levels deep is never read (before, the paths of elements deeper than 64 levels were left out and the reading went on past them).
+
 ## [0.5.0] - 2026-11-11
 
 ### Added

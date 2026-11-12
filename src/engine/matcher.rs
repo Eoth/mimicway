@@ -426,7 +426,7 @@ impl MatchEngine {
 
     // The same name borrowed from the event, for a comparison: an element name may be as long as the body, and a copy
     // of each one would hold it once more.
-    fn local_name_ref<'a>(e: &'a quick_xml::events::BytesStart<'_>) -> &'a str {
+    pub(crate) fn local_name_ref<'a>(e: &'a quick_xml::events::BytesStart<'_>) -> &'a str {
         let full = e.name().into_inner();
         full.rsplit(':').next().unwrap_or(full)
     }

@@ -23,7 +23,6 @@ const MAX_SEGMENTS: usize = 32;
 /// (`observation::max_body_size`), these only cap a body built to be expensive.
 const MAX_SKELETON: usize = 4096;
 const MAX_XML_EVENTS: usize = 4096;
-const MAX_XML_DEPTH: usize = 64;
 
 /// One literal path of a method, with the exchanges observed on it.
 pub(super) struct ObservedPath<'a> {
@@ -369,40 +368,63 @@ fn json_skeleton(value: &serde_json::Value, out: &mut String) {
     }
 }
 
-/// The distinct paths of elements (local names, `Envelope/Body/getUrlResponse`) of an XML document, up to the first
-/// error.
+/// The distinct paths of elements (local names, `Envelope/Body/getUrlResponse`) of an XML document, sorted, one per
+/// line. The reading stops at the first error and at the first path not yet seen that would take the lines past
+/// `MAX_SKELETON` bytes, before a name is copied into it: a path is as long as all its ancestors' names, so what is
+/// held never grows with the body. It stays within a few tens of KiB (the lines, and an entry of the set for each),
+/// besides what the reader keeps of the body to check end tags: the names of the open elements, prefixes included,
+/// at most the body itself. The depth is bounded too: the path of an element `k` levels deep holds at least its
+/// `k - 1` separators, and those of its ancestors are lines as well, so no element deeper than 90 levels is read.
 fn xml_skeleton(body: &str) -> String {
     use quick_xml::events::Event;
     let mut reader = quick_xml::reader::Reader::from_str(body);
-    let mut stack: Vec<String> = Vec::new();
+    // The path of the open elements, and where each one's part of it starts, its separator included.
+    let mut path = String::new();
+    let mut starts: Vec<usize> = Vec::new();
     let mut paths = BTreeSet::new();
+    // Bytes of the lines gathered: each path and its line break.
+    let mut size = 0;
     for _ in 0..MAX_XML_EVENTS {
-        match reader.read_event() {
-            Ok(Event::Start(e)) => {
-                stack.push(MatchEngine::local_name(&e));
-                if stack.len() <= MAX_XML_DEPTH {
-                    paths.insert(stack.join("/"));
-                }
-            }
-            Ok(Event::Empty(e)) => {
-                stack.push(MatchEngine::local_name(&e));
-                if stack.len() <= MAX_XML_DEPTH {
-                    paths.insert(stack.join("/"));
-                }
-                stack.pop();
-            }
+        let (element, self_closing) = match reader.read_event() {
+            Ok(Event::Start(e)) => (e, false),
+            Ok(Event::Empty(e)) => (e, true),
             Ok(Event::End(_)) => {
-                stack.pop();
+                // The reader refuses an end tag that closes no open element: `starts` is never empty here.
+                if let Some(start) = starts.pop() {
+                    path.truncate(start);
+                }
+                continue;
             }
             Ok(Event::Eof) | Err(_) => break,
-            Ok(_) => {}
-        }
-    }
-    let mut out = String::new();
-    for path in paths {
-        if out.len() + path.len() >= MAX_SKELETON {
+            Ok(_) => continue,
+        };
+        let name = MatchEngine::local_name_ref(&element);
+        let start = path.len();
+        // By depth, not by the length of the path: a local name may be empty (`<p:>`).
+        let separator = usize::from(!starts.is_empty());
+        // A path too long to be a line is not one already gathered.
+        if start + separator + name.len() >= MAX_SKELETON {
             break;
         }
+        if separator == 1 {
+            path.push('/');
+        }
+        path.push_str(name);
+        if !paths.contains(path.as_str()) {
+            if size + path.len() >= MAX_SKELETON {
+                break;
+            }
+            size += path.len() + 1;
+            paths.insert(path.clone());
+        }
+        if self_closing {
+            path.truncate(start);
+        } else {
+            starts.push(start);
+        }
+    }
+    let mut out = String::with_capacity(size);
+    for path in paths {
         out.push_str(&path);
         out.push('\n');
     }

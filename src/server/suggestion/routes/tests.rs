@@ -272,3 +272,157 @@ fn overlong_paths_are_left_out() {
     let routes = patterns(&[long.as_str(), "/b"], text);
     assert_eq!(routes, vec![("/b".into(), owned(&["/b"]))]);
 }
+
+/// A node of a generated XML document: the tree that `xml_skeleton` must describe without being given it.
+#[derive(Debug, Clone)]
+enum XmlNode {
+    Element {
+        prefix: Option<&'static str>,
+        name: String,
+        self_closing: bool,
+        children: Vec<XmlNode>,
+    },
+    Text,
+    Comment,
+    Instruction,
+}
+
+fn write_xml(nodes: &[XmlNode], out: &mut String) {
+    for node in nodes {
+        match node {
+            XmlNode::Element {
+                prefix,
+                name,
+                self_closing,
+                children,
+            } => {
+                // An empty local name needs a prefix: `<p:>`.
+                let prefix = if name.is_empty() {
+                    prefix.or(Some("p"))
+                } else {
+                    *prefix
+                };
+                let qualified = prefix.map_or_else(|| name.clone(), |p| format!("{p}:{name}"));
+                if *self_closing {
+                    out.push_str(&format!("<{qualified} x=\"1\"/>"));
+                } else {
+                    out.push_str(&format!("<{qualified}>"));
+                    write_xml(children, out);
+                    out.push_str(&format!("</{qualified}>"));
+                }
+            }
+            XmlNode::Text => out.push_str("t &amp; u"),
+            XmlNode::Comment => out.push_str("<!-- <c> -->"),
+            XmlNode::Instruction => out.push_str("<?p <c>?>"),
+        }
+    }
+}
+
+/// The paths of the elements from the top of the document, in the order their start tags come.
+fn element_paths(nodes: &[XmlNode], ancestors: &mut Vec<String>, paths: &mut Vec<String>) {
+    for node in nodes {
+        if let XmlNode::Element { name, children, .. } = node {
+            ancestors.push(name.clone());
+            paths.push(ancestors.join("/"));
+            element_paths(children, ancestors, paths);
+            ancestors.pop();
+        }
+    }
+}
+
+/// Documents of a few elements whose names repeat at every level, with prefixes, self-closing elements, texts, comments
+/// and processing instructions; some local names are empty (`<p:>`) or beyond ASCII, some are long (300 and 1,500
+/// bytes, or within 8 bytes of `MAX_SKELETON`, so that some paths end exactly at the limit), and some elements wrap a
+/// chain of up to 100 nested ones, deeper than the 90 levels that fit in `MAX_SKELETON` bytes. Not generated:
+/// malformed documents (the first error is a written case), CDATA, long prefixes, more than `MAX_XML_EVENTS` events.
+fn generated_documents() -> impl proptest::strategy::Strategy<Value = Vec<XmlNode>> {
+    use proptest::prelude::*;
+    let name = prop_oneof![
+        12 => prop::sample::select(vec!["a", "b", "item", "été"]).prop_map(str::to_string),
+        2 => Just(String::new()),
+        3 => Just("l".repeat(300)),
+        1 => Just("m".repeat(1500)),
+        2 => (MAX_SKELETON - 8..=MAX_SKELETON).prop_map(|n| "w".repeat(n)),
+    ];
+    let prefix = prop::option::of(prop::sample::select(vec!["n", "soap"]));
+    let element = |name, prefix, self_closing, children| XmlNode::Element {
+        prefix,
+        name,
+        self_closing,
+        children,
+    };
+    let leaf = prop_oneof![
+        2 => Just(XmlNode::Text),
+        1 => Just(XmlNode::Comment),
+        1 => Just(XmlNode::Instruction),
+        4 => (name.clone(), prefix.clone(), any::<bool>())
+            .prop_map(move |(name, prefix, self_closing)| element(name, prefix, self_closing, vec![])),
+    ];
+    let node = leaf.prop_recursive(5, 48, 4, move |inner| {
+        prop_oneof![
+            3 => (name.clone(), prefix.clone(), prop::collection::vec(inner.clone(), 0..4))
+                .prop_map(move |(name, prefix, children)| element(name, prefix, false, children)),
+            1 => (name.clone(), 1..100usize, inner).prop_map(move |(name, levels, innermost)| {
+                (0..levels).fold(innermost, |child, _| element(name.clone(), None, false, vec![child]))
+            }),
+        ]
+    });
+    prop::collection::vec(node, 1..3)
+}
+
+// The model is the old reading, which gathered every path before cutting, made to cut where the new one stops: the
+// distinct paths in the order they come, as many of the first ones as fit, each with its line break, in
+// `MAX_SKELETON` bytes. Both outcomes must come up in a share of the cases: a judge whose documents all fit would pass
+// on a reading that never stops, and one whose documents never fit, on a reading that stops too soon.
+#[test]
+fn xml_skeleton_describes_the_first_paths_of_the_document_that_fit() {
+    use proptest::prelude::*;
+    use proptest::test_runner::{Config, RngSeed, TestRunner};
+    let config = Config {
+        cases: 1024,
+        rng_seed: RngSeed::Fixed(0x736b_656c_6574_6f6e),
+        failure_persistence: None,
+        ..Config::default()
+    };
+    let (cut, whole) = (std::cell::Cell::new(0), std::cell::Cell::new(0));
+    let result = TestRunner::new(config).run(&generated_documents(), |nodes| {
+        let mut xml = String::new();
+        write_xml(&nodes, &mut xml);
+        let mut paths = Vec::new();
+        element_paths(&nodes, &mut Vec::new(), &mut paths);
+        let mut distinct: Vec<String> = Vec::new();
+        for path in paths {
+            if !distinct.contains(&path) {
+                distinct.push(path);
+            }
+        }
+        let mut size = 0;
+        let fitting = distinct
+            .iter()
+            .take_while(|path| {
+                size += path.len() + 1;
+                size <= MAX_SKELETON
+            })
+            .count();
+        let outcome = if fitting < distinct.len() {
+            &cut
+        } else {
+            &whole
+        };
+        outcome.set(outcome.get() + 1);
+        let mut expected: Vec<&String> = distinct[..fitting].iter().collect();
+        expected.sort();
+        let expected: String = expected
+            .into_iter()
+            .map(|path| format!("{path}\n"))
+            .collect();
+        prop_assert_eq!(xml_skeleton(&xml), expected, "{}", xml);
+        Ok(())
+    });
+    result.unwrap();
+    let (cut, whole) = (cut.get(), whole.get());
+    assert!(
+        cut >= 1024 / 4 && whole >= 1024 / 4,
+        "cut at MAX_SKELETON {cut}, whole {whole}"
+    );
+}
