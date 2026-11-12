@@ -233,7 +233,7 @@ Size S
 |---|---|---|
 | From what exists | U1 (OpenAPI, then WSDL; its other readers come with C2), U8 | both fill the rule form from something that already exists |
 | Recorded, without personal data | U2, U15, U24 | one recording path, cleaned as it is written, with the fake data that replaces what it removes |
-| Guided and explained | U29, U18, U19, U28 | the first minutes, then the same screens: home, rule list, request log |
+| Guided and explained | U29, U18, U19, U28 | the first minute, then the same screens: home, rule list, request log |
 | Shared | U13 | export and packs |
 
 ### U1. Import an API description
@@ -286,15 +286,15 @@ Size L, to split (the kinds recognised and their replacement, then the preview)
 
 **Done when.** Recording a backend that returns each recognised kind leaves none of the original values in the saved configuration (a test searches its bytes), two recorded responses about the same customer name the same fake customer, and a request recorded with an e-mail address in its query is still answered.
 
-### U29. Starts like an application
+### U29. The interface, one click away
 
 Size S
 
-**Why.** Someone who does not use a terminal double-clicks the downloaded file and sees nothing happen: the interface is at an address nobody told them. A desktop application would answer that with a second program to build, sign and update for each system, and with the weight of the browser it embeds.
+**Why.** Someone who starts Mimicway gets a log line that holds an address among other fields, and has to find it and type it in a browser; the interface is then one tab among many.
 
-**What.** At start, one plain line that says where the interface is. In each archive, a launcher for its desktop: a short script anyone can read, which starts the binary and asks the system to open the address in the browser already installed; the binary itself still starts no program. A web application manifest, so that the browser offers to keep the interface in a window and an icon of its own. Nothing of this on a server.
+**What.** At start, one plain line that says where the interface is, written so that a terminal makes it a link. A web application manifest, so that the browser offers to keep the interface in a window and under an icon of its own. No desktop application and no launcher: the binary starts no program, and nothing is installed.
 
-**Done when.** On each desktop system, a double-click on the launcher shows the interface; the trace of T13 still sees no program started by the binary; the manifest passes the browser's own installability check.
+**Done when.** A test reads the address of the interface on its own line in what the binary prints at start, and another reads the manifest the interface serves, with its name, its icon and its start address.
 
 ### U18. A guided first mock in the interface
 
