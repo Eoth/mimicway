@@ -1,6 +1,6 @@
 # Roadmap
 
-What is planned for Mimicway, in the order it will be done, and why. Finished work moves to [CHANGELOG.md](CHANGELOG.md); this file only holds what is still ahead.
+What is planned for Mimicway, release by release, and why. Finished work moves to [CHANGELOG.md](CHANGELOG.md); this file only holds what is still ahead.
 
 ## What Mimicway stays
 
@@ -8,66 +8,106 @@ Every item below is weighed against these promises; an idea that breaks one of t
 
 - **One self-contained program.** No database, no agent, no cloud account, nothing to install next to it.
 - **Quiet by default.** No telemetry, no update check. Every outbound connection is one the user configured, and the [security model](docs/en/security.md) lists them all.
+- **Nothing hidden.** It writes under its data directory, and in a directory the operator names in a setting or on a command line, and nowhere else; it starts no other program, installs nothing, and never touches the settings of another tool. What it does on a machine can be listed and checked (T13).
 - **Safe on a laptop.** Local-only until told otherwise; a web page cannot drive it.
+- **Light for the machine.** It must stay usable on the smallest hardware a team owns: memory, processor time, image and saved file are measured, against the alternatives too; their budgets go down, and rise only for a stated reason (G1, G2).
 - **Light for the person using it.** A mock should take a minute to write and zero minutes to maintain: import what exists, suggest what can be guessed, explain what went wrong.
+- **Usable without a developer.** A tester or a business analyst reads every screen in plain words and finds out alone why a call got its answer; an internal code on a screen is a defect.
+- **Accessible.** Every screen is built for WCAG 2.2 AA, by keyboard alone and with a screen reader; CI checks what a tool can check, a manual audit the rest, and the known gaps are items here (T18).
 - **Easy to approve.** Every feature keeps the [reviewer guide](REVIEWING.md) true: small dependency set, no `unsafe` outside the allocator that counts what scripts hold (`alloc/`), documented flows and permissions.
 
 ## How to read an item
 
-Each item has an identifier that never changes, a size (S: a day or less, M: a few days, L: a week or more, to be split before starting), a short **why**, a **what**, and a **done when** that can be checked. Items marked **Decision needed** wait for a choice from the maintainers before any code.
+Each item has an identifier that never changes, a size (S: a day or less, M: a few days, L: a week or more, to be split before starting), a short **why**, a **what**, and a **done when** that can be checked. Items marked **Decision needed** wait for a choice from the maintainers before any code. An item that adds an input that grows with use adds its family to the scale test ([decision 2](decisions/0002-performance-is-judged-by-growth.md)).
+
+Items are gathered in **themes**: the items of a theme touch the same screens or the same files, and are taken together, one after the other, so that the code is opened once. A **release** is a handful of themes that change one thing for the user; it ships when its themes are done, at no fixed date. The letters say what an item serves: R the launch, T trust and operations, U use, G the weight on the machine, C the request side (sending calls, not only answering them), E engineering.
+
+## Releases at a glance
+
+| Release | What changes for the user | Themes |
+|---|---|---|
+| [0.6](#release-06-approved-at-first-sight) | A security team can approve it from one page, its weight is proved, and anyone can read its screens | Bounded · Proved · Scored · Lightest, with the proof · Accessible · Words anyone can read |
+| [0.7](#release-07-a-first-mock-without-writing-one) | A first mock comes from a file or from real traffic, never from a blank form | From what exists · Recorded, without personal data · Guided and explained · Shared |
+| [0.8](#release-08-mocks-that-behave-like-the-real-service) | Mocks remember, change with the situation, and fail like real services | State and data · Situations and time · Real failures and payloads |
+| [0.9](#release-09-tests-can-rely-on-it) | Automated tests drive it, assert on it, and keep its mocks in their repository | Assert and automate · The saved file · Shipped · See what happened |
+| [1.0](#release-10-shared-across-a-company) | One instance serves a whole company; its formats and its promises are frozen | Sign-in and traces · Deployed anywhere · Confined · Stated · Frozen formats |
+| [1.1](#release-11-more-protocols) | GraphQL, WebSocket and tokens are mocked like HTTP | Protocols · Identity |
+| [2.0](#release-20-the-request-side) | The same program sends calls, checks answers and runs collections: an API client with nothing hidden | Send · Collections · Checks and runs · One loop |
+
+[Kept open](#kept-open) holds the ideas that wait for a decision; the [engineering backlog](#engineering-backlog) is taken alongside.
 
 ## Order of work
 
-1. [Ready for an international launch](#1-ready-for-an-international-launch): R10 (with R16, R17, R18), R12, R13, R14, R9.
-2. [Trust and operations](#2-trust-and-operations): T1 to T12.
-3. [Make it indispensable](#3-make-it-indispensable): U1, U2, then U3 to U18, in the listed order.
-4. [Engineering backlog](#4-engineering-backlog): taken alongside, when they unblock an item above.
-
-The judges come before the lists above: E52, a test whose verdict comes from outside the code under test (mutations).
+1. The releases in the order above; inside a release, the themes in the order of its table; inside a theme, the items in the order listed. A theme is taken whole. An item of size L is split before it starts, and its parts follow each other.
+2. A defect that lets untrusted input exhaust memory or time, or that leaks a secret, passes before any theme.
+3. The [engineering backlog](#engineering-backlog) is taken by bundle, when a theme opens the same files or when a bundle unblocks it.
+4. The judges come before the lists above: E52, a test whose verdict comes from outside the code under test (mutations).
+5. An item that waits for a step of the maintainers, for a decision or for an upstream release holds neither its theme nor its release: what can be done is done, the wait is written in its **Progress**, and the work goes on.
 
 At the maintainers' request, templates in response headers then server-sent events came first, before the lists above; both are in the [changelog](CHANGELOG.md).
 
-## 1. Ready for an international launch
+## Release 0.6: approved at first sight
 
-### R9. Polish the French catalogues
+| Theme | Items, in order | Taken together because |
+|---|---|---|
+| Bounded | T4, T6, T10 | what the instance may reach, how often it may be asked, and the last unmaintained library |
+| Proved | T13, T15 | the proof a security team asks for, and the page that holds it |
+| Scored | R10, R16, R17, R18 | the public scores; most of what is left waits for the maintainer's own steps |
+| Lightest, with the proof | E10 (in the backlog), G1, G2 | one measuring job, its budgets |
+| Accessible | T20, then the keyboard bundle and the screen reader bundle | the same judge and the same screens |
+| Words anyone can read | R12, R13, R14, R9, then the forms and messages bundle | the same screens and catalogues, one regeneration of the screenshots |
 
-Size S
+The XML readers bundle of the [engineering backlog](#engineering-backlog) reads untrusted input: it comes first.
 
-**Why.** Many French messages were written without accents ("reserve", "deja", "regle"), which reads as careless to French users.
-
-**What.** Restore accents and typography (non-breaking space before `:`, `«»` quotes) in `src/locales/fr.json` and `frontend/src/locales/fr.json`; the existing catalogue tests keep placeholders intact. Fix the mistranslations the French screenshots show, such as "Réécriture annuaire" for "Directory URL rewriting" and an example name that differs from the English one ("ex: get-siret" for "e.g. get-customer"). Give both typed confirmation keywords the same rule: the restore confirmation asks for a translated keyword (`RESTAURER`), the reset confirmation for `RESET` in every language (`App.svelte`); a translated keyword must stay easy to type on any keyboard, and the guide names it in each language. Update the French texts that `frontend/src/tests/french.test.js` expects, the only unit tests that read the French catalogue. Then regenerate the screenshots (`npm run docs:screenshots`): the French images show the catalogue as it is today.
-
-**Done when.** A spell check of both French catalogues passes, and the French screenshots are regenerated from them.
-
-### R12. Readable condition labels in the rule form
-
-Size S
-
-**Why.** The list of a rule's conditions shows each one as `QueryParam(id) Eq(42)`: internal type names, identical in every language, which QA and business users cannot be expected to decode and which the guide's screenshots show in English and French alike. The pseudo-locale test does not catch it, because the label is assembled from data. The rule tester and the traffic suggestions already word conditions in the user's language.
-
-**What.** Build the label in `RuleConditionsEditor.svelte` from the source and operator labels the condition form already translates (`Query parameter`, `HTTP header`, `Equals`, `Exists (any value)`…), through `t()` with placeholders, one message per operator shape, as `ObservationSuggestions.svelte` does; translate the new messages in `frontend/src/locales/fr.json`; regenerate the screenshots that show a condition list.
-
-**Done when.** No condition in the interface shows a source or operator type name, in either language, and a Vitest test covers the label of each source and operator.
-
-### R13. Screens open at their top
+### T4. Restrict where the proxy may connect
 
 Size S
 
-**Why.** The interface is one page without a router: switching screens keeps the scroll position. A service opened from far down the list, or reached by saving a long form, opens part-way down with its title and the navigation bar cut off, and the guide's screenshots of the service page show it.
+**Why.** An editor can point a proxy at any host the server reaches: internal services, cloud metadata endpoints. Today only the network can stop it.
 
-**What.** Scroll to the top when the main screen changes (list, service page, logs, groups, backups, Kafka, TCP), and bring the list back to where it was when the user returns to it, as the expanded groups already are.
+**What.** `PROXY_ALLOWED_TARGETS`: a list of hosts, domains or CIDR ranges that proxy targets must match, checked when a service is saved and again when a request is forwarded (after DNS resolution); link-local addresses refused unless listed.
 
-**Done when.** An end-to-end test opens a service from below the fold and finds its page at the top, then goes back and finds the list where it left it.
+**Done when.** A target outside the list is refused at save time and at forwarding time, with tests for DNS names that resolve to a forbidden address.
 
-### R14. A header that fits in every language
+### T6. Rate limits
 
 Size S
 
-**Why.** At 1280 px the navigation bar wraps onto two lines as soon as it holds more than the basic actions: in English for a signed-in super-admin (user badge, "Log out" and "Reset", see `docs/en/screenshots/authentication-user-badge.png`), in French already for a signed-in user or with the Kafka button (`docs/fr/screenshots/group-members.png`, `kafka-message-log.png`). Every language longer than English makes it worse.
+**Why.** The login endpoint and the management API have no throttling.
 
-**What.** Make the header hold on one line at common desktop widths whatever the language: shorter labels, icons with an accessible name for the secondary actions, or a menu for the rare ones (import, export, backups), chosen from a mock-up in both languages.
+**What.** Per-client limits on `/api/auth/login` and on mutating API calls, with `429` and `Retry-After`; mocked services stay unlimited unless a rule asks for it (see U11).
 
-**Done when.** An end-to-end test measures the header at 1280 px in English and French, signed in as a super-admin, and finds a single line in both.
+**Done when.** Repeated failed logins are slowed down, as a test shows, without any cost on mocked traffic.
+
+### T10. Leave the deprecated YAML crate
+
+Size S
+
+**Why.** `serde_yaml` is no longer maintained, nor is `unsafe-libyaml`, which it brings, and `smartstring` (pulled in by the script engine) is flagged unmaintained: `deny.toml` and `osv-scanner.toml` currently tolerate both notices.
+
+**What.** Move to a maintained YAML implementation, keeping the file format byte-compatible; follow Rhai's releases and drop the `smartstring` exception as soon as a release no longer depends on it.
+
+**Done when.** `cargo deny check` passes with an empty `ignore` list.
+
+### T13. Nothing hidden, proved by a test
+
+Size M
+
+**Why.** Security teams now refuse a tool for what it could do unseen: write outside its folder, start other programs, call a vendor, change the settings of another tool. They ask for proof, not for a statement. Mimicway does none of this, but only says so.
+
+**What.** The end-to-end job starts every instance it uses under a system-call trace (`strace` on Linux) and compares what it saw with a short list kept in the repository: files opened for writing (under `DATA_PATH` only), sockets (the listening address and the configured targets only), no program started. The job is red too when the trace lacks what must be there (the bind of the listening address, the write of the configuration file): an empty trace proves nothing. A `mimicway report` command, which reads its arguments without a new crate, prints what this instance does: version, commit, compiled features, listening address, data directory, every outbound flow its configuration allows, the limits in force; the security model points to it. The header of the job says what the trace does not see (other systems than Linux, code paths the suite does not reach).
+
+**Done when.** A write outside `DATA_PATH`, or a connection the list does not hold, added on purpose to the code, turns the job red (seen once), and `mimicway report` lists the flows of the security model and no other.
+
+### T15. The security reviewer's file
+
+Size M
+
+**Why.** Approving a tool means answering the same questionnaire each time: what data it holds, what it connects to, who signs in, what it logs, how updates and vulnerabilities are handled, how a download is verified. The answers exist, spread over the security model, the reviewer guide, the security policy and the release notes; the reviewer has to assemble them, and gives up or refuses.
+
+**What.** One page for the reviewer, in English and French (`docs/en/security-review.md`): each usual question, its answer, and the proof (a file, a test, a command to run). What can drift is generated from the code and checked in CI: the outbound flows, the settings with their defaults, the authorization matrix. With each release: the dependency list embedded in the binary, so that a scanner reads it from the file alone; a statement of which published advisories do not apply and why (VEX); the number of third-party crates of the default build (150 today, build dependencies not counted), held in CI by a budget, raised as G2 says. Installing and verifying without network access is described and tested.
+
+**Done when.** The commands of the page run in CI as written, like those of the API tour; a reviewer verifies a download and lists its flows and dependencies with that page and the binary alone; a crate added above the budget fails the CI.
 
 ### R10. Public supply-chain score
 
@@ -117,119 +157,84 @@ Size S
 
 **Done when.** The badge is at passing and Scorecard reads it.
 
-## 2. Trust and operations
-
-### T1. Any OpenID Connect provider, browser login with PKCE
-
-Size L, to split (discovery and validation first, then the login flow)
-
-**Why.** Authentication works with Keycloak only, through the password grant: the UI sees users' passwords, and OAuth 2.1 drops that grant. Entra ID, Okta, Auth0, Google or GitLab users cannot log in at all.
-
-**What.** Configure an issuer URL and a client; read its discovery document and keys; log in with the authorization code flow and PKCE (the UI never sees a password); map groups or roles from a configurable claim to super-admins. Keycloak becomes one provider among others, and its current variables keep working.
-
-**Done when.** End-to-end tests log in against a fake provider through the redirect flow; the password form is gone when the new mode is configured.
-
-### T2. API tokens for automation
+### G1. The footprint, measured against the alternatives
 
 Size M
 
-**Why.** CI pipelines and test suites need to change mocks without a person's credentials.
+**Why.** "Light" is a claim until everyone is measured the same way. A first run by hand (one mock, 5,000 calls, default settings) gave Mimicway more than twenty times less memory and processor time than two widely used alternatives, and an image fifteen times smaller. Nothing keeps these figures true, and nobody else can redo them.
 
-**What.** Named tokens with a scope (read, write on given groups, admin) and an expiry, created by admins, stored hashed, shown once, revocable from the UI.
+**What.** A script (`scripts/footprint.mjs`) that starts Mimicway and each alternative it names, from their official images pinned by digest, gives each the same mocks and the same calls, and reads from the kernel the peak memory and the processor time, then the size of the image and of the file saved for a reference set of mocks. Each tool runs with the settings its own documentation gives; the method is written beside the table so that anyone can redo it or contest it, and so are its blind spots (desktop applications are not measured, one kind of machine). It runs in a job of its own, weekly and before a release, never on a pull request. The table of both READMEs is generated from its result.
 
-**Done when.** A token can drive the management API within its scope and nowhere else, which the authorization tests check for each endpoint.
+**Done when.** The table of both READMEs comes from the job, and the job is red when Mimicway is not the lightest on memory, processor time or image in its own run; the saved file is shown without a verdict until G3. Each tool is compared with the others on the same machine in the same run; no time is compared with a stored value ([decision 2](decisions/0002-performance-is-judged-by-growth.md)).
 
-### T3. Audit log of configuration changes
-
-Size M
-
-**Why.** "Who changed this mock, and when?" is the first question on a shared instance, and reviewers ask for traceability.
-
-**What.** An append-only log of every change (who, when, what, a diff of the service or group), stored next to the configuration with rotation, visible to admins, exportable as JSON lines.
-
-**Done when.** Every mutating endpoint writes one entry, which a test asserts for each of them.
-
-### T4. Restrict where the proxy may connect
+### G2. Budgets that go down
 
 Size S
 
-**Why.** An editor can point a proxy at any host the server reaches: internal services, cloud metadata endpoints. Today only the network can stop it.
+**Why.** Each feature adds a little weight, and no check says when the sum has stopped being light: the binary is about 15 MB, the instance holds 11 MiB at rest, and nothing would notice 20 and 30.
 
-**What.** `PROXY_ALLOWED_TARGETS`: a list of hosts, domains or CIDR ranges that proxy targets must match, checked when a service is saved and again when a request is forwarded (after DNS resolution); link-local addresses refused unless listed.
+**What.** A file of budgets read by CI, for what gives the same figure on every run: bytes of the release binary per target, bytes of the image, bytes of the interface sent at first load (E10), memory at rest with a stated margin, wake-ups per minute at rest (none: no timer, counted over a minute), and a start followed by the reference calls of G1 inside 32 MiB, the memory the Kubernetes manifests request. Time has no budget: its growth is judged by the scale test ([decision 2](decisions/0002-performance-is-judged-by-growth.md)). A budget is lowered when the measure drops, and raised only with a line in the changelog that says what the user gets for it, or the security update that needs it. Build settings for size (`opt-level`, `panic`, `codegen-units`) are tried once, each family of the scale test counted before and after as that decision asks, and kept only if no count worsens: size is not bought with time.
 
-**Done when.** A target outside the list is refused at save time and at forwarding time, with tests for DNS names that resolve to a forbidden address.
+**Done when.** A change that adds 1 % to the binary without raising its budget is red in CI, and the binary answers the reference calls inside 32 MiB.
 
-### T6. Rate limits
-
-Size S
-
-**Why.** The login endpoint and the management API have no throttling.
-
-**What.** Per-client limits on `/api/auth/login` and on mutating API calls, with `429` and `Retry-After`; mocked services stay unlimited unless a rule asks for it (see U11).
-
-**Done when.** Repeated failed logins are slowed down, as a test shows, without any cost on mocked traffic.
-
-### T7. Metrics and traces
-
-Size M
-
-**Why.** Operators want to know whether the mock answers, how fast, and which rules are hit, in the tools they already use.
-
-**What.** An opt-in Prometheus endpoint (requests by service, rule, mode and status; latency; proxy errors; configuration writes) and OpenTelemetry traces exported to a configured endpoint. Both off by default, both listed as outbound flows when on.
-
-**Done when.** A Grafana dashboard example in `docs/` works against a running instance.
-
-### T8. Packaging for clusters and compose
-
-Size M
-
-**Why.** Kubernetes users expect a Helm chart, and compose users a ready file.
-
-**What.** A Helm chart (published as an OCI artifact with the image) built from the same settings as `k8s/base`, and a `compose.yaml` at the root; security contexts stay as strict as the current manifests.
-
-**Done when.** `helm install` and `docker compose up` both give a working instance, tested in CI with kind.
-
-### T9. Configuration as code
-
-Size M
-
-**Why.** Teams want mocks reviewed and versioned with the application, and the same mocks in every environment.
-
-**What.** A read-only mode that loads services from files in a directory (one file per service or group, YAML or JSON), reloads on change, and refuses changes through the API; a `mimicway validate <dir>` command that checks files in CI; a JSON Schema of the configuration for editor completion.
-
-**Done when.** A mock committed in a repository reaches a running instance without the UI, and an invalid file fails the CI command with the same message the UI would show.
-
-### T10. Leave the deprecated YAML crate
+### T20. The accessibility judge reads WCAG 2.2
 
 Size S
 
-**Why.** `serde_yaml` is no longer maintained, nor is `unsafe-libyaml`, which it brings, and `smartstring` (pulled in by the script engine) is flagged unmaintained: `deny.toml` and `osv-scanner.toml` currently tolerate both notices.
+**Why.** The end-to-end suite judges every screen it reaches with axe-core, on the rules of WCAG 2.0 and 2.1 only (`frontend/e2e/fixtures.mjs`), while the interface is built for 2.2: target size, focus not hidden and the other criteria of 2.2 that a tool can check are not checked.
 
-**What.** Move to a maintained YAML implementation, keeping the file format byte-compatible; follow Rhai's releases and drop the `smartstring` exception as soon as a release no longer depends on it.
+**What.** Add the 2.2 rule sets (`wcag22a`, `wcag22aa`) to the judge, fix what it then reports, or record it as a dated exception with its item.
 
-**Done when.** `cargo deny check` passes with an empty `ignore` list.
+**Done when.** The suite is green with the 2.2 rule sets on, and a target made too small on purpose turns it red (seen once).
 
-### T11. Serve under a path prefix
+### R12. Readable condition labels in the rule form
 
-Size M
+Size S
 
-**Why.** The UI loads `/assets`, `/runtime-config.json` and `/api` from the root of its host, so Mimicway cannot live under a path such as `https://tools.example.com/mimicway/`, which many platforms impose (one host, one prefix per tool).
+**Why.** The list of a rule's conditions shows each one as `QueryParam(id) Eq(42)`: internal type names, identical in every language, which QA and business users cannot be expected to decode and which the guide's screenshots show in English and French alike. The pseudo-locale test does not catch it, because the label is assembled from data. The rule tester and the traffic suggestions already word conditions in the user's language.
 
-**What.** A `BASE_PATH` setting: the server mounts the UI, the API and the mocked services under it, the UI is built with relative asset paths and reads the prefix from `runtime-config.json`, and service URLs shown in the UI include it.
+**What.** Build the label in `RuleConditionsEditor.svelte` from the source and operator labels the condition form already translates (`Query parameter`, `HTTP header`, `Equals`, `Exists (any value)`…), through `t()` with placeholders, one message per operator shape, as `ObservationSuggestions.svelte` does; translate the new messages in `frontend/src/locales/fr.json`; regenerate the screenshots that show a condition list.
 
-**Done when.** An end-to-end run with `BASE_PATH=/mimicway` behind a prefix-stripping proxy passes, and a Kubernetes overlay shows it.
+**Done when.** No condition in the interface shows a source or operator type name, in either language, and a Vitest test covers the label of each source and operator.
 
-### T12. Services on their own port
+### R13. Screens open at their top
 
-Size L, to split (the second listener first, then the interface's URLs, then the overlays)
+Size S
 
-**Why.** Service responses render in an opaque origin, so that a page written by an editor, a backend or a reflected request value cannot act as the interface ([decision 1](decisions/0001-service-responses-in-an-opaque-origin.md)). A proxied web application that needs its own origin (cookies, storage, same-origin calls) therefore no longer works when browsed through Mimicway.
+**Why.** The interface is one page without a router: switching screens keeps the scroll position. A service opened from far down the list, or reached by saving a long form, opens part-way down with its title and the navigation bar cut off, and the guide's screenshots of the service page show it.
 
-**What.** A `SERVICES_PORT` setting: the mocked and proxied services answer on that port, the interface and the management API on `PORT`; their responses then keep their own origin, without the sandbox. The interface shows service URLs with the right port, and the overlays route a second host to it.
+**What.** Scroll to the top when the main screen changes (list, service page, logs, groups, backups, Kafka, TCP), and bring the list back to where it was when the user returns to it, as the expanded groups already are.
 
-**Done when.** With `SERVICES_PORT` set, an end-to-end test browses a proxied page that uses its own storage, and finds the interface unreachable from it; without it, nothing changes.
+**Done when.** An end-to-end test opens a service from below the fold and finds its page at the top, then goes back and finds the list where it left it.
 
-## 3. Make it indispensable
+### R14. A header that fits in every language
+
+Size S
+
+**Why.** At 1280 px the navigation bar wraps onto two lines as soon as it holds more than the basic actions: in English for a signed-in super-admin (user badge, "Log out" and "Reset", see `docs/en/screenshots/authentication-user-badge.png`), in French already for a signed-in user or with the Kafka button (`docs/fr/screenshots/group-members.png`, `kafka-message-log.png`). Every language longer than English makes it worse.
+
+**What.** Make the header hold on one line at common desktop widths whatever the language: shorter labels, icons with an accessible name for the secondary actions, or a menu for the rare ones (import, export, backups), chosen from a mock-up in both languages.
+
+**Done when.** An end-to-end test measures the header at 1280 px in English and French, signed in as a super-admin, and finds a single line in both.
+
+### R9. Polish the French catalogues
+
+Size S
+
+**Why.** Many French messages were written without accents ("reserve", "deja", "regle"), which reads as careless to French users.
+
+**What.** Restore accents and typography (non-breaking space before `:`, `«»` quotes) in `src/locales/fr.json` and `frontend/src/locales/fr.json`; the existing catalogue tests keep placeholders intact. Fix the mistranslations the French screenshots show, such as "Réécriture annuaire" for "Directory URL rewriting" and an example name that differs from the English one ("ex: get-siret" for "e.g. get-customer"). Give both typed confirmation keywords the same rule: the restore confirmation asks for a translated keyword (`RESTAURER`), the reset confirmation for `RESET` in every language (`App.svelte`); a translated keyword must stay easy to type on any keyboard, and the guide names it in each language. Update the French texts that `frontend/src/tests/french.test.js` expects, the only unit tests that read the French catalogue. Then regenerate the screenshots (`npm run docs:screenshots`): the French images show the catalogue as it is today.
+
+**Done when.** A spell check of both French catalogues passes, and the French screenshots are regenerated from them.
+
+## Release 0.7: a first mock without writing one
+
+| Theme | Items, in order | Taken together because |
+|---|---|---|
+| From what exists | U1 (OpenAPI, then WSDL; its other readers come with C2), U8 | both fill the rule form from something that already exists |
+| Recorded, without personal data | U2, U15, U24 | one recording path, cleaned as it is written, with the fake data that replaces what it removes |
+| Guided and explained | U29, U18, U19, U28 | the first minutes, then the same screens: home, rule list, request log |
+| Shared | U13 | export and packs |
 
 ### U1. Import an API description
 
@@ -241,71 +246,6 @@ Size L, to split by format
 
 **Done when.** The Petstore OpenAPI document and a public WSDL import into working mocks, as end-to-end tests check, and nothing is sent anywhere during an import.
 
-### U2. Record and replay
-
-Size M
-
-**Why.** Traffic observation suggests rules but leaves each one to accept by hand. Teams often want a faithful snapshot of a real backend in one go.
-
-**What.** A "record" switch on a proxied service that turns every distinct exchange into a rule (grouped by the same correlation as suggestions), credentials removed, then switches the service to mock mode on demand.
-
-**Done when.** Recording a session against a real backend, then cutting the network, replays the same responses for the same requests.
-
-### U3. Verify what the application called
-
-Size M
-
-**Why.** Automated tests need to assert that the application under test called a dependency, how many times and with what: today they can only read the request log by hand.
-
-**What.** `POST /api/verify` with a request pattern (method, path, conditions like a rule's) and an expected count; `DELETE /api/logs` to start a test from a clean journal; a journal size setting for test runs.
-
-**Done when.** A Java and a JavaScript example test use it to assert calls, in the docs.
-
-### U4. Scenarios selected per request
-
-Size M
-
-**Why.** Testing an error case means editing the mock and editing it back, which breaks parallel tests sharing an instance.
-
-**What.** Named variants of a rule's response, picked by a request header (`X-Mimicway-Scenario: timeout`), a cookie or a query parameter, with a default; the UI shows the variants side by side.
-
-**Done when.** Two test runs against the same instance get different scenarios at the same time.
-
-### U5. Stateful mocks and instant CRUD
-
-Size L, in two parts
-
-**Why.** Many APIs are "create, then read what was created", or "start, then poll until it is done". Static rules cannot follow, and scripts have no memory. Today the end-to-end tests of a client that polls a build change a rule through the API between two calls to make the mock move on: a build seen "in progress" then finished, a "last build" that still names the previous build right after a replay and the new one at the next call, an import that fails then succeeds once corrected, a stream cut at its first read and whole at the next.
-
-**What.** For every part: the state lives in memory, per service, like the call counter; a reset of the configuration, and any change of the service, put it back to its start; the request log shows it for each call; nothing new is written to the configuration file but the rules themselves.
-
-Parts, in this order:
-
-- **a. A state machine per service** (M): a service is in a named state, `start` until a rule moves it. A rule may require a state (it matches only in that state, beside its conditions) and move the service to another state after it answers, at once or after it has answered a given number of times in that state (a build "in progress" for two polls, then finished). The current state is a template variable (`{{state}}`), readable and settable through the API (`GET` and `PUT …/{name}/state`), and shown and reset from the service page. The rule form edits "only in state" and "then go to state" next to the conditions; the rule tester says whether the state of the service lets the draft rule answer.
-- **b. Resource services** (M): a service type that, from a path such as `/orders/{id}`, answers POST, GET (one and list), PUT, PATCH and DELETE on an in-memory collection, seeded from examples, reset by API.
-
-**Done when.** a: a test polls a build that answers "in progress" twice then "finished", reads a "last build" that changes after a replay, and reads a stream cut once then whole, with no call to the management API between the calls; a reset brings every case back to its start. b: a create-then-read test passes against a resource service with no rule written.
-
-### U6. Frozen and shifted time
-
-Size S
-
-**Why.** Responses with dates (`now_iso`, `date_future`…) make snapshots and assertions flaky.
-
-**What.** A clock per service or per request (`X-Mimicway-Time`): fixed at an instant, or shifted by a duration; templates and scripts read it instead of the system clock.
-
-**Done when.** The same request with the same frozen time returns byte-identical responses.
-
-### U7. Callbacks and webhooks
-
-Size M
-
-**Why.** Asynchronous APIs answer "accepted", then call back later (payments, document processing). Mocking them today needs another tool.
-
-**What.** A rule can schedule an HTTP call after its response: target, delay, method, templated body and headers. The callback target is an outbound flow: it obeys the proxy allow-list (T4) and appears in the security model.
-
-**Done when.** An end-to-end test receives the callback with values taken from the original request.
-
 ### U8. Request coverage and one-click rules from misses
 
 Size S
@@ -316,65 +256,15 @@ Size S
 
 **Done when.** A 404 from Mimicway can become a working rule in two clicks.
 
-### U9. Built-in identity provider mock
+### U2. Record and replay
 
 Size M
 
-**Why.** Almost every application under test needs tokens. Running a real identity server for tests is heavy, and hand-made JWKS mocks are error-prone.
+**Why.** Traffic observation suggests rules but leaves each one to accept by hand. Teams often want a faithful snapshot of a real backend in one go.
 
-**What.** A service type that behaves as an OpenID Connect provider: discovery document, key set, token endpoint (client credentials, password, authorization code with PKCE), with configurable claims and lifetimes, signing keys generated per instance.
+**What.** A "record" switch on a proxied service that turns every distinct exchange into a rule (grouped by the same correlation as suggestions), credentials removed, then switches the service to mock mode on demand.
 
-**Done when.** A sample application configured with Mimicway as its issuer logs in and validates tokens.
-
-### U10. More protocols
-
-Size L, to split by protocol
-
-**Why.** Modern applications also talk GraphQL, WebSocket and server-sent events.
-
-**What.** Server-sent events are done (a rule answers with a list of events). Then GraphQL (match on operation name and variables, answer per operation), then WebSocket (message-to-message rules, like the raw TCP mock), and gRPC last if asked for.
-
-**Done when.** Each protocol has a guide page and end-to-end tests.
-
-### U11. Faults beyond status codes
-
-Size S
-
-**Why.** Real failures are rarely a clean `500`: connections drop, bodies trickle, responses are cut.
-
-**What.** Chaos options for a dropped connection, a reset after headers, a body sent slowly (bytes per second), a truncated body, and a per-rule rate limit answering `429`.
-
-**Done when.** Each fault is reproduced by a test client that sees the expected transport error.
-
-### U12. Responses from files
-
-Size S
-
-**Why.** Some mocks must return PDFs, images or archives, which templates cannot hold.
-
-**What.** A body fragment that serves a file uploaded through the UI and stored in `DATA_PATH/files`, with its content type; included in exports.
-
-**Done when.** A rule returns an uploaded PDF byte for byte.
-
-### U13. Partial export and mock packs
-
-Size S
-
-**Why.** Import and export only cover the whole configuration, so sharing one service between teams means editing JSON by hand.
-
-**What.** Export a service or a group; import it into another instance with a preview of conflicts. A small gallery of generic, ready-to-import packs in `examples/` (an OAuth2 provider, a payment flow, a CI toolchain).
-
-**Done when.** A group exported from one instance imports into another with its rules intact.
-
-### U14. Contract drift detection
-
-Size M
-
-**Why.** Mocks lie silently when the real API changes.
-
-**What.** For a service with a target, compare on demand the mocked responses with the real backend's for the same captured requests, and report differences in status, fields and types.
-
-**Done when.** Changing a field in the real backend shows up as a drift on its rule.
+**Done when.** Recording a session against a real backend, then cutting the network, replays the same responses for the same requests.
 
 ### U15. Fake data in every locale
 
@@ -386,15 +276,25 @@ Size M
 
 **Done when.** A service in `en-US` and one in `de-DE` produce plausible local data, and each locale has tests for its formats.
 
-### U16. More interface languages
+### U24. Recorded without personal data
 
-Size S per language
+Size L, to split (the kinds recognised and their replacement, then the preview)
 
-**Why.** English and French cover a small part of the people who could use Mimicway.
+**Why.** Traffic recorded from a real backend carries real people: names, e-mail addresses, phone numbers, bank accounts. Recording removes credentials, not people, so a recorded mock spreads personal data to test machines, exports and repositories, which the team's data protection officer has to refuse.
 
-**What.** Spanish, German, Portuguese, Italian and Japanese catalogues for the UI and the server messages, contributed and reviewed by native speakers; the existing tests already check each catalogue.
+**What.** While recording (U2) and in the suggestions from observed traffic, a value recognised as personal, by the name of its field and by its shape (e-mail, phone number, IBAN, card number with its checksum, the national identifiers of the locales of U15), is replaced by the matching fake-data placeholder in a seeded form, which templates lack today. The seed is a keyed hash of the original value, the key drawn for the recording and never saved: two responses about the same person stay consistent, and the original cannot be found again from the file. The original value is never written to disk. A condition on a personal value becomes a condition on its shape. A preview lists what was replaced, and lets the user add a field or keep one; the replay of U2 then holds for every value the preview does not list. The page says what the detection does not see (free text, images, fields named in a way it does not know).
 
-**Done when.** Each language passes the catalogue tests and a native speaker's review.
+**Done when.** Recording a backend that returns each recognised kind leaves none of the original values in the saved configuration (a test searches its bytes), two recorded responses about the same customer name the same fake customer, and a request recorded with an e-mail address in its query is still answered.
+
+### U29. Starts like an application
+
+Size S
+
+**Why.** Someone who does not use a terminal double-clicks the downloaded file and sees nothing happen: the interface is at an address nobody told them. A desktop application would answer that with a second program to build, sign and update for each system, and with the weight of the browser it embeds.
+
+**What.** At start, one plain line that says where the interface is. In each archive, a launcher for its desktop: a short script anyone can read, which starts the binary and asks the system to open the address in the browser already installed; the binary itself still starts no program. A web application manifest, so that the browser offers to keep the interface in a window and an icon of its own. Nothing of this on a server.
+
+**Done when.** On each desktop system, a double-click on the launcher shows the interface; the trace of T13 still sees no program started by the binary; the manifest passes the browser's own installability check.
 
 ### U18. A guided first mock in the interface
 
@@ -420,7 +320,506 @@ Parts, in this order:
 
 **Done when.** From the empty home screen, a first-time user reaches a rule with a condition and its log entry without leaving the panel, by keyboard alone (an end-to-end scenario) and with each step announced (an accessibility check of the panel); the initial JavaScript of the bundle keeps its size in bytes; after closing, no listener or timer of the panel is left.
 
-## 4. Engineering backlog
+### U19. Rules and answers explained in words
+
+Size M
+
+**Why.** Someone who does not write code reads a rule as a list of fields and a log line as a status code, and asks a developer "why did I get this answer?". The rule tester already knows the reason, condition by condition, but only for a draft rule and a request chosen by hand.
+
+**What.** Each rule of the list reads as a sentence built from the labels the forms already translate (R12): "When `GET /users/{id}` is called with `plan` equal to `vip`, answer 200 with…". Each line of the request log gets a "Why this answer" panel: the rule that answered and the conditions that decided; for a request no rule answered, the nearest rule and its first condition that failed. The verdict is computed on demand from the captured request, with the code of the rule tester; nothing is added to the path of a request. When the captured body was cut or a condition reads a redacted header, the panel says that the verdict cannot be recomputed for that condition.
+
+**Done when.** An end-to-end test calls a service with a wrong parameter and finds, on its log line, the nearest rule and the failed condition, in English and in French; the suite searches each screen it opens for the names of the condition types, listed from the code, and finds none.
+
+### U28. A problem report in one click
+
+Size S
+
+**Why.** When a mock does not answer as expected, the tester describes it in a ticket from memory, and the developer asks for the request, the rule and the version, one message at a time.
+
+**What.** A "Copy a report" action on a log line and on a rule: a text that holds the request (secrets replaced as in the log), the verdict of each condition, the rule as saved and the version. It is copied to the clipboard and sent nowhere; pasted into the rule tester of another instance, it replays the case.
+
+**Done when.** A test finds no secret header value in the report, and replays the report in the rule tester with the same verdict.
+
+### U13. Partial export and mock packs
+
+Size S
+
+**Why.** Import and export only cover the whole configuration, so sharing one service between teams means editing JSON by hand.
+
+**What.** Export a service or a group; import it into another instance with a preview of conflicts. A small gallery of generic, ready-to-import packs in `examples/` (an OAuth2 provider, a payment flow, a CI toolchain).
+
+**Done when.** A group exported from one instance imports into another with its rules intact.
+
+## Release 0.8: mocks that behave like the real service
+
+| Theme | Items, in order | Taken together because |
+|---|---|---|
+| State and data | U5 a, U5 b, U21 | one in-memory state per service, shown in the request log |
+| Situations and time | U4, U20, U6 | all three choose an answer from the context of the request |
+| Real failures and payloads | U11, U12, U7, U25 | the response path: how a body is sent, from where, and what follows it |
+
+### U5. Stateful mocks and instant CRUD
+
+Size L, in two parts
+
+**Why.** Many APIs are "create, then read what was created", or "start, then poll until it is done". Static rules cannot follow, and scripts have no memory. Today the end-to-end tests of a client that polls a build change a rule through the API between two calls to make the mock move on: a build seen "in progress" then finished, a "last build" that still names the previous build right after a replay and the new one at the next call, an import that fails then succeeds once corrected, a stream cut at its first read and whole at the next.
+
+**What.** For every part: the state lives in memory, per service, like the call counter; a reset of the configuration, and any change of the service, put it back to its start; the request log shows it for each call; nothing new is written to the configuration file but the rules themselves.
+
+Parts, in this order:
+
+- **a. A state machine per service** (M): a service is in a named state, `start` until a rule moves it. A rule may require a state (it matches only in that state, beside its conditions) and move the service to another state after it answers, at once or after it has answered a given number of times in that state (a build "in progress" for two polls, then finished). The current state is a template variable (`{{state}}`), readable and settable through the API (`GET` and `PUT …/{name}/state`), and shown and reset from the service page. The rule form edits "only in state" and "then go to state" next to the conditions; the rule tester says whether the state of the service lets the draft rule answer.
+- **b. Resource services** (M): a service type that, from a path such as `/orders/{id}`, answers POST, GET (one and list), PUT, PATCH and DELETE on an in-memory collection, seeded from examples, reset by API.
+
+**Done when.** a: a test polls a build that answers "in progress" twice then "finished", reads a "last build" that changes after a replay, and reads a stream cut once then whole, with no call to the management API between the calls; a reset brings every case back to its start. b: a create-then-read test passes against a resource service with no rule written.
+
+### U21. Data tables
+
+Size L, to split (the table and the rule that reads it, then the grid)
+
+**Why.** A tester holds the test data as a spreadsheet: twenty customers, their status, their balance. Turning it into mocks means one rule per row, or a script.
+
+**What.** A table per service or per group: named columns and rows, edited in a grid that works by keyboard, imported from and exported to CSV (parsed in the browser, bounded in rows and bytes like the configuration; exported cells that start with `=`, `+`, `-` or `@` are written as text, so that a spreadsheet does not run them). A rule answers with the row whose key equals a value of the request (`{{row.name}}`), and another rule answers when no row matches. A resource service (U5 b) can start from a table.
+
+**Done when.** A CSV of 1,000 customers, imported, answers `GET /customers/{id}` with the right row and without a script; the grid passes the accessibility check of the end-to-end suite; a cell that starts with `=` comes back as text from an export.
+
+### U4. Scenarios selected per request
+
+Size M
+
+**Why.** Testing an error case means editing the mock and editing it back, which breaks parallel tests sharing an instance.
+
+**What.** Named variants of a rule's response, picked by a request header (`X-Mimicway-Scenario: timeout`), a cookie or a query parameter, with a default; the UI shows the variants side by side.
+
+**Done when.** Two test runs against the same instance get different scenarios at the same time.
+
+### U20. Situations: one click changes several services
+
+Size M
+
+**Why.** A business case ("the bank is down", "unknown customer") spans several services. With U4 each rule has its variants, but someone has to know which rules of which services go together.
+
+**What.** A named situation gathers variants of rules across the services of a group. It is switched from the home screen in one click, shown on every screen while it is on, and left in one click. A request can ask for one with a header of its own (`X-Mimicway-Situation`), so that parallel tests do not disturb each other; a variant asked by the header of U4 wins for its rule.
+
+**Done when.** A tester switches a situation that changes two services without opening a rule, and two test runs use two situations on the same instance at the same time.
+
+### U6. Frozen and shifted time
+
+Size S
+
+**Why.** Responses with dates (`now_iso`, `date_future`…) make snapshots and assertions flaky.
+
+**What.** A clock per service or per request (`X-Mimicway-Time`): fixed at an instant, or shifted by a duration; templates and scripts read it instead of the system clock.
+
+**Done when.** The same request with the same frozen time returns byte-identical responses.
+
+### U11. Faults beyond status codes
+
+Size S
+
+**Why.** Real failures are rarely a clean `500`: connections drop, bodies trickle, responses are cut.
+
+**What.** Chaos options for a dropped connection, a reset after headers, a body sent slowly (bytes per second), a truncated body, and a per-rule rate limit answering `429`.
+
+**Done when.** Each fault is reproduced by a test client that sees the expected transport error.
+
+### U12. Responses from files
+
+Size S
+
+**Why.** Some mocks must return PDFs, images or archives, which templates cannot hold.
+
+**What.** A body fragment that serves a file uploaded through the UI and stored in `DATA_PATH/files`, with its content type; included in exports.
+
+**Done when.** A rule returns an uploaded PDF byte for byte.
+
+### U7. Callbacks and webhooks
+
+Size M
+
+**Why.** Asynchronous APIs answer "accepted", then call back later (payments, document processing). Mocking them today needs another tool.
+
+**What.** A rule can schedule an HTTP call after its response: target, delay, method, templated body and headers. The callback target is an outbound flow: it obeys the proxy allow-list (T4) and appears in the security model.
+
+**Done when.** An end-to-end test receives the callback with values taken from the original request.
+
+### U25. A mock pack for language-model APIs
+
+Size S
+
+**Why.** The tests of an application that calls a language model pay for each call, wait for it, get a different answer each time, and spend energy on a result nobody reads.
+
+**What.** A ready-to-import pack in `examples/` (U13): a chat endpoint in the request format most providers accept, answers streamed as server-sent events, the same text for the same request and seed, and the usual failures (rate limit, stream cut half-way with U11, slow first token); a guide page shows how to point an application at it.
+
+**Done when.** A sample client reads the same streamed answer twice, and sees each failure case as the transport error it expects.
+
+## Release 0.9: tests can rely on it
+
+| Theme | Items, in order | Taken together because |
+|---|---|---|
+| Assert and automate | U3, T2, U26 | the management API as tests call it, and the helpers that wrap it |
+| The saved file | T9, G3 | the configuration file: its form on disk, its version, its size |
+| Shipped | T8, U27 | what the release workflow publishes besides the archives |
+| See what happened | U14, U22 | both read the request log after the fact |
+
+### U3. Verify what the application called
+
+Size M
+
+**Why.** Automated tests need to assert that the application under test called a dependency, how many times and with what: today they can only read the request log by hand.
+
+**What.** `POST /api/verify` with a request pattern (method, path, conditions like a rule's) and an expected count; `DELETE /api/logs` to start a test from a clean journal; a journal size setting for test runs.
+
+**Done when.** A Java and a JavaScript example test use it to assert calls, in the docs.
+
+### T2. API tokens for automation
+
+Size M
+
+**Why.** CI pipelines and test suites need to change mocks without a person's credentials.
+
+**What.** Named tokens with a scope (read, write on given groups, admin) and an expiry, created by admins, stored hashed, shown once, revocable from the UI.
+
+**Done when.** A token can drive the management API within its scope and nowhere else, which the authorization tests check for each endpoint.
+
+### U26. Helpers for test frameworks
+
+Size M
+
+**Why.** A team adopts a mock server through its test framework: one line starts it, one line asserts on it. Without that line, each team writes its own HTTP calls to the management API.
+
+**What.** For Java, a Testcontainers module and a JUnit 5 extension (start an instance, load a file, reset, verify with U3); for JavaScript, a helper for Playwright and Vitest. Each is a thin client of the management API with no dependency beyond its framework, kept in this repository and tested by its CI. Publishing them under the project's name on the public registries is the maintainer's step.
+
+**Done when.** The Java and JavaScript example tests of U3 use the helpers, in CI.
+
+### T9. Configuration as code
+
+Size M
+
+**Why.** Teams want mocks reviewed and versioned with the application, and the same mocks in every environment.
+
+**What.** A read-only mode that loads services from files in a directory (one file per service or group, YAML or JSON), reloads on change, and refuses changes through the API; a `mimicway validate <dir>` command that checks files in CI; a JSON Schema of the configuration for editor completion.
+
+**Done when.** A mock committed in a repository reaches a running instance without the UI, and an invalid file fails the CI command with the same message the UI would show.
+
+### G3. The smallest saved file
+
+Size M
+
+**Why.** The configuration is saved, kept in up to 17 copies (the file, its temporary copy, 5 backups, 10 protected ones), exported, attached to tickets and committed. Every byte of it travels, and a file that repeats defaults and identical bodies is also harder to review.
+
+**What.** A version in the configuration file, so that a default never changes inside a format version. Write no value that equals its default; store a body used by several rules once; keep the file plain text that reads and compares line by line. Older files load unchanged. Compressing backups and exports waits for a measure: it is not worth a crate. The reference set of mocks of G1 gives the measure, against the files the alternatives save for the same mocks, and G1 then judges that line too.
+
+**Done when.** The reference set saved by Mimicway is smaller than the file of each alternative of G1 for the same mocks, and a configuration saved by each released version still loads.
+
+### T8. Packaging for clusters and compose
+
+Size M
+
+**Why.** Kubernetes users expect a Helm chart, and compose users a ready file.
+
+**What.** A Helm chart (published as an OCI artifact with the image) built from the same settings as `k8s/base`, and a `compose.yaml` at the root; security contexts stay as strict as the current manifests.
+
+**Done when.** `helm install` and `docker compose up` both give a working instance, tested in CI with kind.
+
+### U27. Install channels
+
+Size S
+
+**Why.** People install with the tool they already use; a release page they have to find, then verify by hand, loses most of them.
+
+**What.** A Homebrew tap, a Scoop bucket, a winget manifest and a mirror of the image on Docker Hub, each written from the signed archives and their checksums, in a job apart from the signing job, each with a token limited to its repository. Opening the accounts is the maintainer's step.
+
+**Done when.** `brew install` and `scoop install` give a binary whose hash is in `SHA256SUMS`.
+
+### U14. Contract drift detection
+
+Size M
+
+**Why.** Mocks lie silently when the real API changes.
+
+**What.** For a service with a target, compare on demand the mocked responses with the real backend's for the same captured requests, and report differences in status, fields and types.
+
+**Done when.** Changing a field in the real backend shows up as a drift on its rule.
+
+### U22. The flow of a user action, drawn
+
+Size M
+
+**Why.** One click in the application under test calls several services in a row. The request log shows them as lines among others; nobody sees the sequence, nor where it stopped.
+
+**What.** From the request log, the calls of one action (the same trace identifier in `traceparent` when the application sends one, otherwise a time window chosen on screen) are drawn as a sequence: who was called, in which order, answered by a mock or relayed (the dashed and solid lines of the design system), with its status and duration. A table gives the same content to a screen reader. The drawing is made in the browser, on demand, with no dependency, and exports as SVG and as text.
+
+**Done when.** An end-to-end test sends three calls with one trace identifier and finds them in order with their mode, in the drawing and in its table.
+
+## Release 1.0: shared across a company
+
+| Theme | Items, in order | Taken together because |
+|---|---|---|
+| Sign-in and traces | T1, T3, T16, U23 | who did what: the login, then the log every change writes |
+| Deployed anywhere | T11, T12, T7, G4 | how the instance is exposed and what it reports about itself |
+| Confined | T14 | the process itself, once its flows are final |
+| Stated | T18 | the manual audit, once the screens of 1.0 exist |
+| Frozen formats | T19, U16 | what an upgrade may no longer break; languages come as they are contributed |
+
+### T1. Any OpenID Connect provider, browser login with PKCE
+
+Size L, to split (discovery and validation first, then the login flow)
+
+**Why.** Authentication works with Keycloak only, through the password grant: the UI sees users' passwords, and OAuth 2.1 drops that grant. Entra ID, Okta, Auth0, Google or GitLab users cannot log in at all.
+
+**What.** Configure an issuer URL and a client; read its discovery document and keys; log in with the authorization code flow and PKCE (the UI never sees a password); map groups or roles from a configurable claim to super-admins. Keycloak becomes one provider among others, and its current variables keep working.
+
+**Done when.** End-to-end tests log in against a fake provider through the redirect flow; the password form is gone when the new mode is configured.
+
+### T3. Audit log of configuration changes
+
+Size M
+
+**Why.** "Who changed this mock, and when?" is the first question on a shared instance, and reviewers ask for traceability.
+
+**What.** An append-only log of every change (who, when, what, a diff of the service or group), stored next to the configuration with rotation, visible to admins, exportable as JSON lines.
+
+**Done when.** Every mutating endpoint writes one entry, which a test asserts for each of them.
+
+### T16. An audit log whose edits show
+
+Size S
+
+**Why.** An audit log (T3) that an administrator of the machine can edit proves little to an auditor. And T3 records the changes of the configuration, not who signed in or was refused.
+
+**What.** Sign-ins, accepted and refused, become entries of the log. Each entry carries the hash of the one before it; `mimicway report --audit` and the audit screen check the chain and name the first entry that breaks it. Rotation keeps the last hash of the file it closes. The hash of the last entry is printed by `mimicway report` and written to the server log at each rotation, so that it can be kept elsewhere; without that copy, a rewrite of the whole chain or a cut at its end is not seen, and the page says so.
+
+**Done when.** A line changed or removed before the last entry is reported, with its position, by the command and by the screen, and a cut at the end is reported against a head hash kept aside.
+
+### U23. History in words, undo for one service
+
+Size M
+
+**Why.** On a shared instance, "it worked yesterday" is answered today by restoring the whole configuration from a backup, which undoes everybody's work.
+
+**What.** The entries of the audit log read as sentences ("Marie changed the answer of rule `vip` of service `users`"), filtered by service. "Restore this service as it was then" brings one service back and leaves the others as they are, after a preview of what changes. For that, the log keeps the whole service after each change, not only its difference (an addition to T3); history goes back as far as the rotation.
+
+**Done when.** A test restores one service from its history and finds a later change of another service intact.
+
+### T11. Serve under a path prefix
+
+Size M
+
+**Why.** The UI loads `/assets`, `/runtime-config.json` and `/api` from the root of its host, so Mimicway cannot live under a path such as `https://tools.example.com/mimicway/`, which many platforms impose (one host, one prefix per tool).
+
+**What.** A `BASE_PATH` setting: the server mounts the UI, the API and the mocked services under it, the UI is built with relative asset paths and reads the prefix from `runtime-config.json`, and service URLs shown in the UI include it.
+
+**Done when.** An end-to-end run with `BASE_PATH=/mimicway` behind a prefix-stripping proxy passes, and a Kubernetes overlay shows it.
+
+### T12. Services on their own port
+
+Size L, to split (the second listener first, then the interface's URLs, then the overlays)
+
+**Why.** Service responses render in an opaque origin, so that a page written by an editor, a backend or a reflected request value cannot act as the interface ([decision 1](decisions/0001-service-responses-in-an-opaque-origin.md)). A proxied web application that needs its own origin (cookies, storage, same-origin calls) therefore no longer works when browsed through Mimicway.
+
+**What.** A `SERVICES_PORT` setting: the mocked and proxied services answer on that port, the interface and the management API on `PORT`; their responses then keep their own origin, without the sandbox. The interface shows service URLs with the right port, and the overlays route a second host to it.
+
+**Done when.** With `SERVICES_PORT` set, an end-to-end test browses a proxied page that uses its own storage, and finds the interface unreachable from it; without it, nothing changes.
+
+### T7. Metrics and traces
+
+Size M
+
+**Why.** Operators want to know whether the mock answers, how fast, and which rules are hit, in the tools they already use.
+
+**What.** An opt-in Prometheus endpoint (requests by service, rule, mode and status; latency; proxy errors; configuration writes) and OpenTelemetry traces exported to a configured endpoint. Both off by default, both listed as outbound flows when on.
+
+**Done when.** A Grafana dashboard example in `docs/` works against a running instance.
+
+### G4. What this instance costs, on screen
+
+Size S
+
+**Why.** A team that cares about its footprint has no figure for its mock server, and no way to show that answering locally spares calls to real backends.
+
+**What.** A page for administrators: memory now and at its peak, processor time since the start, bytes on disk, requests answered by a mock and requests relayed. Figures are read when the page is opened, by no timer. No carbon estimate: it could not be honest without knowing the machine and its electricity.
+
+**Done when.** A test compares the figures of the page with the kernel's for the same process.
+
+### T14. The process confines itself
+
+Size L, to split (the rules on files first, then what newer kernels add)
+
+**Why.** Every request is untrusted input read by parsers. In a container the manifests restrict the process; on a laptop it runs with all the rights of its user, and a flaw in a parser would reach that user's files.
+
+**What.** On Linux, before the runtime starts its threads, `main` reads the settings and restricts itself: Landlock rules through the `landlock` crate (no `unsafe` of our own; the dependency is justified in the reviewer guide): read and write under `DATA_PATH`, read under `STATIC_DIR` when set and on `/etc/resolv.conf` and `/etc/hosts`, no execution of any file, `no_new_privs`. Ports are not restricted: targets and raw TCP listeners are created at run time, and a Landlock domain never widens. On a kernel without Landlock it starts and says so, in its log and in `mimicway report`: never a silent fallback. Windows and macOS are documented as not confined, with a container or a dedicated account as the advice.
+
+**Done when.** An integration test starts the binary, reads `NoNewPrivs: 1` for every thread under `/proc/<pid>/task`, and sees a read and a write outside the allowed paths refused on each worker thread, through a route compiled for that test only.
+
+### T18. An accessibility statement
+
+Size M. The audit is the maintainer's step, or an auditor's.
+
+**Why.** Automated checks see only part of the WCAG criteria (about a third, by the usual estimates). Public bodies and large companies ask for a statement before they deploy a tool to their staff, and people who need assistive technology want to know what works before they try.
+
+**What.** A manual audit of every screen against WCAG 2.2 AA, then against the clauses EN 301 549 and RGAA add to it, from their own lists, with two screen readers. Its grid (screen by criterion) is kept in the repository. A statement in English and French: what conforms, what does not with its item in this file, how to report a barrier, the version and date of the audit. Redone at each release that adds a screen.
+
+**Done when.** The audit grid is in the repository, the statement is published from it, and each non-conformity it lists is an item here.
+
+### T19. Formats frozen at 1.0
+
+Size M
+
+**Why.** Before a team builds on Mimicway, it wants to know that an upgrade will not break its files, its scripts or its pipelines.
+
+**What.** A configuration saved by every released version kept as a fixture and loaded in CI, with the version G3 writes in the file; the management API, the settings and the template language under a written rule (additions only inside a major version, a removal announced one release ahead in [MIGRATING.md](MIGRATING.md)).
+
+**Done when.** The configuration of each released version loads in CI, the answers of the API tour are compared with those of the last release, and the rule is written.
+
+### U16. More interface languages
+
+Size S per language
+
+**Why.** English and French cover a small part of the people who could use Mimicway.
+
+**What.** Spanish, German, Portuguese, Italian and Japanese catalogues for the UI and the server messages, contributed and reviewed by native speakers; the existing tests already check each catalogue.
+
+**Done when.** Each language passes the catalogue tests and a native speaker's review.
+
+## Release 1.1: more protocols
+
+| Theme | Items, in order | Taken together because |
+|---|---|---|
+| Protocols | U10 (GraphQL, then WebSocket, gRPC if asked for), the Kafka and TCP bundle, T17 once decided | each adds a way to receive and answer a message |
+| Identity | U9 | a service type of its own |
+
+### U10. More protocols
+
+Size L, to split by protocol
+
+**Why.** Modern applications also talk GraphQL, WebSocket and server-sent events.
+
+**What.** Server-sent events are done (a rule answers with a list of events). Then GraphQL (match on operation name and variables, answer per operation), then WebSocket (message-to-message rules, like the raw TCP mock), and gRPC last if asked for.
+
+**Done when.** Each protocol has a guide page and end-to-end tests.
+
+### T17. HTTPS without a reverse proxy
+
+Size M. **Decision needed** (whether the binary terminates TLS at all, and never with a certificate it would generate and whose key it would have to guard).
+
+**Why.** Some applications refuse a dependency served over plain HTTP, and the main alternatives listen on HTTPS themselves. Today Mimicway asks for a reverse proxy, which a tester on a laptop does not have.
+
+**What.** `TLS_CERT_FILE` and `TLS_KEY_FILE`: the services, and the interface, answer over HTTPS with a certificate the user provides, read by the TLS library the proxy already uses; the guide shows how to make one for a laptop. No certificate authority, no generated key, no interception of traffic.
+
+**Done when.** An end-to-end run passes over HTTPS with a certificate made by the test; a key file that others can write is refused, and one that others can read gives a warning.
+
+### U9. Built-in identity provider mock
+
+Size M
+
+**Why.** Almost every application under test needs tokens. Running a real identity server for tests is heavy, and hand-made JWKS mocks are error-prone.
+
+**What.** A service type that behaves as an OpenID Connect provider: discovery document, key set, token endpoint (client credentials, password, authorization code with PKCE), with configurable claims and lifetimes, signing keys generated per instance.
+
+**Done when.** A sample application configured with Mimicway as its issuer logs in and validates tokens.
+
+## Release 2.0: the request side
+
+Mimicway answers calls; this release also sends them. The aim is to replace a separate API client for the people who already keep Mimicway open, with the same promises: one program, no account, nothing synchronized, nothing hidden. A request is sent by the server, so it is an outbound flow like the proxy's, written in the security model and listed by `mimicway report` (T13).
+
+| Theme | Items, in order | Taken together because |
+|---|---|---|
+| Send | C1 | the composer and its outbound flow, reviewed alone |
+| Collections | C2 (the file format first, then one import at a time) | one format on disk, read by everything after |
+| Checks and runs | C3, C4 | a check is defined once, run on screen and in CI |
+| One loop | C5 | joins what is sent with what is mocked |
+
+### C1. Send a request from the interface
+
+Size L, to split (the composer, the sending by the server, the display of the answer)
+
+**Why.** To try a mock, or the real API behind it, the user leaves for another tool, then comes back to read the log. The guided first mock (U18) already calls the demo service from its panel; nothing does it for the user's own services.
+
+**What.** A composer: method, URL, headers, body, with the helpers of the response templates. The server sends the request (no cross-origin limit, one place to bound and to log). Where it may go: on an instance that listens on this machine only, anywhere, as any tool of its user could; on an instance that listens beyond it, only to the targets of `PROXY_ALLOWED_TARGETS` (T4), an unset list allowing the loopback and the targets of the user's own services, and, with authentication on, only for a member of a group. Redirects are not followed (the answer is shown), and the address connected to is the one that was checked. The response is shown like a service response, in an opaque origin ([decision 1](decisions/0001-service-responses-in-an-opaque-origin.md)), bounded in size and streamed beyond. A line of the request log can be sent again, edited first. The security model, which says today that Mimicway never connects to a host taken from a request, is rewritten for this flow.
+
+**Done when.** End-to-end tests send a request to a mocked service and to an allowed external target, see a target outside the list refused on an instance that listens beyond this machine, see a redirect to a refused target shown and not followed, and find that the displayed response cannot reach the interface.
+
+### C2. Collections as plain files, and imports from other clients
+
+Size L, to split (the format, then one import at a time)
+
+**Why.** Requests worth keeping belong with the code they test, reviewed and versioned like it. Clients that keep them in an account, or in one large generated file, make that hard, and have lost the trust of teams whose secrets ended up synchronized.
+
+**What.** A collection is a directory of small text files, one per request, that read and compare line by line, under `DATA_PATH/collections` or in a directory the operator names in a setting (a repository). Environments hold variables. A secret is never written to a request file, a log or a report: in the interface it belongs to the user who typed it, is kept in memory, and is redacted by value in the request log; a running instance never reads its own environment for a request. Imports, one at a time: Postman collections and environments, Bruno collections, `.http` files, `curl` commands and HAR captures, with the readers of U1.
+
+**Done when.** A public Postman collection and a Bruno collection import and send their requests; a test sends a secret in a header and in a body to a mocked service, then searches every saved file and the request log for its value and finds none.
+
+### C3. Checks and chained values without code
+
+Size M
+
+**Why.** Checking an answer is where most clients ask for JavaScript, which shuts out the people who do not code and brings a general-purpose runtime into the tool.
+
+**What.** A table of checks per request, in words: "the status is 200", "`body.id` exists", "the header `X` contains…", "answered in less than 300 ms". A value of a response is kept under a name and used by the next request (sign in, then call). What a table cannot express goes to a Rhai script, in the same sandbox and with the same limits as the scripts of rules.
+
+**Done when.** A "sign in, then call with the token" chain passes its checks without a script, by keyboard alone.
+
+### C4. Run a collection from the command line
+
+Size M
+
+**Why.** Checks that only run on screen are forgotten; a pipeline needs an exit code and a report.
+
+**What.** `mimicway run <directory> --env <name> --report <file>`: the same binary, no server started, no account, an exit code, a JUnit XML report and a text one, written where the command line says. Secrets come from the environment of the process, and only from variables named `MIMICWAY_SECRET_*`.
+
+**Done when.** An example pipeline in the docs runs a collection and fails when a check breaks, and a variable of the environment outside that prefix cannot be read by a request.
+
+### C5. One loop: from a request to its mocks and back
+
+Size M
+
+**Why.** A client shows the answer; a mock server shows what was called. Only a tool that is both can show, for one request, the calls it caused behind it.
+
+**What.** A request sent from the interface shows the calls its target made to the services Mimicway mocks or relays (the flow of U22). "Make a mock of this response" turns the answer into a rule, and "Make a request of this rule" turns a rule into a request of the collection, one click each.
+
+**Done when.** An end-to-end test goes from a sent request to a rule that answers the same, and back, in two clicks each way.
+
+## Kept open
+
+Ideas that fit the promises but wait for a decision of the maintainers; none is scheduled.
+
+### U30. Try it in the browser, nothing installed
+
+Size L. **Decision needed** (a hosted page is a publication, and a second build target to keep).
+
+**Why.** Trying a tool that has to be downloaded first is already an approval request in many companies.
+
+**What.** The rule engine (matching, templates) compiled to WebAssembly in a static page: write a rule, send it a request, read the answer and its explanation, with no server and no network call.
+
+**Done when.** The page works offline once loaded, and its rule engine passes the same test vectors as the server's.
+
+### U31. A doorway for assistants
+
+Size M. **Decision needed** (whether to offer it at all; never installed by Mimicway into another program).
+
+**Why.** Teams that work with a coding assistant want it to write and read mocks; assistants speak the Model Context Protocol, not a management API.
+
+**What.** An endpoint, off by default, that offers the management API over that protocol, with the tokens and scopes of T2. The user declares it in their own tool; Mimicway writes nothing outside its data directory to make itself known.
+
+**Done when.** With the endpoint on, a client of the protocol lists and creates a mock within the scope of its token; with it off, its path answers 404.
+
+## Engineering backlog
+
+Defects and debts found on the way. They are taken by bundle: the items of a bundle open the same files, and a bundle goes with the theme named beside it, or before it when it unblocks it.
+
+| Bundle | Items | Goes with |
+|---|---|---|
+| The judges | E52, then E50; E49 waits for the maintainer | first, before the themes |
+| XML readers | E56, E57 | first: untrusted input |
+| Weight | E10 | "Lightest, with the proof" (0.6) |
+| Keyboard | E42, E47 | "Accessible" (0.6) |
+| Screen reader | E15, E43 | "Accessible" (0.6) |
+| Forms and messages | E8, E12, E19, E21, E31, E32 | "Words anyone can read" (0.6) |
+| Proxy path and suggestions | E7, E34, E35, E36, E46, E59, and E48 once it is unblocked | "Recorded, without personal data" (0.7) |
+| Builders and rule engine | E2, E28, E45, and E9 and E54 once decided | "Guided and explained" (0.7) |
+| Tests | E6, E11, E16 | the first theme that touches them |
+| Kafka and TCP | E3, E4 | "Protocols" (1.1) |
 
 ### E2. Response builder leftovers
 

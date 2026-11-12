@@ -7,7 +7,7 @@ Security issues are the exception: never in a public issue, see [SECURITY.md](SE
 ## Before you start
 
 - **Bugs**: open an issue with the bug template; a failing request (method, path, headers, body) and the service configuration that produced it save most of the back and forth.
-- **Features**: open an issue first, or comment on the matching [roadmap](ROADMAP.md) item, so that the design is agreed before the code. Mimicway keeps a few promises (one program, no telemetry, every outbound flow opt-in, easy to review); a change that bends one of them needs that discussion.
+- **Features**: open an issue first, or comment on the matching [roadmap](ROADMAP.md) item, so that the design is agreed before the code. Mimicway keeps a few promises, listed at the top of the roadmap (one program, nothing hidden, no telemetry, every outbound flow opt-in, light for the machine, usable without a developer, accessible, easy to review); a change that bends one of them needs that discussion.
 - **Small fixes** (typos, wrong docs, obvious bugs): a pull request alone is fine.
 
 ## Set up
