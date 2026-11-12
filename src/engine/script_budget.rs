@@ -87,7 +87,7 @@ pub(crate) fn apply(engine: &mut rhai::Engine) {
     engine.on_progress(|operations| {
         let (deadline, held_at_start) = RUN.with(Cell::get)?;
         // The memory at every operation: a thread-local read, and one operation adds at most a value at its limits.
-        if mimicway_alloc::live_bytes() - held_at_start > MEMORY_BUDGET_MIB * 1024 * 1024 {
+        if !within_memory_budget(mimicway_alloc::live_bytes() - held_at_start) {
             return Some(OUT_OF_MEMORY.into());
         }
         // The clock every 16 operations: no single operation lasts long (the native functions stop at the limits), and
@@ -96,6 +96,11 @@ pub(crate) fn apply(engine: &mut rhai::Engine) {
     });
     register_replace(engine);
     register_split(engine);
+}
+
+/// Whether a run that holds `held` bytes more than when it started may go on.
+fn within_memory_budget(held: i64) -> bool {
+    held <= MEMORY_BUDGET_MIB * 1024 * 1024
 }
 
 // Functions registered on the engine take precedence over Rhai's standard ones of the same name and parameter types.
@@ -319,7 +324,6 @@ pub(crate) fn describe(error: &EvalAltResult) -> String {
             ),
             _ => error.to_string(),
         },
-        EvalAltResult::ErrorParsing(ParseErrorType::ExprTooDeep, position) => too_deep(*position),
         // A limit reached inside a function of the script: the limit is what the user needs to read first.
         EvalAltResult::ErrorInFunctionCall(_, _, inner, _) if is_limit(inner) => describe(inner),
         _ => error.to_string(),

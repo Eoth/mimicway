@@ -381,3 +381,252 @@ fn a_run_within_its_memory_budget_is_not_stopped() {
             > 200
     );
 }
+
+// Equivalent mutants (cargo-mutants, excluded in .cargo/mutants.toml):
+// - `operations % 16 == 0` made `!= 0` in `apply`: the clock is then read at 15 operations out of 16 instead of 1, and a
+//   run past its deadline still stops within 16 operations, as before; only the cost of reading the clock changes.
+// - `register_split` made empty: Rhai's own `split`, `split_rev` and `to_chars` then answer, with the same results
+//   (`split_family_answers_what_rhai_answers` compares them), and build every part before checking the size of the
+//   array. The memory it takes is seen by `tests/script_budget.rs` (a 10 MiB body split into its parts: 640 MiB
+//   before), an integration test that the gate does not run.
+
+/// A text under the array limit once split, made of letters, separators and spaces, and the arguments of a call of
+/// the `split` family: a text or character delimiter (empty, absent from the text or not), and a number of segments
+/// or none (zero and negative counts included).
+fn split_calls() -> impl proptest::strategy::Strategy<Value = (String, String, Option<i64>, bool)> {
+    use proptest::prelude::*;
+    (
+        "[ab,é ]{0,12}",
+        prop::sample::select(vec!["", ",", "ab", "é", ",,", "z"]),
+        prop::option::of(-2i64..6),
+        any::<bool>(),
+    )
+        .prop_map(|(text, delimiter, segments, reverse)| {
+            (text, delimiter.to_string(), segments, reverse)
+        })
+}
+
+fn texts(parts: rhai::Array) -> Vec<String> {
+    parts.into_iter().map(|part| part.to_string()).collect()
+}
+
+// Rhai's own functions are the judge: `register_split` replaces them for the size of their result only. A text that
+// a call with a delimiter returns whole is the one given, not a copy of it: a 1 MiB text without its delimiter is not
+// held twice.
+#[test]
+fn split_family_answers_what_rhai_answers() {
+    use proptest::prelude::*;
+    use proptest::test_runner::{Config, RngSeed, TestRunner};
+    let mut ours = rhai::Engine::new();
+    super::apply(&mut ours);
+    let theirs = rhai::Engine::new();
+    let config = Config {
+        cases: 2048,
+        rng_seed: RngSeed::Fixed(0x7370_6c69_745f_7276),
+        failure_persistence: None,
+        ..Config::default()
+    };
+    let whole = std::cell::Cell::new(0);
+    let result =
+        TestRunner::new(config).run(&split_calls(), |(text, delimiter, segments, reverse)| {
+            let name = if reverse { "split_rev" } else { "split" };
+            let mut calls = vec![format!("{name}(t, d)"), format!("{name}(t, c)")];
+            if let Some(n) = segments {
+                calls = vec![format!("{name}(t, d, {n})"), format!("{name}(t, c, {n})")];
+            }
+            if !reverse && segments.is_none() {
+                calls.extend(["split(t)".to_string(), "to_chars(t)".to_string()]);
+            }
+            let given = rhai::ImmutableString::from(text.as_str());
+            for call in calls {
+                if call.contains(", c") && delimiter.chars().count() != 1 {
+                    continue;
+                }
+                let mut scope = rhai::Scope::new();
+                scope.push("t", given.clone());
+                scope.push("d", delimiter.clone());
+                scope.push("c", delimiter.chars().next().unwrap_or(','));
+                let expected = theirs
+                    .eval_with_scope::<rhai::Array>(&mut scope.clone(), &call)
+                    .unwrap();
+                let parts = ours
+                    .eval_with_scope::<rhai::Array>(&mut scope, &call)
+                    .unwrap();
+                let shared = parts.len() == 1
+                    && !text.is_empty()
+                    && parts[0]
+                        .clone()
+                        .into_immutable_string()
+                        .is_ok_and(|part| part.as_ptr() == given.as_ptr());
+                let same_as_given =
+                    parts.len() == 1 && parts[0].to_string() == text && !text.is_empty();
+                whole.set(whole.get() + usize::from(same_as_given));
+                prop_assert_eq!(
+                    texts(parts),
+                    texts(expected),
+                    "{} on {:?}, d = {:?}",
+                    call,
+                    text,
+                    delimiter
+                );
+                if same_as_given && (call.contains(", d") || call.contains(", c")) {
+                    prop_assert!(shared, "{} on {:?} copied the text", call, text);
+                }
+            }
+            Ok(())
+        });
+    result.unwrap();
+    assert!(
+        whole.get() >= 2048 / 8,
+        "{} calls returned the text whole",
+        whole.get()
+    );
+}
+
+/// A replacement whose result is within a few bytes of the text limit, on either side: a pattern found `count` times
+/// in a filler that never matches it, each match traded for `with`.
+fn replacements_at_the_limit() -> impl proptest::strategy::Strategy<Value = (String, String, String)>
+{
+    use proptest::prelude::*;
+    (
+        prop::sample::select(vec!["a", "é", "ab", ""]),
+        prop::sample::select(vec!["", "x", "xyz", "éé"]),
+        0usize..3,
+        -3i64..=3,
+    )
+        .prop_map(|(find, with, filler, offset)| {
+            let target = (super::MAX_STRING_SIZE as i64 + offset) as usize;
+            if find.is_empty() {
+                // Matched between every two characters: `n` characters and `n + 1` substitutes.
+                let n = (target - with.len()) / (1 + with.len());
+                return ("b".repeat(n), find.to_string(), with.to_string());
+            }
+            let unit = with.len() + filler;
+            // A match traded for nothing leaves the filler alone to make up the length.
+            let (count, rest) = target
+                .checked_div(unit)
+                .map_or((1000, target), |count| (count, target % unit));
+            let mut text = format!("{find}{}", "b".repeat(filler)).repeat(count);
+            text.push_str(&"b".repeat(rest));
+            (text, find.to_string(), with.to_string())
+        })
+}
+
+// Rust's own `str::replace` is the judge: `replace` must give its result when it fits in a text, and refuse it
+// otherwise, without building it.
+#[test]
+fn replace_refuses_exactly_the_results_longer_than_a_text() {
+    use proptest::prelude::*;
+    use proptest::test_runner::{Config, RngSeed, TestRunner};
+    let config = Config {
+        cases: 96,
+        rng_seed: RngSeed::Fixed(0x7265_706c_6163_6521),
+        failure_persistence: None,
+        ..Config::default()
+    };
+    let (fitting, exact, over) = (
+        std::cell::Cell::new(0),
+        std::cell::Cell::new(0),
+        std::cell::Cell::new(0),
+    );
+    let result = TestRunner::new(config).run(&replacements_at_the_limit(), |(text, find, with)| {
+        let expected = text.replace(&find, &with);
+        let mut replaced = rhai::ImmutableString::from(text.as_str());
+        let outcome = super::replace(&mut replaced, &find, &with);
+        let counter = match expected.len().cmp(&super::MAX_STRING_SIZE) {
+            std::cmp::Ordering::Less => &fitting,
+            std::cmp::Ordering::Equal => &exact,
+            std::cmp::Ordering::Greater => &over,
+        };
+        counter.set(counter.get() + 1);
+        if expected.len() <= super::MAX_STRING_SIZE {
+            prop_assert!(outcome.is_ok(), "{} bytes refused", expected.len());
+            prop_assert!(replaced.as_str() == expected, "the result differs");
+        } else {
+            prop_assert!(outcome.is_err(), "{} bytes accepted", expected.len());
+            prop_assert!(replaced.as_str() == text, "the text changed");
+        }
+        Ok(())
+    });
+    result.unwrap();
+    let counts = (fitting.get(), exact.get(), over.get());
+    assert!(
+        counts.0 >= 10 && counts.1 >= 5 && counts.2 >= 10,
+        "under, at and over the limit: {counts:?}"
+    );
+}
+
+// Rhai's own text form of a value is the judge: `display` must give it while it fits in a text, and refuse it
+// otherwise. A text is written at once; an array, piece by piece.
+#[test]
+fn display_refuses_exactly_the_values_longer_than_a_text() {
+    let limit = super::MAX_STRING_SIZE;
+    let mut values: Vec<rhai::Dynamic> = Vec::new();
+    for length in [limit - 1, limit, limit + 1] {
+        values.push("t".repeat(length).into());
+        // `["…", "…"]`: two items of `n` bytes take `2n + 8`.
+        let n = (length - 8) / 2;
+        let mut array: rhai::Array = vec!["a".repeat(n).into(), "b".repeat(length - 8 - n).into()];
+        values.push(array.clone().into());
+        array.push(rhai::Dynamic::UNIT);
+        values.push(array.into());
+    }
+    let mut seen = [0usize; 2];
+    for value in values {
+        let expected = value.to_string();
+        let shown = super::display(&value);
+        seen[usize::from(expected.len() <= limit)] += 1;
+        if expected.len() <= limit {
+            assert_eq!(
+                shown.ok().as_deref(),
+                Some(expected.as_str()),
+                "{} bytes",
+                expected.len()
+            );
+        } else {
+            assert!(shown.is_err(), "{} bytes accepted", expected.len());
+        }
+    }
+    assert!(
+        seen[0] >= 3 && seen[1] >= 3,
+        "over and within the limit: {seen:?}"
+    );
+}
+
+#[test]
+fn a_run_takes_its_clock_away_when_it_ends() {
+    assert_eq!(run("1 + 1").unwrap(), "2");
+    assert!(super::RUN.with(std::cell::Cell::get).is_none());
+    {
+        let _clock = super::RunClock::start();
+        assert!(super::RUN.with(std::cell::Cell::get).is_some());
+    }
+    assert!(super::RUN.with(std::cell::Cell::get).is_none());
+}
+
+#[test]
+fn the_memory_budget_stops_a_run_holding_more_than_it() {
+    let budget = super::MEMORY_BUDGET_MIB * 1024 * 1024;
+    assert!(super::within_memory_budget(budget));
+    assert!(!super::within_memory_budget(budget + 1));
+}
+
+// Rhai wraps an error in the calls it crossed only when it comes back through a native function that called the
+// script, a closure given to `map`, and then once for each function: a limit is still named first, however deep, and
+// any other error keeps Rhai's own text, which names the functions. A limit reached in functions of the script alone
+// comes back unwrapped.
+#[test]
+fn errors_inside_functions_name_a_limit_first_and_keep_the_rest() {
+    refused("[1].map(|x| { loop {} })", "more than 10000 operations");
+    refused(
+        "fn g() { [1].map(|x| { loop {} }) } fn f() { g() } f()",
+        "more than 10000 operations",
+    );
+    let error = run("fn f() { throw \"boom\" } f()").unwrap_err();
+    assert!(error.contains("boom") && error.contains("'f'"), "{error}");
+    let error = run("fn g() { throw \"boom\" } fn f() { g() } f()").unwrap_err();
+    assert!(
+        error.contains("boom") && error.contains("'g'") && error.contains("'f'"),
+        "{error}"
+    );
+}

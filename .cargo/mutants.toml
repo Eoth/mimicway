@@ -16,4 +16,7 @@ exclude_re = [
   # src/engine/template.rs (the guard of `)` is anchored on its line: the same mutation of the guard of `(` is caught)
   '^src/engine/template\.rs:\d+:\d+: replace \+ with \* in eval_expression$',
   '^src/engine/template\.rs:60:\d+: replace match guard !in_quotes with true in find_closing_double_brace$',
+  # src/engine/script_budget.rs (`register_split` made empty is seen by tests/script_budget.rs, outside the gate)
+  '^src/engine/script_budget\.rs:\d+:\d+: replace == with != in apply$',
+  '^src/engine/script_budget\.rs:\d+:\d+: replace register_split with \(\)$',
 ]
