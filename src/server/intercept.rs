@@ -1731,7 +1731,7 @@ mod tests {
     }
 
     // --- An XPath condition on a SOAP body with namespaces, and a value copied from the request into the response:
-    // "Envelope/Body/recherche" (no namespace prefix, see MatchEngine::local_name) picks the right operation even with
+    // "Envelope/Body/recherche" (no namespace prefix, see MatchEngine::local_name_ref) picks the right operation even with
     // an empty <Header></Header> written in full before <Body> (see MatchEngine::walk_xml), and the extraction script
     // (parse_xml_items) copies the request's Siret into the response.
     fn soap_condition_rules() -> Vec<Rule> {

@@ -247,31 +247,37 @@ async fn a_deeply_nested_xml_body_stays_within_the_memory_budget_of_a_request() 
     post(&server, "reference", "x".repeat(BODY)).await;
     let scripted = peak_mib(&server);
     let depths = (0..=10).map(|k| 4usize.pow(k)).chain([BODY / 3]);
-    let mut cases: Vec<(&str, usize, u64)> = depths
+    let mut cases: Vec<(&str, usize, u64, u64)> = depths
         .flat_map(|depth| {
             [
-                ("condition", depth, bare),
-                ("template", depth, bare),
-                ("script", depth, scripted),
+                ("condition", depth, bare, BUDGET_MIB),
+                ("template", depth, bare, BUDGET_MIB),
+                ("script", depth, scripted, BUDGET_MIB),
             ]
         })
         .collect();
     // The reference with a script holds copies of its body that `parse_xml_items` no longer needs when it reads it:
     // before the depth limit, the 30 MiB it kept for the deepest body stayed within the budget 3 runs out of 5. A
     // script that holds 8 MiB of texts while it calls it adds them to the peak of the call (+21 MiB became +28).
-    cases.push(("holding", BODY / 3, scripted));
+    cases.push(("holding", BODY / 3, scripted, BUDGET_MIB));
+    // One element name of 10 MiB: the reader keeps its own copy of it to check end tags, and nothing else may copy
+    // it. The call then adds 8 to 9 MiB to the peak in a release build, 9 to 11 in a debug one; a copy of each name
+    // before it was compared took it to 18 and 21. The bound sits between the two: one more copy of the name passes it.
+    cases.push(("holding", 1, scripted, BUDGET_MIB - 6));
     let mut over = Vec::new();
-    for (path, depth, reference) in cases {
+    for (path, depth, reference, allowed) in cases {
         let name = "a".repeat(BODY / depth - 2);
         reset_peak(&server);
         post(&server, path, format!("<{name}>").repeat(depth)).await;
         let peak = peak_mib(&server);
-        if peak > reference + BUDGET_MIB {
-            over.push(format!("{path}, depth {depth}: {peak} MiB for {reference}"));
+        if peak > reference + allowed {
+            over.push(format!(
+                "{path}, depth {depth}: {peak} MiB for {reference}, + {allowed} MiB allowed"
+            ));
         }
     }
     assert!(
         over.is_empty(),
-        "memory peaks over the same request with no script or a trivial one, + {BUDGET_MIB} MiB: {over:?}"
+        "memory peaks over the same request with no script or a trivial one: {over:?}"
     );
 }

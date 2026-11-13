@@ -811,7 +811,7 @@ Defects and debts found on the way. They are taken by bundle: the items of a bun
 | Bundle | Items | Goes with |
 |---|---|---|
 | The judges | E52, then E50; E49 waits for the maintainer | first, before the themes |
-| XML readers | E56, E57 | first: untrusted input |
+| XML readers | E56 | first: untrusted input |
 | Weight | E10 | "Lightest, with the proof" (0.6) |
 | Keyboard | E42, E47 | "Accessible" (0.6) |
 | Screen reader | E15, E43 | "Accessible" (0.6) |
@@ -1134,16 +1134,6 @@ Size S
 **What.** Read `Event::CData` as text in `xml_text`, and add CDATA sections to the documents the judges of `parse_xml_items` and of XPath conditions generate.
 
 **Done when.** `<Siret><![CDATA[123]]></Siret>` gives `123` to a condition, to `{{xpath.path}}` and to a script, and the judges generate CDATA.
-
-### E57. A long element name copied twice by `parse_xml_items`, outside the memory of a run
-
-Size S
-
-**Why.** `parse_xml_items` reads its body with quick-xml, which keeps the name of each open element to check end tags, and `MatchEngine::local_name` copies each name into a `String` of its own before it is compared (XPath conditions compare the borrowed name, `local_name_ref`). A 10 MiB body made of one element name is then held three times while the function runs. Measured on 2026-11-11 (release build, `MALLOC_ARENA_MAX=1`): a script that holds 8 texts of 0.9 MiB and calls `parse_xml_items` on such a body raises the peak 16 to 19 MiB above the same request with a trivial script, within the 20 MiB the memory test of `tests/script_budget.rs` allows by 1 to 4 MiB, while one operation may add 4 MiB to what a run holds. The depth limit of XML (`XML_DEPTH_LIMIT`) does not bound it: one element is enough.
-
-**What.** Compare local names without copying them, as XPath conditions do, keep a copy only for the name of a field, counted against the limit of a text before it is made, and add the long-name body to the case of `tests/script_budget.rs` where the script holds half its budget.
-
-**Done when.** That case, with the body of one 10 MiB name, stays 10 MiB or more below the budget, seen at its edge on the current code.
 
 ### E59. The shapes of observed responses, described again at every level of a path
 

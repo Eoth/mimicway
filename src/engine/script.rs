@@ -449,9 +449,10 @@ fn dynamic_field_to_string(value: &rhai::Dynamic) -> Result<String, Box<rhai::Ev
 // children is read, which fits flat SOAP items such as `<product><sku>A</sku><qty>2</qty></product>`; deeper structure
 // inside an item is ignored, since a generic XML tree would be out of proportion with this need. A self-closing
 // element is the same as an empty one (`<qty/>` gives an empty text, `<product/>` an empty item). Extraction stops
-// at the first item, field or byte of text over the limits of a value (field names count with the text), rather than
-// gathering a large body whole before Rhai checks it, and at the first element nested deeper than `XML_DEPTH_LIMIT`;
-// it stops at the first malformed part of the text, keeping the items read before it.
+// at the first item, field or byte of text over the limits of a value (field names count with the text, from the start
+// tag of the field on), rather than gathering a large body whole before Rhai checks it, and at the first element nested
+// deeper than `XML_DEPTH_LIMIT`; otherwise it stops at the first malformed part of the text, keeping the items read
+// before it.
 fn parse_xml_items_impl(xml: &str, path: &str) -> Result<rhai::Array, Box<rhai::EvalAltResult>> {
     use super::script_budget::{
         ARRAY_TOO_LARGE, MAP_TOO_LARGE, MAX_ARRAY_SIZE, MAX_MAP_SIZE, MAX_STRING_SIZE,
@@ -488,19 +489,13 @@ fn parse_xml_items_impl(xml: &str, path: &str) -> Result<rhai::Array, Box<rhai::
                 if depth + item_depth as usize >= XML_DEPTH_LIMIT {
                     return Err(too_large(XML_TOO_DEEP));
                 }
-                (
-                    Some(crate::engine::matcher::MatchEngine::local_name(&e)),
-                    false,
-                )
+                (Some(e), false)
             }
             Ok(Event::Empty(e)) => {
                 if depth + item_depth as usize >= XML_DEPTH_LIMIT {
                     return Err(too_large(XML_TOO_DEEP));
                 }
-                (
-                    Some(crate::engine::matcher::MatchEngine::local_name(&e)),
-                    true,
-                )
+                (Some(e), true)
             }
             Ok(Event::End(_)) => (None, true),
             Ok(event @ (Event::Text(_) | Event::GeneralRef(_))) => {
@@ -519,7 +514,10 @@ fn parse_xml_items_impl(xml: &str, path: &str) -> Result<rhai::Array, Box<rhai::
             Ok(Event::Eof) | Err(_) => break,
             Ok(_) => continue,
         };
-        if let Some(local) = opened {
+        if let Some(element) = &opened {
+            // Names are compared borrowed from the event: one name may be as long as the body, which the reader
+            // already holds a copy of to check end tags.
+            let local = crate::engine::matcher::MatchEngine::local_name_ref(element);
             if item_depth == 0 {
                 if on_path == parent_segments.len() && depth == on_path && local == *item_tag {
                     item_depth = 1;
@@ -534,7 +532,11 @@ fn parse_xml_items_impl(xml: &str, path: &str) -> Result<rhai::Array, Box<rhai::
                     depth += 1;
                 }
             } else if item_depth == 1 {
-                current_field = local;
+                // The name of a field is the only one kept: it counts with the text of the item before it is copied.
+                if text_bytes + local.len() > MAX_STRING_SIZE {
+                    return Err(too_large(TEXT_TOO_LARGE));
+                }
+                current_field = local.to_string();
                 current_text.clear();
                 item_depth = 2;
             } else {
@@ -1665,6 +1667,17 @@ mod tests {
             assert_eq!(items[0][0].0.len(), MAX_STRING_SIZE);
             assert!(xml_error(&document(MAX_STRING_SIZE + 1), "r/i").contains(TEXT_TOO_LARGE));
         }
+    }
+
+    // The name of a field is checked with the fields before it as soon as it opens, before it is copied: a body that
+    // never closes it is refused all the same.
+    #[test]
+    fn parse_xml_items_refuses_the_name_of_a_field_past_the_size_of_a_text_before_it_closes() {
+        use crate::engine::script_budget::{MAX_STRING_SIZE, TEXT_TOO_LARGE};
+        let document = |length: usize| format!("<r><i><a>xx</a><{}>", "x".repeat(length));
+        let room = MAX_STRING_SIZE - "a".len() - "xx".len();
+        assert!(xml_items(&document(room), "r/i").is_empty());
+        assert!(xml_error(&document(room + 1), "r/i").contains(TEXT_TOO_LARGE));
     }
 
     /// A node of a generated document. An element has a local name, maybe a namespace prefix and an attribute, and

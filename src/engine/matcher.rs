@@ -418,14 +418,9 @@ impl MatchEngine {
         None
     }
 
-    // Also used by the parse_xml_items script function, so namespace prefixes (`soap:Body` -> `Body`) are dropped in
-    // one place.
-    pub(crate) fn local_name(e: &quick_xml::events::BytesStart<'_>) -> String {
-        Self::local_name_ref(e).to_string()
-    }
-
-    // The same name borrowed from the event, for a comparison: an element name may be as long as the body, and a copy
-    // of each one would hold it once more.
+    // The name of an element without its namespace prefix (`soap:Body` -> `Body`), borrowed from the event: an element
+    // name may be as long as the body, and a copy of each one would hold it once more. Also used by the
+    // parse_xml_items script function, so prefixes are dropped in one place.
     pub(crate) fn local_name_ref<'a>(e: &'a quick_xml::events::BytesStart<'_>) -> &'a str {
         let full = e.name().into_inner();
         full.rsplit(':').next().unwrap_or(full)
