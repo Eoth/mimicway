@@ -389,9 +389,10 @@ pub(crate) fn civil_from_days(days: i64) -> (i64, u32, u32) {
 }
 
 // The exact inverse of civil_from_days (Howard Hinnant, http://howardhinnant.github.io/date_algorithms.html),
-// used by parse_date in scripts. The caller keeps `m` in [1,12] and `d` in [1,31]. A day beyond the month's real
-// length (February 31) does not panic: it gives a day count that does not convert back to the same date, which is
-// how parse_date detects it without repeating the month length and leap year rules.
+// used by parse_date in scripts and by the date pipes of templates. Any `m` and `d` below 100 give a day count
+// without panic or overflow; a month outside [1,12], a day outside [1,31] or beyond the month's real length
+// (February 31) give one that does not convert back to the same date, which is how callers detect them without
+// repeating the month length and leap year rules.
 pub(crate) fn days_from_civil(y: i64, m: u32, d: u32) -> i64 {
     let y = if m <= 2 { y - 1 } else { y };
     let era = if y >= 0 { y } else { y - 399 } / 400;

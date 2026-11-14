@@ -15,15 +15,12 @@ pub(crate) fn iso_to_millis(text: &str) -> Option<i64> {
         number(date, 5, 2)?,
         number(date, 8, 2)?,
     );
-    if date.as_bytes()[4] != b'-'
-        || date.as_bytes()[7] != b'-'
-        || !(1..=12).contains(&month)
-        || !(1..=31).contains(&day)
-    {
+    if date.as_bytes()[4] != b'-' || date.as_bytes()[7] != b'-' {
         return None;
     }
     let days = days_from_civil(year, month as u32, day as u32);
-    // A day past the end of its month (February 30) does not come back as the same date.
+    // A month outside [1, 12], a day outside [1, 31] or past the end of its month (February 30) does not come back as
+    // the same date: civil_from_days gives a real one.
     if civil_from_days(days) != (year, month as u32, day as u32) {
         return None;
     }
@@ -104,14 +101,13 @@ fn time_and_offset(text: &str) -> Option<(i64, i64)> {
                 b'-' => -1,
                 _ => return None,
             };
-            let digits = rest[1..].replace(':', "");
-            if !(digits.len() == 2 || digits.len() == 4) {
-                return None;
-            }
-            let (hours, minutes) = (
-                number(&digits, 0, 2)?,
-                number(&digits, 2, digits.len() - 2).unwrap_or(0),
-            );
+            let digits = &rest[1..];
+            let (hours, minutes) = match (digits.len(), digits.as_bytes().get(2)) {
+                (2, _) => (number(digits, 0, 2)?, 0),
+                (4, _) => (number(digits, 0, 2)?, number(digits, 2, 2)?),
+                (5, Some(b':')) => (number(digits, 0, 2)?, number(digits, 3, 2)?),
+                _ => return None,
+            };
             if hours > 23 || minutes > 59 {
                 return None;
             }
@@ -126,9 +122,6 @@ fn time_and_offset(text: &str) -> Option<(i64, i64)> {
 
 // The `width` ASCII digits of `text` at `at`, as a number; `None` when one is missing or is not a digit.
 fn number(text: &str, at: usize, width: usize) -> Option<i64> {
-    if width == 0 {
-        return None;
-    }
     let digits = text.get(at..at + width)?;
     digits
         .bytes()
