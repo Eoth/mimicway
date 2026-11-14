@@ -146,8 +146,12 @@ impl TemplateRenderer {
         NAMES[fastrand::usize(..NAMES.len())].to_string()
     }
 
+    // The address of a web form (`<input type="email">`, WHATWG) takes ASCII only before the `@`: the one accented
+    // letter of the names above loses its accent there (`François` -> `francois`).
     fn gen_email() -> String {
-        let first = Self::pick_first_name().to_ascii_lowercase();
+        let first = Self::pick_first_name()
+            .to_ascii_lowercase()
+            .replace('ç', "c");
         let last = Self::pick_last_name().to_ascii_lowercase();
         let n = fastrand::u16(1..999);
         const DOMAINS: &[&str] = &["example.com", "test.fr", "mock.dev", "fake.org"];
@@ -332,28 +336,26 @@ impl TemplateRenderer {
 pub struct ChaosMode;
 
 impl ChaosMode {
+    // A draw in [0, 1) is never below a rate of zero, a negative one or NaN, and always below a rate of 1 or more.
     pub fn should_inject_error(config: &ChaosConfig) -> bool {
-        match config.error_rate {
-            Some(rate) if rate > 0.0 => fastrand::f64() < rate,
-            _ => false,
-        }
+        config.error_rate.is_some_and(|rate| fastrand::f64() < rate)
     }
 
     pub fn error_status(config: &ChaosConfig) -> StatusCode {
         StatusCode::from_u16(config.error_status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR)
     }
 
+    // The delay before the response, in milliseconds: drawn between the bounds when both are set (the minimum when
+    // it is not below the maximum), the fixed delay otherwise.
+    fn delay_ms(config: &ChaosConfig) -> Option<u64> {
+        match (config.delay_min_ms, config.delay_max_ms) {
+            (Some(min), Some(max)) => Some(fastrand::u64(min..=max.max(min))),
+            _ => config.delay_ms,
+        }
+    }
+
     pub async fn maybe_delay(config: &ChaosConfig) {
-        let delay = if let (Some(min), Some(max)) = (config.delay_min_ms, config.delay_max_ms) {
-            if min < max {
-                Some(fastrand::u64(min..=max))
-            } else {
-                Some(min)
-            }
-        } else {
-            config.delay_ms
-        };
-        if let Some(ms) = delay
+        if let Some(ms) = Self::delay_ms(config)
             && ms > 0
         {
             tokio::time::sleep(std::time::Duration::from_millis(ms)).await;
@@ -384,6 +386,14 @@ pub async fn apply_chaos_and_render(
 
 #[cfg(test)]
 mod tests {
+    // Equivalent mutants (cargo-mutants, excluded in .cargo/mutants.toml):
+    // - `|` replaced by `^` in `gen_uuid`: the masks before it clear the bits it sets, so both operators give the
+    //   same byte.
+    // - `<` replaced by `<=` in `should_inject_error`: they differ only when the draw is exactly the rate, one chance
+    //   in 2^53 for each draw.
+    // - `>` replaced by `>=` in `maybe_delay`: a delay of zero then waits for the timer, less than its resolution of
+    //   a millisecond, which no test can tell from no wait.
+
     use super::*;
     use crate::models::*;
     use std::collections::HashMap;
@@ -499,6 +509,164 @@ mod tests {
         }
     }
 
+    // Every kind of fake data, drawn 512 times, has the form its name promises, written here apart from the
+    // generators, and varies: a generator that always gives the same value, or a value outside its form, fails.
+    // Dates are judged against the days the draws start and end on, so that a midnight between them changes nothing.
+    // The email form is narrower than that of a web form (WHATWG), which takes ASCII only before the `@`.
+    #[test]
+    fn every_kind_of_fake_data_has_its_form_and_varies() {
+        use regex::Regex;
+        use std::collections::BTreeSet;
+        let day = |offset: i64| {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs() as i64;
+            crate::engine::template::epoch_to_iso((now + offset * 86400) as u64)[..10].to_string()
+        };
+        let millis = || {
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        };
+        let words = r"^\p{Lu}[\p{L}' -]*\p{L}$";
+        // Kind, form, fewest distinct values among the draws.
+        let kinds: Vec<(FakeKind, &str, usize)> = vec![
+            (FakeKind::FirstName, words, 10),
+            (FakeKind::LastName, words, 10),
+            (FakeKind::CompanyName, words, 10),
+            (FakeKind::CityFR, words, 10),
+            (FakeKind::CountryFR, words, 5),
+            (
+                FakeKind::StreetName,
+                r"^(Rue|Avenue|Boulevard|Place|Impasse|Allee) \p{L}[\p{L}' -]*$",
+                30,
+            ),
+            (
+                FakeKind::Email,
+                r"^[a-z-]+\.[a-z-]+[1-9][0-9]{0,2}@[a-z]+\.[a-z]+$",
+                100,
+            ),
+            (FakeKind::PhoneNumberFR, r"^0[67][0-9]{8}$", 500),
+            (FakeKind::PostcodeFR, r"^(0[1-9]|[1-9][0-9])[0-9]{3}$", 400),
+            (FakeKind::Siren, r"^[0-9]{9}$", 500),
+            (FakeKind::Siret, r"^[0-9]{14}$", 500),
+            (
+                FakeKind::FullAddressFR,
+                r"^[1-9][0-9]{0,2} (Rue|Avenue|Boulevard|Place|Impasse|Allee) [^,]+, [0-9]{5} \p{Lu}[\p{L}' -]*$",
+                400,
+            ),
+            (FakeKind::DatePast, r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$", 300),
+            (FakeKind::DateFuture, r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$", 300),
+            (FakeKind::BoolRandom, r"^(true|false)$", 2),
+            (FakeKind::LoremSentence, r"^\p{Lu}[\p{L}, ]*\.$", 5),
+            (FakeKind::IbanFR, r"^FR76[0-9]{23}$", 500),
+            (
+                FakeKind::Integer { min: -2, max: 3 },
+                r"^(-2|-1|0|1|2|3)$",
+                6,
+            ),
+        ];
+        for (kind, form, fewest) in kinds {
+            let form = Regex::new(form).unwrap();
+            let before = day(0);
+            let drawn: Vec<String> = (0..512)
+                .map(|_| TemplateRenderer::fake_data(&kind))
+                .collect();
+            let after = day(0);
+            for value in &drawn {
+                assert!(form.is_match(value), "{kind:?}: {value:?}");
+            }
+            let distinct: BTreeSet<&String> = drawn.iter().collect();
+            assert!(
+                distinct.len() >= fewest,
+                "{kind:?}: {} distinct values",
+                distinct.len()
+            );
+            // ISO dates compare as texts.
+            match kind {
+                FakeKind::DatePast => drawn.iter().for_each(|date| {
+                    assert!(
+                        *date >= day(-1825 - 1) && *date < after,
+                        "past {date} ({before})"
+                    );
+                }),
+                FakeKind::DateFuture => drawn.iter().for_each(|date| {
+                    assert!(
+                        *date > before && *date <= day(1825 + 1),
+                        "future {date} ({after})"
+                    );
+                }),
+                FakeKind::PostcodeFR => {
+                    assert!(
+                        drawn
+                            .iter()
+                            .all(|code| ("01000"..="99998").contains(&code.as_str()))
+                    );
+                }
+                _ => {}
+            }
+        }
+        // A timestamp is the time of the draw, in milliseconds.
+        let before = millis();
+        let stamp: u128 = TemplateRenderer::fake_data(&FakeKind::TimestampMs)
+            .parse()
+            .unwrap();
+        assert!((before..=millis()).contains(&stamp));
+        // Each digit of an identifier and of a phone number takes all ten values.
+        for kind in [FakeKind::Siren, FakeKind::Siret, FakeKind::PhoneNumberFR] {
+            let drawn: Vec<String> = (0..512)
+                .map(|_| TemplateRenderer::fake_data(&kind))
+                .collect();
+            let first = if matches!(kind, FakeKind::PhoneNumberFR) {
+                2
+            } else {
+                0
+            };
+            for position in first..drawn[0].len() {
+                let digits: BTreeSet<u8> = drawn.iter().map(|v| v.as_bytes()[position]).collect();
+                assert_eq!(digits.len(), 10, "{kind:?}, digit {position}");
+            }
+        }
+    }
+
+    // A version 4 UUID: 32 lowercase hexadecimal digits in groups of 8-4-4-4-12, the version digit 4, the variant
+    // digit one of 8, 9, a, b; every other digit is random and takes all sixteen values, and the variant all four.
+    #[test]
+    fn uuids_are_random_version_4_uuids() {
+        use std::collections::BTreeSet;
+        let form = regex::Regex::new(
+            r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+        )
+        .unwrap();
+        let drawn: Vec<String> = (0..1024).map(|_| TemplateRenderer::gen_uuid()).collect();
+        for uuid in &drawn {
+            assert!(form.is_match(uuid), "{uuid}");
+        }
+        for position in (0..36).filter(|p| ![8, 13, 14, 18, 23].contains(p)) {
+            let digits: BTreeSet<u8> = drawn.iter().map(|u| u.as_bytes()[position]).collect();
+            let expected = if position == 19 { 4 } else { 16 };
+            assert_eq!(digits.len(), expected, "digit {position}");
+        }
+    }
+
+    // A range takes its bounds and every value between them; one whose minimum is not below its maximum gives the
+    // minimum.
+    #[test]
+    fn a_fake_integer_takes_every_value_of_its_range() {
+        use std::collections::BTreeSet;
+        let drawn: BTreeSet<String> = (0..512)
+            .map(|_| TemplateRenderer::fake_data(&FakeKind::Integer { min: -2, max: 3 }))
+            .collect();
+        let expected: BTreeSet<String> = (-2..=3).map(|n: i64| n.to_string()).collect();
+        assert_eq!(drawn, expected);
+        assert_eq!(
+            TemplateRenderer::fake_data(&FakeKind::Integer { min: 7, max: 2 }),
+            "7"
+        );
+    }
+
     #[test]
     fn render_fake_integer_min_equals_max() {
         let frags = vec![BodyFragment::FakeData {
@@ -578,6 +746,57 @@ mod tests {
         for _ in 0..1000 {
             assert!(!ChaosMode::should_inject_error(&config));
         }
+    }
+
+    #[test]
+    fn chaos_error_rate_below_zero_or_nan_never_triggers_and_above_one_always_does() {
+        let config = |rate: f64| ChaosConfig {
+            delay_ms: None,
+            delay_min_ms: None,
+            delay_max_ms: None,
+            error_rate: Some(rate),
+            error_status: 500,
+        };
+        for _ in 0..1000 {
+            assert!(!ChaosMode::should_inject_error(&config(-0.5)));
+            assert!(!ChaosMode::should_inject_error(&config(f64::NAN)));
+            assert!(ChaosMode::should_inject_error(&config(1.5)));
+        }
+    }
+
+    // Both bounds give a delay drawn between them, each value of the range included; a minimum not below the
+    // maximum gives the minimum; otherwise the fixed delay, if any.
+    #[test]
+    fn chaos_delay_is_drawn_between_its_bounds_or_fixed() {
+        use std::collections::BTreeSet;
+        let config = |delay_ms, delay_min_ms, delay_max_ms| ChaosConfig {
+            delay_ms,
+            delay_min_ms,
+            delay_max_ms,
+            error_rate: None,
+            error_status: 500,
+        };
+        let drawn: BTreeSet<Option<u64>> = (0..512)
+            .map(|_| ChaosMode::delay_ms(&config(Some(1), Some(10), Some(13))))
+            .collect();
+        assert_eq!(drawn, (10..=13).map(Some).collect());
+        for (min, max) in [(7, 2), (5, 5)] {
+            for _ in 0..64 {
+                assert_eq!(
+                    ChaosMode::delay_ms(&config(None, Some(min), Some(max))),
+                    Some(min)
+                );
+            }
+        }
+        assert_eq!(
+            ChaosMode::delay_ms(&config(Some(30), Some(10), None)),
+            Some(30)
+        );
+        assert_eq!(
+            ChaosMode::delay_ms(&config(Some(30), None, Some(10))),
+            Some(30)
+        );
+        assert_eq!(ChaosMode::delay_ms(&config(None, None, None)), None);
     }
 
     #[test]

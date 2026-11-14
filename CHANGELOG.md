@@ -7,9 +7,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 ## [Unreleased]
 
 ### Changed
+- CI also changes the rendering of responses (`src/engine/renderer.rs`: fake data, UUIDs, chaos mode) one mutation at a time. Of its 93 mutations, 27 went unseen: the tests of fake data checked that a value was not empty. A judge now draws every kind of fake data 512 times and checks the form its name promises (a French phone number, a postcode, a date in the past or the future within five years, an address…) and that the values vary; UUIDs are checked as random version 4 UUIDs over 1,024 draws, and the delay of chaos mode is checked to take every value between its bounds without waiting for it. A condition of chaos mode that changed no result is removed, and three mutations are explained as unable to change one.
 - CI also changes the limits of a script run (`src/engine/script_budget.rs`) one mutation at a time, with the files already covered: the checked `replace` is now judged against Rust's own `str::replace` on results within 3 bytes of the text limit, on both sides, and the checked `split`, `split_rev` and `to_chars` against Rhai's own functions on generated calls (zero and negative segment counts, empty delimiters), which they must answer the same way, a text without its delimiter coming back whole rather than copied. No defect was found.
 
 ### Fixed
+- A fake email address (`{{fake.Email}}`) no longer keeps the accent of the first name it is made from: about 1 address in 24 came out as `françois.…@…`, which the email field of a web form refuses, since it takes ASCII only before the `@`. Found by the judge of fake data below.
 - XPath conditions, the `{{xpath.…}}` variable and `parse_xml_items` read the text of a CDATA section: `<Siret><![CDATA[123]]></Siret>` gave them an empty value, so a SOAP client that wraps a value in CDATA got no match and no error. A CDATA section is read as text without decoding what it holds (`<![CDATA[A&amp;<B>]]>` gives `A&amp;<B>`), its line breaks read as XML reads them. The judges of those readers now generate CDATA sections, with markup, references, line breaks and `]]>` split across two sections, and line breaks written `\r\n` or `\r` in the texts.
 
 ### Security

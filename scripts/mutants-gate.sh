@@ -20,7 +20,9 @@ set -euo pipefail
 
 # The files the gate covers, each with no surviving mutant left unexplained. A file of src/engine/ joins once a run
 # over it (`cargo mutants -f <file>`) leaves none.
-SCOPE=(src/engine/matcher.rs src/engine/template.rs src/engine/script.rs src/engine/script_budget.rs)
+SCOPE=(
+  src/engine/matcher.rs src/engine/template.rs src/engine/script.rs src/engine/script_budget.rs src/engine/renderer.rs
+)
 
 args=()
 for file in "${SCOPE[@]}"; do

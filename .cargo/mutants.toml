@@ -19,4 +19,8 @@ exclude_re = [
   # src/engine/script_budget.rs (`register_split` made empty is seen by tests/script_budget.rs, outside the gate)
   '^src/engine/script_budget\.rs:\d+:\d+: replace == with != in apply$',
   '^src/engine/script_budget\.rs:\d+:\d+: replace register_split with \(\)$',
+  # src/engine/renderer.rs
+  '^src/engine/renderer\.rs:\d+:\d+: replace \| with \^ in TemplateRenderer::gen_uuid$',
+  '^src/engine/renderer\.rs:\d+:\d+: replace < with <= in ChaosMode::should_inject_error$',
+  '^src/engine/renderer\.rs:\d+:\d+: replace > with >= in ChaosMode::maybe_delay$',
 ]
