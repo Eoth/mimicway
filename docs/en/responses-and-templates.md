@@ -129,7 +129,7 @@ A field that expects a date as a number of milliseconds, seconds or minutes sinc
 
 ### Fake data (`fake.*`)
 
-To fill a response with realistic-looking data without typing it: first name, last name, email, French phone number, company, street, city, postcode, SIREN/SIRET, full address, past or future date, timestamp, random boolean, filler sentence ("lorem"), country, French IBAN. The builder also offers an integer in a range (`Integer{min,max}`). Several kinds follow French formats today; locale-aware fake data is planned (see the [roadmap](../../ROADMAP.md)).
+To fill a response with realistic-looking data without typing it: first name, last name, email, French phone number, company, street, city, postcode, SIREN/SIRET (with their check digit, so that a validating client accepts them), full address, past or future date, timestamp, random boolean, filler sentence ("lorem"), country, French IBAN (its bank details key and check digits computed). The builder also offers an integer in a range (`Integer{min,max}`). Several kinds follow French formats today; locale-aware fake data is planned (see the [roadmap](../../ROADMAP.md)).
 
 In the builder, choose **Fake data** as the source of a field, then the kind of data in the menu next to it. The expression it writes for the field (`{{fake.CompanyName}}`) shows on its right, and a new value is drawn for every request.
 

@@ -814,7 +814,7 @@ Defects and debts found on the way. They are taken by bundle: the items of a bun
 | Screen reader | E15, E43 | "Accessible" (0.6) |
 | Forms and messages | E8, E12, E19, E21, E31, E32 | "Words anyone can read" (0.6) |
 | Proxy path and suggestions | E7, E34, E35, E36, E46, E59, and E48 once it is unblocked | "Recorded, without personal data" (0.7) |
-| Builders and rule engine | E2, E28, E45, E60, and E9 and E54 once decided | "Guided and explained" (0.7) |
+| Builders and rule engine | E2, E28, E45, and E9 and E54 once decided | "Guided and explained" (0.7) |
 | Tests | E6, E11, E16 | the first theme that touches them |
 | Kafka and TCP | E3, E4 | "Protocols" (1.1) |
 
@@ -1131,14 +1131,3 @@ Size S
 **What.** Measure first: the family of suggestions in the scale test, over paths of many levels of words answered by costly XML bodies. Then describe each exchange once per request, before the inference, and move the computation off the async workers if it still takes more than a few milliseconds.
 
 **Done when.** Each exchange is described once per suggestion request, counted by the scale probe or a test, and a request over the largest store above stays within a bound written next to its test, seen above it on the current code.
-
-### E60. Fake IBAN, SIREN and SIRET numbers that fail their own check
-
-Size S
-
-**Why.** `{{fake.IbanFR}}` writes `FR76` followed by random digits and a random key (`gen_iban_fr`, `src/engine/renderer.rs`): the two check digits of an IBAN (ISO 13616, modulo 97) and the key of the French bank details are never computed, so about 1 IBAN in 100 passes the check that any banking form or library runs (10,000 drawn on 2026-11-13: 107 valid). `{{fake.Siren}}` and `{{fake.Siret}}` are 9 and 14 random digits, while both numbers end in a Luhn check digit. An application under test that validates what the mock sends refuses the data, and the tester sees a failure that the real service would never cause.
-
-**What.** Compute the key of the bank details and the check digits of the IBAN, and the Luhn digit of SIREN and SIRET (a SIRET starting with the SIREN it belongs to); describe them so in the template catalogue.
-
-**Done when.** A judge draws thousands of each value and checks them with the published algorithms, written in the test apart from the generator, and is seen red on the current code.
-

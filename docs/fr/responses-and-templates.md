@@ -129,7 +129,7 @@ Un champ qui attend une date en millisecondes, en secondes ou en minutes depuis 
 
 ### Données factices (`fake.*`)
 
-Pour remplir une réponse avec des données d'apparence réaliste sans les saisir : prénom, nom, e-mail, numéro de téléphone français, entreprise, rue, ville, code postal, SIREN/SIRET, adresse complète, date passée ou future, horodatage, booléen aléatoire, phrase de remplissage (« lorem »), pays, IBAN français. Le constructeur propose aussi un entier dans une plage (`Integer{min,max}`). Plusieurs types suivent aujourd'hui des formats français ; des données factices adaptées à chaque langue sont prévues (voir la [feuille de route](../../ROADMAP.md)).
+Pour remplir une réponse avec des données d'apparence réaliste sans les saisir : prénom, nom, e-mail, numéro de téléphone français, entreprise, rue, ville, code postal, SIREN/SIRET (avec leur chiffre de contrôle, qu'un client qui les vérifie accepte), adresse complète, date passée ou future, horodatage, booléen aléatoire, phrase de remplissage (« lorem »), pays, IBAN français (clé RIB et clé de contrôle calculées). Le constructeur propose aussi un entier dans une plage (`Integer{min,max}`). Plusieurs types suivent aujourd'hui des formats français ; des données factices adaptées à chaque langue sont prévues (voir la [feuille de route](../../ROADMAP.md)).
 
 Dans le constructeur, choisissez **Donnée fictive** comme source d'un champ, puis le type de donnée dans le menu voisin. L'expression écrite pour le champ (`{{fake.CompanyName}}`) s'affiche à sa droite, et une nouvelle valeur est tirée à chaque requête.
 

@@ -94,8 +94,8 @@ impl TemplateRenderer {
             FakeKind::StreetName => Self::pick_street_name(),
             FakeKind::CityFR => Self::pick_city_fr(),
             FakeKind::PostcodeFR => Self::gen_postcode_fr(),
-            FakeKind::Siren => Self::gen_n_digits(9),
-            FakeKind::Siret => Self::gen_n_digits(14),
+            FakeKind::Siren => Self::gen_siren(),
+            FakeKind::Siret => Self::gen_siret(),
             FakeKind::FullAddressFR => Self::gen_full_address_fr(),
             FakeKind::DatePast => Self::gen_date_offset(-1825, -1),
             FakeKind::DateFuture => Self::gen_date_offset(1, 1825),
@@ -269,6 +269,36 @@ impl TemplateRenderer {
         s
     }
 
+    // A SIREN is 8 digits and a Luhn check digit; a SIRET, the SIREN of its company, 4 digits for the establishment
+    // and a Luhn check digit over all 14.
+    fn gen_siren() -> String {
+        Self::with_luhn_digit(Self::gen_n_digits(8))
+    }
+
+    fn gen_siret() -> String {
+        Self::with_luhn_digit(format!("{}{}", Self::gen_siren(), Self::gen_n_digits(4)))
+    }
+
+    // `digits` followed by the digit that makes the whole pass the Luhn check: from the right, every second digit is
+    // doubled (its digits summed), and the sum of all is a multiple of 10.
+    fn with_luhn_digit(mut digits: String) -> String {
+        let sum: u32 = digits
+            .bytes()
+            .rev()
+            .enumerate()
+            .map(|(i, b)| {
+                let d = u32::from(b - b'0');
+                if i % 2 == 0 {
+                    d * 2 / 10 + d * 2 % 10
+                } else {
+                    d
+                }
+            })
+            .sum();
+        digits.push(char::from(b'0' + ((10 - sum % 10) % 10) as u8));
+        digits
+    }
+
     fn gen_full_address_fr() -> String {
         let num = fastrand::u16(1..200);
         let street = Self::pick_street_name();
@@ -324,11 +354,15 @@ impl TemplateRenderer {
         COUNTRIES[fastrand::usize(..COUNTRIES.len())].to_string()
     }
 
+    // The key of French bank details makes bank, branch, account and key, read as one 23-digit number, a multiple of
+    // 97 (its published form: 97 minus 89 bank + 15 branch + 3 account, modulo 97). The check digits of the IBAN of
+    // such details are then always 76 (ISO 13616: 98 minus the details followed by FR00, F and R read as 15 and 27,
+    // modulo 97; the details, a multiple of 97, drop out and leave 98 - 152700 % 97).
     fn gen_iban_fr() -> String {
         let bank: u64 = fastrand::u64(10000..99999);
         let branch: u64 = fastrand::u64(10000..99999);
         let account: u64 = fastrand::u64(10000000000..99999999999);
-        let key: u8 = fastrand::u8(10..99);
+        let key = 97 - (89 * bank + 15 * branch + 3 * account) % 97;
         format!("FR76{bank:05}{branch:05}{account:011}{key:02}")
     }
 }
@@ -648,6 +682,67 @@ mod tests {
             let digits: BTreeSet<u8> = drawn.iter().map(|u| u.as_bytes()[position]).collect();
             let expected = if position == 19 { 4 } else { 16 };
             assert_eq!(digits.len(), expected, "digit {position}");
+        }
+    }
+
+    // Identifiers pass the check a form or a library runs on them, by the published algorithms written here apart
+    // from the generators: Luhn for SIREN and SIRET (a SIRET starts with a valid SIREN), ISO 13616 for the IBAN
+    // (its first four characters moved to the end, letters read as 10 to 35, the number modulo 97 is 1), and the key
+    // of the French bank details (bank, branch, account and key, 23 digits, a multiple of 97).
+    #[test]
+    fn fake_identifiers_pass_their_own_check() {
+        fn luhn(digits: &str) -> bool {
+            let sum: u32 = digits
+                .bytes()
+                .rev()
+                .enumerate()
+                .map(|(i, b)| {
+                    let d = u32::from(b - b'0');
+                    if i % 2 == 1 {
+                        if d * 2 > 9 { d * 2 - 9 } else { d * 2 }
+                    } else {
+                        d
+                    }
+                })
+                .sum();
+            sum.is_multiple_of(10)
+        }
+        fn modulo_97(digits: impl Iterator<Item = u32>) -> u32 {
+            digits.fold(0, |rest, d| (rest * 10 + d) % 97)
+        }
+        fn iban_valid(iban: &str) -> bool {
+            let moved = format!("{}{}", &iban[4..], &iban[..4]);
+            let digits: String = moved
+                .chars()
+                .map(|c| c.to_digit(36).unwrap().to_string())
+                .collect();
+            modulo_97(digits.bytes().map(|b| u32::from(b - b'0'))) == 1
+        }
+        // The judges themselves, on published examples: a SIREN and its SIRET (INSEE), the IBAN of the ISO registry,
+        // and the French IBAN given as an example by banks.
+        assert!(luhn("732829320") && luhn("73282932000074") && !luhn("732829321"));
+        assert!(iban_valid("FR1420041010050500013M02606"));
+        assert!(!iban_valid("FR1420041010050500013M02607"));
+        let example = "30006000011234567890189";
+        assert!(iban_valid(&format!("FR76{example}")));
+        assert_eq!(modulo_97(example.bytes().map(|b| u32::from(b - b'0'))), 0);
+        assert_ne!(
+            modulo_97(
+                "30006000011234567890188"
+                    .bytes()
+                    .map(|b| u32::from(b - b'0'))
+            ),
+            0
+        );
+        for _ in 0..4096 {
+            let siren = TemplateRenderer::fake_data(&FakeKind::Siren);
+            assert!(luhn(&siren), "SIREN {siren}");
+            let siret = TemplateRenderer::fake_data(&FakeKind::Siret);
+            assert!(luhn(&siret) && luhn(&siret[..9]), "SIRET {siret}");
+            let iban = TemplateRenderer::fake_data(&FakeKind::IbanFR);
+            assert!(iban_valid(&iban), "IBAN {iban}");
+            let bank_details = iban[4..].bytes().map(|b| u32::from(b - b'0'));
+            assert_eq!(modulo_97(bank_details), 0, "key of the bank details {iban}");
         }
     }
 
