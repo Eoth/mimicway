@@ -458,7 +458,8 @@ impl MatchEngine {
         match event {
             Event::Text(text) => normalized(text),
             Event::CData(text) => normalized(text),
-            _ => Self::xml_text(event).map_or(0, |text| text.len()),
+            Event::GeneralRef(_) => Self::xml_text(event).map_or(0, |text| text.len()),
+            _ => 0,
         }
     }
 

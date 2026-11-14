@@ -1705,6 +1705,15 @@ mod tests {
             assert_eq!(items[0][0].1.len(), MAX_STRING_SIZE - "a".len() - 3);
             assert!(xml_error(&document(MAX_STRING_SIZE + 1), "r/i").contains(TEXT_TOO_LARGE));
         }
+        // Refused as it is read, not when its field closes: a body cut short after it is refused too, and so is one
+        // whose last byte is a reference.
+        let cut_short = |text: &str| format!("<r><i><a>{text}");
+        let room = "z".repeat(MAX_STRING_SIZE - "a".len());
+        assert!(xml_items(&cut_short(&room), "r/i").is_empty());
+        for past in ["z", "\r\nz", "<![CDATA[z]]>", "<![CDATA[\r\nz]]>", "&amp;"] {
+            let error = xml_error(&cut_short(&format!("{room}{past}")), "r/i");
+            assert!(error.contains(TEXT_TOO_LARGE), "{past:?}");
+        }
     }
 
     // The name of a field is checked with the fields before it as soon as it opens, before it is copied: a body that
