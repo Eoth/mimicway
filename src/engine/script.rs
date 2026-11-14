@@ -498,16 +498,18 @@ fn parse_xml_items_impl(xml: &str, path: &str) -> Result<rhai::Array, Box<rhai::
                 (Some(e), true)
             }
             Ok(Event::End(_)) => (None, true),
-            Ok(event @ (Event::Text(_) | Event::GeneralRef(_))) => {
-                if item_depth == 2
-                    && let Some(text) = crate::engine::matcher::MatchEngine::xml_text(&event)
-                {
-                    if text_bytes + current_field.len() + current_text.len() + text.len()
+            Ok(event @ (Event::Text(_) | Event::CData(_) | Event::GeneralRef(_))) => {
+                if item_depth == 2 {
+                    // Measured before it is read: reading a text whose line breaks are rewritten copies it whole.
+                    let length = crate::engine::matcher::MatchEngine::xml_text_len(&event);
+                    if text_bytes + current_field.len() + current_text.len() + length
                         > MAX_STRING_SIZE
                     {
                         return Err(too_large(TEXT_TOO_LARGE));
                     }
-                    current_text.push_str(&text);
+                    if let Some(text) = crate::engine::matcher::MatchEngine::xml_text(&event) {
+                        current_text.push_str(&text);
+                    }
                 }
                 continue;
             }
@@ -1402,6 +1404,24 @@ mod tests {
         assert_eq!(result.value, "5");
     }
 
+    // A CDATA section is the text of its field, its markup kept as written.
+    #[test]
+    fn parse_xml_items_reads_a_cdata_section_as_text() {
+        let engine = ScriptEngine::new();
+        let ctx = ScriptContext {
+            body: "<r><i><Siret><![CDATA[123]]></Siret><n>a <![CDATA[&amp; <b>]]></n></i></r>"
+                .into(),
+            ..empty_ctx()
+        };
+        let result = engine
+            .execute(
+                r#"let i = parse_xml_items(request.body, "r/i")[0]; i.Siret + "|" + i.n"#,
+                &ctx,
+            )
+            .unwrap();
+        assert_eq!(result.value, "123|a &amp; <b>");
+    }
+
     #[test]
     fn parse_xml_items_ignores_namespace_prefixes() {
         let engine = ScriptEngine::new();
@@ -1669,6 +1689,24 @@ mod tests {
         }
     }
 
+    // A text counts as it is read, each `\r\n` as one `\n`, written plainly or in a CDATA section; and so it is
+    // checked before it is read, which copies a text whose line breaks are rewritten.
+    #[test]
+    fn parse_xml_items_counts_a_text_with_its_line_breaks_rewritten() {
+        use crate::engine::script_budget::{MAX_STRING_SIZE, TEXT_TOO_LARGE};
+        for (open, close) in [("", ""), ("<![CDATA[", "]]>")] {
+            let document = |total: usize| {
+                // The field's name, then three line breaks once read, around the rest.
+                let rest = "z".repeat(total - "a".len() - 3);
+                format!("<r><i><a>{open}\r\n\r\n{rest}\r{close}</a></i></r>")
+            };
+            let items = xml_items(&document(MAX_STRING_SIZE), "r/i");
+            // Trimmed of its line breaks once its field is read.
+            assert_eq!(items[0][0].1.len(), MAX_STRING_SIZE - "a".len() - 3);
+            assert!(xml_error(&document(MAX_STRING_SIZE + 1), "r/i").contains(TEXT_TOO_LARGE));
+        }
+    }
+
     // The name of a field is checked with the fields before it as soon as it opens, before it is copied: a body that
     // never closes it is refused all the same.
     #[test]
@@ -1692,6 +1730,8 @@ mod tests {
             children: Vec<XmlNode>,
         },
         Text(String),
+        /// A text written as a CDATA section, its markup characters as they are.
+        CData(String),
         Comment,
     }
 
@@ -1705,6 +1745,11 @@ mod tests {
                 'é' => out.push_str("&#233;"),
                 _ => out.push(c),
             }),
+            // `]]>` ends a section: it is split across two, as XML writers do.
+            XmlNode::CData(text) => out.push_str(&format!(
+                "<![CDATA[{}]]>",
+                text.replace("]]>", "]]]]><![CDATA[>")
+            )),
             XmlNode::Comment => out.push_str("<!-- <i>c</i> -->"),
             XmlNode::Element {
                 name,
@@ -1751,13 +1796,8 @@ mod tests {
                         ..
                     } = child
                     {
-                        let text: String = texts
-                            .iter()
-                            .filter_map(|t| match t {
-                                XmlNode::Text(text) => Some(text.as_str()),
-                                _ => None,
-                            })
-                            .collect();
+                        let mut text = String::new();
+                        own_texts(texts, &mut text);
                         item.insert(name.to_string(), text.trim().to_string());
                     }
                 }
@@ -1768,6 +1808,25 @@ mod tests {
                 ancestors.pop();
             }
         }
+    }
+
+    /// The texts of nodes, one level only, as XML 1.0 reads their line breaks: `\r\n` and a lone `\r` are one `\n`,
+    /// within the texts written next to each other (a comment, an element or a CDATA section between them separates
+    /// a `\r` from a `\n`), and within each CDATA section.
+    fn own_texts(nodes: &[XmlNode], out: &mut String) {
+        let line_breaks = |text: &str| text.replace("\r\n", "\n").replace('\r', "\n");
+        let mut written_together = String::new();
+        for node in nodes {
+            if let XmlNode::Text(text) = node {
+                written_together.push_str(text);
+                continue;
+            }
+            out.push_str(&line_breaks(&std::mem::take(&mut written_together)));
+            if let XmlNode::CData(text) = node {
+                out.push_str(&line_breaks(text));
+            }
+        }
+        out.push_str(&line_breaks(&written_together));
     }
 
     /// The chain of names from the top of the document down to each element.
@@ -1787,18 +1846,24 @@ mod tests {
     }
 
     /// Documents of a few elements whose names repeat at every level (a parent's name in a sibling branch, deeper,
-    /// or closed before the rest of the path), with prefixes, attributes, comments, self-closing elements, and texts
-    /// that need escaping, hold references, line breaks and characters beyond ASCII; with each, a path of one to four
-    /// segments over the same names, half of them the chain of an element of the document. Not generated: CDATA,
-    /// processing instructions, a DTD, malformed documents, the limits of a value, prefixes in the path, depths near
-    /// `XML_DEPTH_LIMIT`.
+    /// or closed before the rest of the path), with prefixes, attributes, comments, self-closing elements, texts
+    /// that need escaping, hold references, line breaks and characters beyond ASCII, and CDATA sections that hold
+    /// markup, references and `]]>` as text; with each, a path of one to four segments over the same names, half of
+    /// them the chain of an element of the document. Not generated: processing instructions, a DTD, malformed
+    /// documents, the limits of a value, prefixes in the path, depths near `XML_DEPTH_LIMIT`.
     fn generated_documents()
     -> impl proptest::strategy::Strategy<Value = (Vec<XmlNode>, Vec<&'static str>)> {
         use proptest::prelude::*;
         let name = prop::sample::select(vec!["a", "b", "i"]);
-        let text = "[a-c &<>\"' \n\téü]{0,4}".prop_map(XmlNode::Text);
+        let text = "[a-c &<>\"' \r\n\téü]{0,4}".prop_map(XmlNode::Text);
+        let cdata = prop_oneof![
+            3 => "[a-c &<>\\]\"' \r\n\té]{0,6}",
+            1 => Just("&amp;<i>x</i>]]>".to_string()),
+        ]
+        .prop_map(XmlNode::CData);
         let leaf = prop_oneof![
             4 => text.clone(),
+            3 => cdata,
             1 => Just(XmlNode::Comment),
             4 => (name.clone(), any::<bool>(), any::<bool>()).prop_map(|(name, attribute, self_closing)| {
                 XmlNode::Element {
@@ -1844,14 +1909,39 @@ mod tests {
             })
     }
 
+    /// The same documents with their CDATA sections left out: a case whose expected value changes without them
+    /// reads one.
+    fn without_cdata(nodes: &[XmlNode]) -> Vec<XmlNode> {
+        nodes
+            .iter()
+            .filter(|node| !matches!(node, XmlNode::CData(_)))
+            .map(|node| match node {
+                XmlNode::Element {
+                    name,
+                    prefix,
+                    attribute,
+                    self_closing,
+                    children,
+                } => XmlNode::Element {
+                    name,
+                    prefix: *prefix,
+                    attribute: *attribute,
+                    self_closing: *self_closing,
+                    children: without_cdata(children),
+                },
+                other => other.clone(),
+            })
+            .collect()
+    }
+
     fn written(nodes: &[XmlNode]) -> String {
         let mut xml = String::new();
         nodes.iter().for_each(|node| write_xml_node(node, &mut xml));
         xml
     }
 
-    // A quarter of the cases at least must expect items, and some of them a text: a judge whose cases all expect
-    // nothing would pass on any code.
+    // A quarter of the cases at least must expect items, some of them a text, and some a text that a CDATA section
+    // brings: a judge whose cases all expect nothing would pass on any code.
     #[test]
     fn parse_xml_items_finds_what_a_walk_of_the_tree_finds() {
         use proptest::prelude::*;
@@ -1863,6 +1953,7 @@ mod tests {
             ..Config::default()
         };
         let (with_items, with_text) = (std::cell::Cell::new(0), std::cell::Cell::new(0));
+        let with_cdata = std::cell::Cell::new(0);
         let result = TestRunner::new(config).run(&generated_documents(), |(nodes, path)| {
             let xml = written(&nodes);
             let mut expected = Vec::new();
@@ -1870,6 +1961,9 @@ mod tests {
             with_items.set(with_items.get() + usize::from(!expected.is_empty()));
             let has_text = expected.iter().flatten().any(|(_, text)| !text.is_empty());
             with_text.set(with_text.get() + usize::from(has_text));
+            let mut without = Vec::new();
+            reference_items(&without_cdata(&nodes), &mut Vec::new(), &path, &mut without);
+            with_cdata.set(with_cdata.get() + usize::from(without != expected));
             prop_assert_eq!(xml_items(&xml, &path.join("/")), expected, "{}", xml);
             Ok(())
         });
@@ -1877,8 +1971,8 @@ mod tests {
             panic!("{failure}");
         }
         assert!(
-            with_items.get() >= 256 && with_text.get() >= 64,
-            "{with_items:?} {with_text:?}"
+            with_items.get() >= 256 && with_text.get() >= 64 && with_cdata.get() >= 32,
+            "{with_items:?} {with_text:?} {with_cdata:?}"
         );
     }
 
@@ -1911,24 +2005,25 @@ mod tests {
     }
 
     fn text_to_the_first_end_tag(nodes: &[XmlNode], out: &mut String) {
-        for node in nodes {
-            match node {
-                XmlNode::Text(text) => out.push_str(text),
-                XmlNode::Element {
-                    children,
-                    self_closing,
-                    ..
-                } if !(children.is_empty() && *self_closing) => {
-                    text_to_the_first_end_tag(children, out);
-                    return;
-                }
-                _ => {}
+        for (position, node) in nodes.iter().enumerate() {
+            if let XmlNode::Element {
+                children,
+                self_closing,
+                ..
+            } = node
+                && !(children.is_empty() && *self_closing)
+            {
+                own_texts(&nodes[..position], out);
+                text_to_the_first_end_tag(children, out);
+                return;
             }
         }
+        own_texts(nodes, out);
     }
 
     // The reader of XPath conditions and `{{xpath.…}}` variables (`MatchEngine::extract_xpath`), judged on the
-    // documents above. A quarter of the cases at least must find a value, and some of them a text.
+    // documents above. A quarter of the cases at least must find a value, some of them a text, and some a text that a
+    // CDATA section brings.
     #[test]
     fn extract_xpath_finds_what_a_walk_of_the_tree_finds() {
         use proptest::prelude::*;
@@ -1940,12 +2035,15 @@ mod tests {
             ..Config::default()
         };
         let (with_value, with_text) = (std::cell::Cell::new(0), std::cell::Cell::new(0));
+        let with_cdata = std::cell::Cell::new(0);
         let result = TestRunner::new(config).run(&generated_documents(), |(nodes, path)| {
             let xml = written(&nodes);
             let expected = reference_xpath(&nodes, &mut Vec::new(), &path);
             with_value.set(with_value.get() + usize::from(expected.is_some()));
             let has_text = expected.as_deref().is_some_and(|text| !text.is_empty());
             with_text.set(with_text.get() + usize::from(has_text));
+            let without = reference_xpath(&without_cdata(&nodes), &mut Vec::new(), &path);
+            with_cdata.set(with_cdata.get() + usize::from(without != expected));
             prop_assert_eq!(
                 crate::engine::matcher::MatchEngine::extract_xpath(xml.as_bytes(), &path.join("/")),
                 expected,
@@ -1958,8 +2056,8 @@ mod tests {
             panic!("{failure}");
         }
         assert!(
-            with_value.get() >= 256 && with_text.get() >= 64,
-            "{with_value:?} {with_text:?}"
+            with_value.get() >= 256 && with_text.get() >= 64 && with_cdata.get() >= 32,
+            "{with_value:?} {with_text:?} {with_cdata:?}"
         );
     }
 

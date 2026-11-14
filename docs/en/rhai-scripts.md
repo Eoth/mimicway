@@ -321,7 +321,7 @@ for a in articles {
 
 `unitPrice` is `445` for `REF-001` in both examples: `seeded_int` gives the same value whatever the source format, since the SKU is the same.
 
-> **How `parse_xml_items` reads its path**: as an XPath condition does, from the root element down, each segment a child of the one before; the segments are written without namespace prefix, and the prefixes of the body are ignored. `Envelope/Body/GetOrderTotalsRequest/articles/article` finds the articles of that list only, whatever other elements the body holds around them, and none of an `<articles>` found elsewhere. A self-closing element is an empty one: `<qty/>` gives an empty text, and `<article/>` an item without fields.
+> **How `parse_xml_items` reads its path**: as an XPath condition does, from the root element down, each segment a child of the one before; the segments are written without namespace prefix, and the prefixes of the body are ignored. `Envelope/Body/GetOrderTotalsRequest/articles/article` finds the articles of that list only, whatever other elements the body holds around them, and none of an `<articles>` found elsewhere. A self-closing element is an empty one: `<qty/>` gives an empty text, and `<article/>` an item without fields. A CDATA section is read as text, without decoding what it holds: `<sku><![CDATA[A&amp;<B>]]></sku>` gives `A&amp;<B>`, as XPath conditions and `{{xpath.…}}` read it.
 
 > **Limit of `parse_xml_items`**: only the first level of children of each repeated element is captured (flat fields, such as `<sku>` and `<qty>` above). A deeper structure inside an article is not extracted: keep repeated elements simple, or call `parse_xml_items` several times with different paths.
 

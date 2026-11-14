@@ -57,8 +57,6 @@ At the maintainers' request, templates in response headers then server-sent even
 | Accessible | T20, then the keyboard bundle and the screen reader bundle | the same judge and the same screens |
 | Words anyone can read | R12, R13, R14, R9, then the forms and messages bundle | the same screens and catalogues, one regeneration of the screenshots |
 
-The XML readers bundle of the [engineering backlog](#engineering-backlog) reads untrusted input: it comes first.
-
 ### T4. Restrict where the proxy may connect
 
 Size S
@@ -811,7 +809,6 @@ Defects and debts found on the way. They are taken by bundle: the items of a bun
 | Bundle | Items | Goes with |
 |---|---|---|
 | The judges | E52, then E50; E49 waits for the maintainer | first, before the themes |
-| XML readers | E56 | first: untrusted input |
 | Weight | E10 | "Lightest, with the proof" (0.6) |
 | Keyboard | E42, E47 | "Accessible" (0.6) |
 | Screen reader | E15, E43 | "Accessible" (0.6) |
@@ -1125,16 +1122,6 @@ Size S
 
 **Done when.** Both templates above render `)` and `xa(b`, the single-quoted case keeps its rendering or its change is written in the changelog, and the judge generates the cases.
 
-### E56. CDATA text read by neither XPath conditions nor `parse_xml_items`
-
-Size S
-
-**Why.** `MatchEngine::xml_text` turns text and references into text, and nothing else: the text of a CDATA section (`<Siret><![CDATA[123]]></Siret>`) is dropped by XPath conditions, by the `{{xpath.path}}` template variable and by `parse_xml_items`, which give an empty value instead of `123`. A SOAP client that wraps a value, or an embedded document, in CDATA gets no match and no error.
-
-**What.** Read `Event::CData` as text in `xml_text`, and add CDATA sections to the documents the judges of `parse_xml_items` and of XPath conditions generate.
-
-**Done when.** `<Siret><![CDATA[123]]></Siret>` gives `123` to a condition, to `{{xpath.path}}` and to a script, and the judges generate CDATA.
-
 ### E59. The shapes of observed responses, described again at every level of a path
 
 Size S
@@ -1144,3 +1131,4 @@ Size S
 **What.** Measure first: the family of suggestions in the scale test, over paths of many levels of words answered by costly XML bodies. Then describe each exchange once per request, before the inference, and move the computation off the async workers if it still takes more than a few milliseconds.
 
 **Done when.** Each exchange is described once per suggestion request, counted by the scale probe or a test, and a request over the largest store above stays within a bound written next to its test, seen above it on the current code.
+

@@ -637,6 +637,17 @@ mod tests {
     }
 
     #[test]
+    fn xpath_echo_reads_a_cdata_section_as_text() {
+        let (p, q, h) = empty_ctx();
+        let body = b"<Envelope><Body><Siret><![CDATA[123]]></Siret></Body></Envelope>";
+        let ctx = make_ctx(&p, &q, &h, body, 0);
+        assert_eq!(
+            render_template("{{xpath.Envelope/Body/Siret}}", &ctx),
+            "123"
+        );
+    }
+
+    #[test]
     fn xpath_echo_ignores_namespace_prefixes_in_body() {
         let (p, q, h) = empty_ctx();
         let body = br#"<soap:Envelope><soap:Body><ns:id>abc</ns:id></soap:Body></soap:Envelope>"#;

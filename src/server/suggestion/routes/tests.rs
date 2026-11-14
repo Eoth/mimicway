@@ -283,6 +283,7 @@ enum XmlNode {
         children: Vec<XmlNode>,
     },
     Text,
+    CData,
     Comment,
     Instruction,
 }
@@ -312,6 +313,8 @@ fn write_xml(nodes: &[XmlNode], out: &mut String) {
                 }
             }
             XmlNode::Text => out.push_str("t &amp; u"),
+            // Elements written in a CDATA section are text: no path.
+            XmlNode::CData => out.push_str("<![CDATA[<c><d/></c> & ]]>"),
             XmlNode::Comment => out.push_str("<!-- <c> -->"),
             XmlNode::Instruction => out.push_str("<?p <c>?>"),
         }
@@ -330,11 +333,11 @@ fn element_paths(nodes: &[XmlNode], ancestors: &mut Vec<String>, paths: &mut Vec
     }
 }
 
-/// Documents of a few elements whose names repeat at every level, with prefixes, self-closing elements, texts, comments
-/// and processing instructions; some local names are empty (`<p:>`) or beyond ASCII, some are long (300 and 1,500
+/// Documents of a few elements whose names repeat at every level, with prefixes, self-closing elements, texts, CDATA
+/// sections that hold elements, comments and processing instructions; some local names are empty (`<p:>`) or beyond ASCII, some are long (300 and 1,500
 /// bytes, or within 8 bytes of `MAX_SKELETON`, so that some paths end exactly at the limit), and some elements wrap a
 /// chain of up to 100 nested ones, deeper than the 90 levels that fit in `MAX_SKELETON` bytes. Not generated:
-/// malformed documents (the first error is a written case), CDATA, long prefixes, more than `MAX_XML_EVENTS` events.
+/// malformed documents (the first error is a written case), long prefixes, more than `MAX_XML_EVENTS` events.
 fn generated_documents() -> impl proptest::strategy::Strategy<Value = Vec<XmlNode>> {
     use proptest::prelude::*;
     let name = prop_oneof![
@@ -353,6 +356,7 @@ fn generated_documents() -> impl proptest::strategy::Strategy<Value = Vec<XmlNod
     };
     let leaf = prop_oneof![
         2 => Just(XmlNode::Text),
+        1 => Just(XmlNode::CData),
         1 => Just(XmlNode::Comment),
         1 => Just(XmlNode::Instruction),
         4 => (name.clone(), prefix.clone(), any::<bool>())

@@ -396,7 +396,7 @@ impl MatchEngine {
                         return Some(result);
                     }
                 }
-                Ok(event @ (Event::Text(_) | Event::GeneralRef(_))) => {
+                Ok(event @ (Event::Text(_) | Event::CData(_) | Event::GeneralRef(_))) => {
                     if capture && let Some(text) = Self::xml_text(&event) {
                         result.push_str(&text);
                     }
@@ -426,20 +426,39 @@ impl MatchEngine {
         full.rsplit(':').next().unwrap_or(full)
     }
 
-    /// The text a text or reference event stands for. The reader reports `&amp;`, `&#233;`... as reference
+    /// The text a text, CDATA or reference event stands for. The reader reports `&amp;`, `&#233;`... as reference
     /// events of their own: the five predefined entities and character references are resolved, any other
-    /// reference is dropped (no DTD is ever read, so it cannot be defined).
-    pub(crate) fn xml_text(event: &quick_xml::events::Event<'_>) -> Option<String> {
+    /// reference is dropped (no DTD is ever read, so it cannot be defined). A CDATA section is text as written
+    /// (`<![CDATA[a &amp; <b>]]>` gives `a &amp; <b>`), and a text may come in several pieces of each kind. A text
+    /// is borrowed from the body unless its line breaks are rewritten, which copies it whole: a reader that bounds
+    /// what it keeps reads `xml_text_len` first.
+    pub(crate) fn xml_text<'i>(
+        event: &quick_xml::events::Event<'i>,
+    ) -> Option<std::borrow::Cow<'i, str>> {
         use quick_xml::events::Event;
+        use std::borrow::Cow;
         match event {
-            Event::Text(text) => Some(text.xml10_content().into_owned()),
+            Event::Text(text) => Some(text.xml10_content()),
+            Event::CData(text) => Some(text.xml10_content()),
             Event::GeneralRef(reference) => match reference.resolve_char_ref() {
-                Ok(Some(c)) => Some(c.to_string()),
+                Ok(Some(c)) => Some(Cow::Owned(c.to_string())),
                 Ok(None) => quick_xml::escape::resolve_xml_entity(&reference.xml10_content())
-                    .map(str::to_string),
+                    .map(Cow::Borrowed),
                 Err(_) => None,
             },
             _ => None,
+        }
+    }
+
+    /// The length of what `xml_text` gives for an event, without copying a text. XML 1.0 reads `\r\n` and a lone
+    /// `\r` as one `\n`, so a text loses one byte for each `\r\n` it holds.
+    pub(crate) fn xml_text_len(event: &quick_xml::events::Event<'_>) -> usize {
+        use quick_xml::events::Event;
+        let normalized = |raw: &str| raw.len() - raw.matches("\r\n").count();
+        match event {
+            Event::Text(text) => normalized(text),
+            Event::CData(text) => normalized(text),
+            _ => Self::xml_text(event).map_or(0, |text| text.len()),
         }
     }
 
@@ -729,6 +748,23 @@ mod tests {
             ConditionGroup {
                 all_of: vec![Condition {
                     source: ConditionSource::XPath("Envelope/Body/id".into()),
+                    operator: Operator::Eq("123".into()),
+                }],
+                any_of: vec![],
+            },
+        )];
+        let req = make_req(&[], &[], body, Some("text/xml"));
+        assert!(MatchEngine::first_match(&rules, &req).is_some());
+    }
+
+    #[test]
+    fn xpath_condition_reads_a_cdata_section_as_text() {
+        let body = b"<Envelope><Body><Siret><![CDATA[123]]></Siret></Body></Envelope>";
+        let rules = vec![simple_rule(
+            "cdata",
+            ConditionGroup {
+                all_of: vec![Condition {
+                    source: ConditionSource::XPath("Envelope/Body/Siret".into()),
                     operator: Operator::Eq("123".into()),
                 }],
                 any_of: vec![],

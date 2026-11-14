@@ -238,6 +238,18 @@ async fn a_deeply_nested_xml_body_stays_within_the_memory_budget_of_a_request() 
             serde_json::json!([]),
             "{{script}}",
         ),
+        rule(
+            "field",
+            "field",
+            &format!(
+                "{DOUBLED} {}parse_xml_items(request.body, \"a/a\").len() + v0.len()",
+                (0..8)
+                    .map(|i| format!("let v{i} = s + \"{i}\"; "))
+                    .collect::<String>()
+            ),
+            serde_json::json!([]),
+            "{{script}}",
+        ),
     ])
     .await;
 
@@ -273,6 +285,31 @@ async fn a_deeply_nested_xml_body_stays_within_the_memory_budget_of_a_request() 
         if peak > reference + allowed {
             over.push(format!(
                 "{path}, depth {depth}: {peak} MiB for {reference}, + {allowed} MiB allowed"
+            ));
+        }
+    }
+    // The text of a field, 10 MiB of it written plainly or in a CDATA section, with or without a line break that
+    // reading it rewrites (which copies it), is refused past the limit of a text before it is read: the call adds 1 to
+    // 4 MiB to the peak in a debug build, where a copy of the text took it to 10 to 12. The bound sits between the two.
+    for (kind, open, close) in [
+        ("text", "", ""),
+        ("CDATA", "<![CDATA[", "]]>"),
+        ("text with a line break", "\r\n", ""),
+        ("CDATA with a line break", "<![CDATA[\r\n", "]]>"),
+    ] {
+        let around = format!("<a><a><b>{open}{close}</b></a></a>").len();
+        let text = "x".repeat(BODY - around);
+        reset_peak(&server);
+        post(
+            &server,
+            "field",
+            format!("<a><a><b>{open}{text}{close}</b></a></a>"),
+        )
+        .await;
+        let (peak, allowed) = (peak_mib(&server), 7);
+        if peak > scripted + allowed {
+            over.push(format!(
+                "field, {kind}: {peak} MiB for {scripted}, + {allowed} MiB allowed"
             ));
         }
     }
