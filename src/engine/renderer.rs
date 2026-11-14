@@ -280,19 +280,16 @@ impl TemplateRenderer {
     }
 
     // `digits` followed by the digit that makes the whole pass the Luhn check: from the right, every second digit is
-    // doubled (its digits summed), and the sum of all is a multiple of 10.
+    // doubled and replaced by the sum of its digits (DOUBLED), and the sum of all is a multiple of 10.
     fn with_luhn_digit(mut digits: String) -> String {
+        const DOUBLED: [u32; 10] = [0, 2, 4, 6, 8, 1, 3, 5, 7, 9];
         let sum: u32 = digits
             .bytes()
             .rev()
             .enumerate()
             .map(|(i, b)| {
-                let d = u32::from(b - b'0');
-                if i % 2 == 0 {
-                    d * 2 / 10 + d * 2 % 10
-                } else {
-                    d
-                }
+                let d = usize::from(b - b'0');
+                if i % 2 == 0 { DOUBLED[d] } else { d as u32 }
             })
             .sum();
         digits.push(char::from(b'0' + ((10 - sum % 10) % 10) as u8));
