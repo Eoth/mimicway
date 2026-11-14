@@ -813,7 +813,7 @@ Defects and debts found on the way. They are taken by bundle: the items of a bun
 | Keyboard | E42, E47 | "Accessible" (0.6) |
 | Screen reader | E15, E43 | "Accessible" (0.6) |
 | Forms and messages | E8, E12, E19, E21, E31, E32 | "Words anyone can read" (0.6) |
-| Proxy path and suggestions | E7, E34, E35, E36, E46, E59, and E48 once it is unblocked | "Recorded, without personal data" (0.7) |
+| Proxy path and suggestions | E7, E34, E35, E36, E46, E59, E61, and E48 once it is unblocked | "Recorded, without personal data" (0.7) |
 | Builders and rule engine | E2, E28, E45, and E9 and E54 once decided | "Guided and explained" (0.7) |
 | Tests | E6, E11, E16 | the first theme that touches them |
 | Kafka and TCP | E3, E4 | "Protocols" (1.1) |
@@ -1131,3 +1131,13 @@ Size S
 **What.** Measure first: the family of suggestions in the scale test, over paths of many levels of words answered by costly XML bodies. Then describe each exchange once per request, before the inference, and move the computation off the async workers if it still takes more than a few milliseconds.
 
 **Done when.** Each exchange is described once per suggestion request, counted by the scale probe or a test, and a request over the largest store above stays within a bound written next to its test, seen above it on the current code.
+### E61. The caller's own forwarding headers come first in a relayed request
+
+Size S
+
+**Why.** Both relays (`forward` and `forward_with_capture`, `src/engine/proxy.rs`) pass the caller's `x-forwarded-host` and `x-forwarded-proto` on, then add their own after them (`forwarding_headers`, held by the test `both_relays_tell_the_backend_where_the_caller_reached_mimicway`). A backend that reads the first value believes what the caller wrote: a request sent over plain HTTP can claim `https`, or another host. This is the behaviour the code documents, not a regression; whether it should stay is not decided.
+
+**What.** Decide, in the code or an ADR, whether a caller's forwarding headers are kept (a chain of proxies before Mimicway), replaced, or kept only from trusted addresses, and what the relay judge (`src/engine/proxy/judge.rs`) then allows.
+
+**Done when.** The decision is written, and a test sends forged forwarding headers through both relays and checks what the backend receives against it.
+
