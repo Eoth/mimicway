@@ -247,3 +247,29 @@ fn a_real_regular_expression_is_only_proven_against_itself() {
         &shape("GET", &None, &digit)
     ));
 }
+
+// A plain-text pattern too large to compile is never matched (the matcher's own verdict, below): it is no substring
+// test. A rule that requires it matches nothing, so no rule hides it, and a rule that requires it absent takes every
+// request, so a later rule is not hidden by the one that requires it.
+#[test]
+fn a_plain_pattern_that_does_not_compile_is_never_matched() {
+    let huge = "a".repeat(1 << 20);
+    assert!(crate::engine::regex_cache::text(&huge).is_none());
+    let regex = Operator::Regex(huge.clone());
+    assert!(!MatchEngine::apply_op(&regex, Some(&huge)));
+    assert!(MatchEngine::apply_op(
+        &Operator::Contains(huge.clone()),
+        Some(&huge)
+    ));
+    let never = group(vec![query("q", regex)], vec![]);
+    let contains = group(vec![query("q", Operator::Contains(huge.clone()))], vec![]);
+    let anything = group(vec![], vec![]);
+    assert!(!hides(
+        &shape("GET", &None, &never),
+        &shape("GET", &None, &contains)
+    ));
+    assert!(!hides(
+        &shape("GET", &None, &anything),
+        &shape("GET", &None, &never)
+    ));
+}

@@ -171,9 +171,12 @@ fn universe(rules: &[&Rule]) -> Vec<RequestData> {
 /// The truth, from `first_match` alone: whether `second` answers some request by itself, and whether it answers one
 /// behind `first`.
 fn truth(first: &Rule, second: &Rule) -> (bool, bool) {
+    truth_over(first, second, &universe(&[first, second]))
+}
+
+fn truth_over(first: &Rule, second: &Rule, requests: &[RequestData]) -> (bool, bool) {
     let alone = std::slice::from_ref(second);
     let both = [first.clone(), second.clone()];
-    let requests = universe(&[first, second]);
     let answers_alone = requests
         .iter()
         .any(|r| MatchEngine::first_match(alone, r).is_some());
@@ -234,5 +237,159 @@ proptest! {
         let decidable = !has_real_regex(&first) && !has_real_regex(&second);
         let missed = hidden && decidable && winner.is_none();
         prop_assert!(!missed, "hidden, but not reported:\n{first:#?}\n{second:#?}");
+    }
+}
+
+fn rule(
+    name: &str,
+    sub_path: Option<&str>,
+    all_of: Vec<Condition>,
+    any_of: Vec<Condition>,
+) -> Rule {
+    Rule {
+        name: name.into(),
+        method: "GET".into(),
+        sub_path: sub_path.map(String::from),
+        action: RuleAction::Mock,
+        script: None,
+        response_mode: None,
+        conditions: ConditionGroup { all_of, any_of },
+        response: MockResponse {
+            status: 200,
+            headers: vec![],
+            body: vec![],
+            chaos: None,
+            events: None,
+        },
+    }
+}
+
+/// The verdict of the proptest above on one pair, for either rule as the draft.
+fn judge(first: &Rule, second: &Rule, (answers_alone, answers_behind): (bool, bool)) {
+    let decidable = !has_real_regex(first) && !has_real_regex(second);
+    for draft_is_first in [true, false] {
+        let winner = reported(first, second, draft_is_first);
+        let expected = if draft_is_first {
+            ConflictWinner::Draft
+        } else {
+            ConflictWinner::Other
+        };
+        assert!(
+            !(winner.is_some() && answers_behind),
+            "reported, but the second rule still answers a request:\n{first:#?}\n{second:#?}"
+        );
+        assert!(
+            winner.is_none_or(|w| w == expected),
+            "the first rule always wins, got {winner:?}"
+        );
+        assert!(
+            !(answers_alone && !answers_behind && decidable && winner.is_none()),
+            "hidden, but not reported:\n{first:#?}\n{second:#?}"
+        );
+    }
+}
+
+// Every pair of rules with at most one condition on the same query parameter, in `all_of` or in `any_of`, out of every
+// operator the proptest draws, plain-text and real regular expressions side by side, then every rule with two `all_of`
+// conditions against each of those: the drawn pairs leave out most of them (a real expression read as a plain text,
+// `^(a|b)$` hidden behind `Contains("a")`, and `Eq("a")` twice read as two different values went unseen).
+#[test]
+fn every_pair_of_single_condition_rules_is_judged() {
+    let mut operators = vec![Operator::Exists];
+    for text in ["", "a", "b", "ab"] {
+        operators.push(Operator::Eq(text.into()));
+        operators.push(Operator::Contains(text.into()));
+    }
+    for pattern in ["", "a", "ab", "^a", "b$", "^(a|b)$", "a|b", "["] {
+        operators.push(Operator::Regex(pattern.into()));
+    }
+    let q = |operator: &Operator| Condition {
+        source: ConditionSource::QueryParam("q".into()),
+        operator: operator.clone(),
+    };
+    let mut groups = vec![(vec![], vec![])];
+    for operator in &operators {
+        groups.push((vec![q(operator)], vec![]));
+        groups.push((vec![], vec![q(operator)]));
+    }
+    let requests: Vec<RequestData> = std::iter::once(None)
+        .chain(VALUES.iter().map(Some))
+        .map(|value| RequestData {
+            query_params: value
+                .iter()
+                .map(|v| ("q".to_string(), v.to_string()))
+                .collect(),
+            headers: HashMap::new(),
+            body: Vec::new(),
+            content_type: None,
+            path_params: HashMap::new(),
+            method: "GET".into(),
+            remaining_path: "/x".into(),
+        })
+        .collect();
+    for (first_all, first_any) in &groups {
+        let first = rule("first", None, first_all.clone(), first_any.clone());
+        for (second_all, second_any) in &groups {
+            let second = rule("second", None, second_all.clone(), second_any.clone());
+            judge(&first, &second, truth_over(&first, &second, &requests));
+        }
+    }
+    // Then two conditions in the `all_of` of one rule, the same twice included, against one condition in the other.
+    for a in &operators {
+        for b in &operators {
+            let two = rule("two", None, vec![q(a), q(b)], vec![]);
+            for (all_of, any_of) in &groups {
+                let one = rule("one", None, all_of.clone(), any_of.clone());
+                judge(&one, &two, truth_over(&one, &two, &requests));
+                judge(&two, &one, truth_over(&two, &one, &requests));
+            }
+        }
+    }
+}
+
+// Every pair of sub-paths out of patterns `match_path` reads, odd ones included: a brace on one side of a segment
+// only (`{x`, `x}`, `{`) is a literal segment there, `{}` captures under an empty name, `%7Bid%7D` is decoded first.
+#[test]
+fn every_pair_of_sub_paths_is_judged() {
+    let patterns = [
+        None,
+        Some("/x"),
+        Some("/y"),
+        Some("/{id}"),
+        Some("/:id"),
+        Some("/{}"),
+        Some("/{x"),
+        Some("/x}"),
+        Some("/{"),
+        Some("/}"),
+        Some("/%7Bid%7D"),
+        Some("/x/{id}"),
+        Some("/x/y"),
+        Some("/x/*"),
+        Some("/*"),
+        Some("/{id}/*"),
+        Some("/"),
+    ];
+    // The paths of the universe, and each odd pattern as a path of its own, so that a literal one answers some request.
+    let odd = ["/{x", "/x}", "/{", "/}", "/{}", "/{id}", "/x/{id}"];
+    let requests: Vec<RequestData> = PATHS
+        .iter()
+        .chain(&odd)
+        .map(|path| RequestData {
+            query_params: HashMap::new(),
+            headers: HashMap::new(),
+            body: Vec::new(),
+            content_type: None,
+            path_params: HashMap::new(),
+            method: "GET".into(),
+            remaining_path: (*path).into(),
+        })
+        .collect();
+    for first_path in patterns {
+        let first = rule("first", first_path, vec![], vec![]);
+        for second_path in patterns {
+            let second = rule("second", second_path, vec![], vec![]);
+            judge(&first, &second, truth_over(&first, &second, &requests));
+        }
     }
 }

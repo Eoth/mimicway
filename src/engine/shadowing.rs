@@ -23,12 +23,12 @@
 //! **One field.** Every operator is false on an absent value, so literals with no positive one hold on an absent value.
 //! Otherwise the value is present; with a positive `Eq(c)`, the value is `c`, and each literal is decided by
 //! `MatchEngine::apply_op` itself, the operator the matcher runs. Without `Eq`, the literals are `Contains(s_i)`,
-//! `¬Contains(t_j)` and `¬Eq(c_k)` (a regular expression with no special character is `Contains`), and they hold
-//! together exactly when no `t_j` is empty or a part of some `s_i`: the text `s_1 σ s_2 σ … s_n σσ…`, with a character
-//! `σ` that no constant holds, repeated past the longest `c_k`, contains each `s_i`, differs from each `c_k`, and any of
-//! its parts without `σ` lies within one `s_i`. A real regular expression is only compared with itself (`r ∧ ¬r`) and
-//! with an invalid pattern (never matched): past that the procedure answers "not proven", so it may miss a hidden
-//! rule, never report one that triggers.
+//! `¬Contains(t_j)` and `¬Eq(c_k)` (a regular expression with no special character that compiles is `Contains`; one
+//! that does not compile, however plain, is never matched), and they hold together exactly when no `t_j` is empty or a
+//! part of some `s_i`: the text `s_1 σ s_2 σ … s_n σσ…`, with a character `σ` that no constant holds, repeated past the
+//! longest `c_k`, contains each `s_i`, differs from each `c_k`, and any of its parts without `σ` lies within one `s_i`.
+//! A real regular expression is only compared with itself (`r ∧ ¬r`) and with an invalid pattern (never matched): past
+//! that the procedure answers "not proven", so it may miss a hidden rule, never report one that triggers.
 //!
 //! Pair by pair: a later rule only covered by the union of several earlier rules is not reported.
 //! `matcher/conflict_judge.rs` judges all of this against `first_match` on generated rules.
@@ -152,11 +152,16 @@ fn unsatisfiable_with<'b, 'a: 'b>(
     })
 }
 
-/// A text the operator tests the presence of, when it is a plain substring test.
+/// A text the operator tests the presence of, when it is a plain substring test: a regular expression without a
+/// special character, provided it compiles (the matcher never matches one that does not, however plain).
 fn substring_of(op: &Operator) -> Option<&str> {
     match op {
         Operator::Contains(s) => Some(s),
-        Operator::Regex(p) if regex::escape(p) == *p => Some(p),
+        Operator::Regex(p)
+            if regex::escape(p) == *p && crate::engine::regex_cache::text(p).is_some() =>
+        {
+            Some(p)
+        }
         _ => None,
     }
 }
@@ -175,15 +180,11 @@ fn field_unsatisfiable(lits: &[&Literal]) -> bool {
     {
         return true;
     }
-    let mut equal_to: Option<&str> = None;
-    for l in &positives {
-        if let Operator::Eq(c) = &*l.test {
-            if equal_to.is_some_and(|prev| prev != c) {
-                return true;
-            }
-            equal_to = Some(c);
-        }
-    }
+    // With a positive `Eq`, the value is its constant: another positive `Eq` of a different one fails on it below.
+    let equal_to = positives.iter().find_map(|l| match &*l.test {
+        Operator::Eq(c) => Some(c.as_str()),
+        _ => None,
+    });
     if let Some(value) = equal_to {
         return lits
             .iter()
@@ -200,8 +201,10 @@ fn field_unsatisfiable(lits: &[&Literal]) -> bool {
     if excluded_part {
         return true;
     }
+    // A pattern that does not compile is never matched. A plain-text one that compiles is never refused here: its
+    // negative copy, if any, was seen by `excluded_part`.
     positives.iter().any(|p| match &*p.test {
-        Operator::Regex(pattern) if substring_of(&p.test).is_none() => {
+        Operator::Regex(pattern) => {
             crate::engine::regex_cache::text(pattern).is_none()
                 || negatives
                     .iter()
@@ -249,13 +252,11 @@ impl PathShape {
                 open = true;
                 break;
             }
-            tokens.push(
-                if seg.starts_with('{') && seg.ends_with('}') && seg.len() >= 2 {
-                    Token::Param(seg[1..seg.len() - 1].to_string())
-                } else {
-                    Token::Literal(seg)
-                },
-            );
+            tokens.push(if seg.starts_with('{') && seg.ends_with('}') {
+                Token::Param(seg[1..seg.len() - 1].to_string())
+            } else {
+                Token::Literal(seg)
+            });
         }
         Some(PathShape { tokens, open })
     }

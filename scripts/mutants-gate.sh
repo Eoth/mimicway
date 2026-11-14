@@ -22,7 +22,7 @@ set -euo pipefail
 # over it (`cargo mutants -f <file>`) leaves none.
 SCOPE=(
   src/engine/matcher.rs src/engine/template.rs src/engine/script.rs src/engine/script_budget.rs src/engine/renderer.rs
-  src/engine/template_dates.rs
+  src/engine/template_dates.rs src/engine/shadowing.rs
 )
 
 args=()
