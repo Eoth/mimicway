@@ -39,8 +39,12 @@ impl Default for ProxyClient {
 /// Longest silence accepted from a proxied backend between two reads (`PROXY_READ_TIMEOUT_SECS`, default 120 s).
 /// An idle limit rather than a total one, so that long downloads and event streams that keep sending still work.
 fn read_timeout_from_env() -> Duration {
-    let secs = std::env::var("PROXY_READ_TIMEOUT_SECS")
-        .ok()
+    read_timeout(std::env::var("PROXY_READ_TIMEOUT_SECS").ok().as_deref())
+}
+
+/// A whole number of seconds above zero, blanks around allowed; anything else gives the default.
+fn read_timeout(setting: Option<&str>) -> Duration {
+    let secs = setting
         .and_then(|v| v.trim().parse::<u64>().ok())
         .filter(|s| *s > 0)
         .unwrap_or(120);
@@ -453,6 +457,59 @@ mod tests {
         assert!(status.error.is_none());
     }
 
+    // The instant of a check, whatever its outcome, read against the system clock before and after it.
+    #[tokio::test]
+    async fn every_ping_is_dated_between_the_clock_readings_around_it() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let reachable = format!("http://{}", listener.local_addr().unwrap());
+        let client = ProxyClient::new();
+        let clock = || {
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis() as u64
+        };
+        for url in [reachable.as_str(), "http://127.0.0.1:1", "not a url"] {
+            let before = clock();
+            let status = client.ping(url).await;
+            let after = clock();
+            assert!(
+                (before..=after).contains(&status.checked_at),
+                "{url}: {before} <= {} <= {after}",
+                status.checked_at
+            );
+        }
+    }
+
+    #[test]
+    fn the_read_timeout_setting_is_a_whole_number_of_seconds_above_zero() {
+        let cases = [
+            (None, 120),
+            (Some(""), 120),
+            (Some("0"), 120),
+            (Some(" 0 "), 120),
+            (Some("1"), 1),
+            (Some("2"), 2),
+            (Some(" 30\n"), 30),
+            (Some("120"), 120),
+            (Some("-1"), 120),
+            (Some("1.5"), 120),
+            (Some("5s"), 120),
+            (Some("18446744073709551615"), u64::MAX),
+            (Some("18446744073709551616"), 120),
+        ];
+        for (setting, secs) in cases {
+            assert_eq!(
+                read_timeout(setting),
+                Duration::from_secs(secs),
+                "{setting:?}"
+            );
+        }
+        // Read from the environment the tests run in, set or not.
+        let setting = std::env::var("PROXY_READ_TIMEOUT_SECS").ok();
+        assert_eq!(read_timeout_from_env(), read_timeout(setting.as_deref()));
+    }
+
     #[test]
     fn ping_never_issues_http_request() {
         // Parsing only, no network I/O: resolving the host and port never sends a request.
@@ -550,6 +607,52 @@ mod tests {
         );
     }
 
+    // What both relays add, read in the raw request the backend receives: where the caller reached Mimicway (when the
+    // request says it), and the scheme, after the caller's own headers of the same names.
+    #[tokio::test]
+    async fn both_relays_tell_the_backend_where_the_caller_reached_mimicway() {
+        for observed in [false, true] {
+            for host in [None, Some("mimic.test:7342")] {
+                let (port_tx, port_rx) = tokio::sync::oneshot::channel();
+                let server = tokio::spawn(capture_one_raw_request(port_tx));
+                let target_base = format!("http://127.0.0.1:{}", port_rx.await.unwrap());
+                let mut req = Request::builder()
+                    .method("GET")
+                    .uri("/svc/a")
+                    .header("x-forwarded-proto", "https");
+                if let Some(host) = host {
+                    req = req.header("host", host);
+                }
+                let req = req.body(Body::empty()).unwrap();
+                let client = ProxyClient::new();
+                if observed {
+                    let _ = client
+                        .forward_with_capture(&target_base, "/a", req, 1024)
+                        .await;
+                } else {
+                    let _ = client.forward(&target_base, "/a", req).await;
+                }
+                let raw = server.await.unwrap().to_ascii_lowercase();
+                let lines: Vec<&str> = raw.lines().collect();
+                let forwarded_host: Vec<&str> = lines
+                    .iter()
+                    .filter_map(|line| line.strip_prefix("x-forwarded-host: "))
+                    .collect();
+                let forwarded_proto: Vec<&str> = lines
+                    .iter()
+                    .filter_map(|line| line.strip_prefix("x-forwarded-proto: "))
+                    .collect();
+                let case = format!("observed {observed}, host {host:?}:\n{raw}");
+                assert_eq!(
+                    forwarded_host,
+                    host.into_iter().collect::<Vec<_>>(),
+                    "{case}"
+                );
+                assert_eq!(forwarded_proto, ["https", "http"], "{case}");
+            }
+        }
+    }
+
     /// A small local Axum server for the `forward_with_capture` tests: they need real HTTP responses with a
     /// Content-Length present or deliberately absent, to reach both the captured and the streamed branches.
     async fn spawn_test_target(
@@ -622,6 +725,28 @@ mod tests {
 
         let body = axum::body::to_bytes(resp.into_body(), 1024).await.unwrap();
         assert_eq!(&body[..], br#"{"id":1}"#);
+    }
+
+    // The address the caller reached Mimicway at, kept only when the request names one.
+    #[tokio::test]
+    async fn the_capture_keeps_the_callers_host_only_when_it_has_one() {
+        let (target_base, _server) = spawn_test_target("{}", false).await;
+        let client = ProxyClient::new();
+        for (host, kept) in [
+            (None, None),
+            (Some(""), None),
+            (Some("mimic.test:7342"), Some("mimic.test:7342")),
+        ] {
+            let mut req = Request::builder().method("GET").uri("/svc/a");
+            if let Some(host) = host {
+                req = req.header("host", host);
+            }
+            let (_, capture) = client
+                .forward_with_capture(&target_base, "/a", req.body(Body::empty()).unwrap(), 1024)
+                .await
+                .unwrap();
+            assert_eq!(capture.unwrap().request_host.as_deref(), kept, "{host:?}");
+        }
     }
 
     #[tokio::test]

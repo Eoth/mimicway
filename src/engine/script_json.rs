@@ -26,15 +26,13 @@ pub(super) fn parse(text: &str) -> Result<Dynamic, Box<EvalAltResult>> {
     }
 }
 
-/// JSON text of a Rhai value: unit as null, scalars as themselves, a string or any type without a JSON counterpart as
-/// text. An error names the text limit when the result would be longer.
+/// JSON text of a Rhai value: unit, NaN and infinities as null, other scalars as themselves, a string or any type
+/// without a JSON counterpart as text. An error names the text limit when the result would be longer.
 pub(super) fn to_text(value: &Dynamic) -> Result<String, Box<EvalAltResult>> {
     let mut out = BoundedText::default();
-    match serde_json::to_writer(&mut out, &Json(value)) {
-        Ok(()) => Ok(String::from_utf8(out.bytes).unwrap_or_default()),
-        Err(_) if out.over => Err(too_large(TEXT_TOO_LARGE)),
-        Err(_) => Ok(String::new()),
-    }
+    // The text limit is the one error serde_json can meet here: keys are always text, and no value fails to serialize.
+    serde_json::to_writer(&mut out, &Json(value)).map_err(|_| too_large(TEXT_TOO_LARGE))?;
+    Ok(String::from_utf8(out.0).unwrap_or_default())
 }
 
 // Totals over the whole document, as Rhai counts a value: items of every array, entries of every map, bytes of text.
@@ -176,12 +174,8 @@ impl Serialize for Json<'_> {
         } else if let Ok(number) = value.as_int() {
             serializer.serialize_i64(number)
         } else if let Ok(number) = value.as_float() {
-            // NaN and infinities have no JSON form.
-            if number.is_finite() {
-                serializer.serialize_f64(number)
-            } else {
-                serializer.serialize_unit()
-            }
+            // NaN and infinities have no JSON form: serde_json writes them as null.
+            serializer.serialize_f64(number)
         } else if let Some(array) = value.read_lock::<Array>() {
             let mut seq = serializer.serialize_seq(Some(array.len()))?;
             for item in array.iter() {
@@ -203,18 +197,14 @@ impl Serialize for Json<'_> {
 }
 
 #[derive(Default)]
-struct BoundedText {
-    bytes: Vec<u8>,
-    over: bool,
-}
+struct BoundedText(Vec<u8>);
 
 impl std::io::Write for BoundedText {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        if self.bytes.len() + buf.len() > MAX_STRING_SIZE {
-            self.over = true;
+        if self.0.len() + buf.len() > MAX_STRING_SIZE {
             return Err(std::io::Error::other(TEXT_TOO_LARGE));
         }
-        self.bytes.extend_from_slice(buf);
+        self.0.extend_from_slice(buf);
         Ok(buf.len())
     }
 
@@ -222,3 +212,6 @@ impl std::io::Write for BoundedText {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests;

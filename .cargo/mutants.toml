@@ -23,4 +23,7 @@ exclude_re = [
   '^src/engine/renderer\.rs:\d+:\d+: replace \| with \^ in TemplateRenderer::gen_uuid$',
   '^src/engine/renderer\.rs:\d+:\d+: replace < with <= in ChaosMode::should_inject_error$',
   '^src/engine/renderer\.rs:\d+:\d+: replace > with >= in ChaosMode::maybe_delay$',
+  # src/engine/script_json.rs (`.` stands for the quote of the lifetimes)
+  '^src/engine/script_json\.rs:\d+:\d+: replace <impl Visitor<.de> for (Value|Key)<._>>::expecting -> std::fmt::Result with Ok\(Default::default\(\)\)$',
+  '^src/engine/script_json\.rs:\d+:\d+: replace <impl Visitor<.de> for Value<._>>::visit_unit -> Result<Dynamic, E> with Ok\(Default::default\(\)\)$',
 ]

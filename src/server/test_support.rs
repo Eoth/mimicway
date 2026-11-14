@@ -122,12 +122,17 @@ pub(crate) async fn serve(app: Router) -> String {
 /// without an HTTP parser in between.
 ///
 /// The request is read up to the end its headers announce (Content-Length, or the last chunk), never up to a pause:
-/// TCP may deliver the body long after the headers on a loaded machine. The deadline only stops a test that would hang.
+/// TCP may deliver the body long after the headers on a loaded machine. The deadlines only stop a test that would hang.
 pub(crate) async fn capture_one_raw_request(ready: tokio::sync::oneshot::Sender<u16>) -> String {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     ready.send(listener.local_addr().unwrap().port()).unwrap();
-    let (mut stream, _) = listener.accept().await.unwrap();
+    // A relay that never connects gives an empty request, which the caller's checks refuse.
+    let accepted =
+        tokio::time::timeout(std::time::Duration::from_secs(30), listener.accept()).await;
+    let Ok(Ok((mut stream, _))) = accepted else {
+        return String::new();
+    };
     let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(10);
     let mut buf = Vec::new();
     let mut chunk = [0u8; 4096];
