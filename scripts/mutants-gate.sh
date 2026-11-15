@@ -23,6 +23,7 @@ set -euo pipefail
 SCOPE=(
   src/engine/matcher.rs src/engine/template.rs src/engine/script.rs src/engine/script_budget.rs src/engine/renderer.rs
   src/engine/template_dates.rs src/engine/shadowing.rs src/engine/script_json.rs src/engine/proxy.rs
+  src/engine/json_pointer.rs src/engine/regex_cache.rs
 )
 
 args=()

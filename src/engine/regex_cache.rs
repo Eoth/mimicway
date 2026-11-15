@@ -90,4 +90,88 @@ mod tests {
         assert!(bytes(huge).is_none());
         assert!(check_bytes("^\\x02").is_ok());
     }
+
+    /// Every pattern of up to three characters among a few that make or break a regex, against the regex crate
+    /// without limits: small patterns are far from the size limit, so the check accepts what compiles, the cache
+    /// gives a compiled pattern exactly then, and it matches what the regex crate's own one matches.
+    #[test]
+    fn short_patterns_compile_and_match_as_the_regex_crate_says() {
+        let alphabet = ['a', '(', ')', '[', ']', '*', '\\', 'x', 'F', '^'];
+        let haystacks = ["", "a", "aa", "x", "(a)", "*", "F", "\\xF"];
+        let mut patterns = vec![String::new()];
+        let mut last = vec![String::new()];
+        for _ in 0..3 {
+            last = last
+                .iter()
+                .flat_map(|prefix| alphabet.iter().map(move |c| format!("{prefix}{c}")))
+                .collect();
+            patterns.extend(last.iter().cloned());
+        }
+        let (mut texts, mut bytes_patterns) = (0, 0);
+        for pattern in &patterns {
+            let oracle = regex::Regex::new(pattern).ok();
+            assert_eq!(check_text(pattern).is_ok(), oracle.is_some(), "{pattern:?}");
+            let compiled = text(pattern);
+            assert_eq!(compiled.is_some(), oracle.is_some(), "{pattern:?}");
+            if let (Some(compiled), Some(oracle)) = (compiled, oracle) {
+                texts += 1;
+                for haystack in haystacks {
+                    assert_eq!(
+                        compiled.is_match(haystack),
+                        oracle.is_match(haystack),
+                        "{pattern:?} on {haystack:?}"
+                    );
+                }
+            }
+            let oracle = regex::bytes::Regex::new(pattern).ok();
+            assert_eq!(
+                check_bytes(pattern).is_ok(),
+                oracle.is_some(),
+                "{pattern:?}"
+            );
+            let compiled = bytes(pattern);
+            assert_eq!(compiled.is_some(), oracle.is_some(), "{pattern:?}");
+            if let (Some(compiled), Some(oracle)) = (compiled, oracle) {
+                bytes_patterns += 1;
+                for haystack in haystacks {
+                    let haystack = haystack.as_bytes();
+                    assert_eq!(
+                        compiled.is_match(haystack),
+                        oracle.is_match(haystack),
+                        "{pattern:?} on {haystack:?}"
+                    );
+                }
+            }
+        }
+        // Both answers occur: neither side of any comparison above is always the same.
+        assert!(
+            texts > 0 && texts < patterns.len(),
+            "{texts} of {}",
+            patterns.len()
+        );
+        assert!(bytes_patterns > 0 && bytes_patterns < patterns.len());
+    }
+
+    #[test]
+    fn a_full_cache_is_emptied_before_the_next_pattern() {
+        let cache: Cache<usize> = LazyLock::new(Default::default);
+        for i in 0..MAX_CACHED {
+            assert_eq!(
+                cached(&cache, &i.to_string(), |p| p.parse().ok()).as_deref(),
+                Some(&i)
+            );
+        }
+        assert_eq!(cache.read().unwrap().len(), MAX_CACHED);
+        // Already there: found, nothing compiled and nothing emptied.
+        assert_eq!(cached(&cache, "0", |_| unreachable!()).as_deref(), Some(&0));
+        assert_eq!(cache.read().unwrap().len(), MAX_CACHED);
+        let next = MAX_CACHED.to_string();
+        assert_eq!(
+            cached(&cache, &next, |p| p.parse().ok()).as_deref(),
+            Some(&MAX_CACHED)
+        );
+        let cache = cache.read().unwrap();
+        assert_eq!(cache.len(), 1);
+        assert!(cache.contains_key(&next));
+    }
 }

@@ -26,4 +26,7 @@ exclude_re = [
   # src/engine/script_json.rs (`.` stands for the quote of the lifetimes)
   '^src/engine/script_json\.rs:\d+:\d+: replace <impl Visitor<.de> for (Value|Key)<._>>::expecting -> std::fmt::Result with Ok\(Default::default\(\)\)$',
   '^src/engine/script_json\.rs:\d+:\d+: replace <impl Visitor<.de> for Value<._>>::visit_unit -> Result<Dynamic, E> with Ok\(Default::default\(\)\)$',
+  # src/engine/json_pointer.rs
+  '^src/engine/json_pointer\.rs:\d+:\d+: replace <impl Visitor<.de> for PointerSeed<._>>::expecting -> fmt::Result with Ok\(Default::default\(\)\)$',
+  '^src/engine/json_pointer\.rs:\d+:\d+: replace <impl Visitor<.de> for PointerSeed<._>>::visit_(bool|i64|u64|f64|str|unit) -> Result<Self::Value, E> with Ok\(Default::default\(\)\)$',
 ]
