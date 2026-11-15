@@ -799,6 +799,7 @@ Defects and debts found on the way. They are taken by bundle: the items of a bun
 | Bundle | Items | Goes with |
 |---|---|---|
 | The judges | E52; E49 waits for the maintainer | first, before the themes |
+| Where the relay goes | E62 | "Bounded" (0.6) |
 | Weight | E10 | "Lightest, with the proof" (0.6) |
 | Keyboard | E42, E47 | "Accessible" (0.6) |
 | Screen reader | E15, E43 | "Accessible" (0.6) |
@@ -1121,3 +1122,12 @@ Size S
 
 **Done when.** The decision is written, and a test sends forged forwarding headers through both relays and checks what the backend receives against it.
 
+### E62. A target without a host lets the caller choose where the relay goes
+
+Size S
+
+**Why.** Saving accepts any `real_target_url` that is not empty (`validate_service`), `http:` or `http:/` included. The relay appends the path of the request to the target (`target_url`), so a call to `/{service}//127.0.0.1:8080/x` on such a service reaches `http://127.0.0.1:8080/x`: whoever can call the mock chooses the host, which the [security model](docs/en/security.md) says never happens. With `PROXY_ALLOWED_TARGETS` set, the relay judges the URL it sends and refuses what the list does not hold; unset, nothing stops it. Found by the fresh review of the list of targets (2026-11-15); present before it.
+
+**What.** Saving refuses a target that is not an absolute URL with a host; the relay refuses a URL whose host is not its target's own, for a target saved before the check.
+
+**Done when.** `http:`, `http:/` and `http:///x` are refused when saved, a stored one is refused when relayed (a test seen red on the current code), and a path that starts with `//` still reaches a target that has a host, as written (`target_url`).
