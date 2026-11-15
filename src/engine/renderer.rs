@@ -2,6 +2,10 @@ use crate::engine::template::{TemplateContext, render_template};
 use crate::models::{BodyFragment, ChaosConfig, FakeKind, HeaderEntry, MockResponse};
 use axum::http::StatusCode;
 
+/// The days from today a fake past or future date falls on: never today, five years at most.
+const PAST_DAYS: std::ops::RangeInclusive<i64> = -1825..=-1;
+const FUTURE_DAYS: std::ops::RangeInclusive<i64> = 1..=1825;
+
 pub struct TemplateRenderer;
 
 impl TemplateRenderer {
@@ -97,8 +101,8 @@ impl TemplateRenderer {
             FakeKind::Siren => Self::gen_siren(),
             FakeKind::Siret => Self::gen_siret(),
             FakeKind::FullAddressFR => Self::gen_full_address_fr(),
-            FakeKind::DatePast => Self::gen_date_offset(-1825, -1),
-            FakeKind::DateFuture => Self::gen_date_offset(1, 1825),
+            FakeKind::DatePast => Self::gen_date_offset(PAST_DAYS),
+            FakeKind::DateFuture => Self::gen_date_offset(FUTURE_DAYS),
             FakeKind::TimestampMs => Self::gen_timestamp_ms(),
             FakeKind::BoolRandom => if fastrand::bool() { "true" } else { "false" }.into(),
             FakeKind::LoremSentence => Self::pick_lorem(),
@@ -304,16 +308,17 @@ impl TemplateRenderer {
         format!("{num} {street}, {postcode} {city}")
     }
 
-    fn gen_date_offset(min_days: i64, max_days: i64) -> String {
-        use crate::engine::template::epoch_to_iso;
+    fn gen_date_offset(days: std::ops::RangeInclusive<i64>) -> String {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs();
-        let offset_days = fastrand::i64(min_days..=max_days);
-        let target = (now as i64 + offset_days * 86400) as u64;
-        let iso = epoch_to_iso(target);
-        iso[..10].to_string()
+        Self::date_at(now as i64, fastrand::i64(days))
+    }
+
+    /// The date, `YYYY-MM-DD`, `offset_days` days after the instant `now` (seconds since 1970).
+    fn date_at(now: i64, offset_days: i64) -> String {
+        crate::engine::template::epoch_to_iso((now + offset_days * 86400) as u64)[..10].to_string()
     }
 
     fn gen_timestamp_ms() -> String {
@@ -744,6 +749,29 @@ mod tests {
             let bank_details = iban[4..].bytes().map(|b| u32::from(b - b'0'));
             assert_eq!(modulo_97(bank_details), 0, "key of the bank details {iban}");
         }
+    }
+
+    // The ends of the ranges of fake dates, which a draw rarely reaches (2 days in 1,827): a past date falls before
+    // the day of the draw and a future one after it, within five years, a leap day included. The instants are a
+    // second after and a second before midnight, in a leap year and the years around it.
+    #[test]
+    fn fake_dates_never_fall_on_the_day_of_the_draw_nor_beyond_five_years() {
+        for now in [
+            951_782_401,   // 2000-02-29T00:00:01Z
+            951_868_799,   // 2000-02-29T23:59:59Z
+            1_704_067_201, // 2024-01-01T00:00:01Z
+            1_767_225_599, // 2025-12-31T23:59:59Z
+        ] {
+            let day = |offset| TemplateRenderer::date_at(now, offset);
+            let today = day(0);
+            assert!(day(*PAST_DAYS.end()) < today, "{today}");
+            assert!(day(*PAST_DAYS.start()) >= day(-5 * 365 - 1), "{today}");
+            assert!(day(*FUTURE_DAYS.start()) > today, "{today}");
+            assert!(day(*FUTURE_DAYS.end()) <= day(5 * 365 + 1), "{today}");
+        }
+        assert_eq!(TemplateRenderer::date_at(951_868_799, 0), "2000-02-29");
+        assert_eq!(TemplateRenderer::date_at(951_868_799, 1), "2000-03-01");
+        assert_eq!(TemplateRenderer::date_at(951_782_401, -1), "2000-02-28");
     }
 
     // A range takes its bounds and every value between them; one whose minimum is not below its maximum gives the
