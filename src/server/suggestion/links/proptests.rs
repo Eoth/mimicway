@@ -119,6 +119,8 @@ fn literal(text: &str) -> MockResponse {
 }
 
 proptest! {
+    #![proptest_config(crate::test_seed::config(256, 0x6c69_6e6b_7275_6c65))]
+
     #[test]
     fn a_rewritten_rule_answers_the_observed_body_with_only_the_covered_addresses_replaced(parts in arb_body()) {
         let mut sent = String::new();

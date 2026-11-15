@@ -141,6 +141,8 @@ fn json_value() -> impl Strategy<Value = Value> {
 }
 
 proptest! {
+    #![proptest_config(crate::test_seed::config(256, 0x706f_696e_7465_7221))]
+
     #[test]
     fn agrees_with_value_pointer_on_any_document(doc in json_value(), pointer in "(/[a-c/~0-9+]{0,2}){0,4}") {
         let body = serde_json::to_vec(&doc).unwrap();

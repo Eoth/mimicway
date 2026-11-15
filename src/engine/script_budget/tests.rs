@@ -416,16 +416,11 @@ fn texts(parts: rhai::Array) -> Vec<String> {
 #[test]
 fn split_family_answers_what_rhai_answers() {
     use proptest::prelude::*;
-    use proptest::test_runner::{Config, RngSeed, TestRunner};
+    use proptest::test_runner::TestRunner;
     let mut ours = rhai::Engine::new();
     super::apply(&mut ours);
     let theirs = rhai::Engine::new();
-    let config = Config {
-        cases: 2048,
-        rng_seed: RngSeed::Fixed(0x7370_6c69_745f_7276),
-        failure_persistence: None,
-        ..Config::default()
-    };
+    let config = crate::test_seed::config(2048, 0x7370_6c69_745f_7276);
     let whole = std::cell::Cell::new(0);
     let result =
         TestRunner::new(config).run(&split_calls(), |(text, delimiter, segments, reverse)| {
@@ -517,13 +512,8 @@ fn replacements_at_the_limit() -> impl proptest::strategy::Strategy<Value = (Str
 #[test]
 fn replace_refuses_exactly_the_results_longer_than_a_text() {
     use proptest::prelude::*;
-    use proptest::test_runner::{Config, RngSeed, TestRunner};
-    let config = Config {
-        cases: 96,
-        rng_seed: RngSeed::Fixed(0x7265_706c_6163_6521),
-        failure_persistence: None,
-        ..Config::default()
-    };
+    use proptest::test_runner::TestRunner;
+    let config = crate::test_seed::config(96, 0x7265_706c_6163_6521);
     let (fitting, exact, over) = (
         std::cell::Cell::new(0),
         std::cell::Cell::new(0),

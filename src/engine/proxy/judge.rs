@@ -25,7 +25,7 @@ use crate::server::test_support::{auth_disabled, serve, temp_data_dir, test_stat
 use axum::body::{Body, Bytes};
 use axum::http::{HeaderMap, Request, Response};
 use proptest::prelude::*;
-use proptest::test_runner::{Config, RngSeed, TestCaseError, TestRunner};
+use proptest::test_runner::{TestCaseError, TestRunner};
 use std::collections::BTreeMap;
 
 const SEED: u64 = 0x6d69_6d69_6377_6179;
@@ -432,12 +432,7 @@ fn every_relay_answers_what_the_backend_answers_directly() {
         .build()
         .unwrap();
     let setup = rt.block_on(Setup::start());
-    let config = Config {
-        cases: CASES,
-        rng_seed: RngSeed::Fixed(SEED),
-        failure_persistence: None,
-        ..Config::default()
-    };
+    let config = crate::test_seed::config(CASES, SEED);
     let result = TestRunner::new(config).run(&arb_case(), |case| rt.block_on(setup.check(&case)));
     if let Err(e) = result {
         panic!("{e}");

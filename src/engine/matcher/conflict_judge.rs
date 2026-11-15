@@ -217,7 +217,7 @@ fn reported(first: &Rule, second: &Rule, draft_is_first: bool) -> Option<Conflic
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig { cases: 256, ..ProptestConfig::default() })]
+    #![proptest_config(crate::test_seed::config(256, 0x636f_6e66_6c69_6374))]
 
     #[test]
     fn conflict_reported_exactly_when_first_match_never_reaches_the_rule(

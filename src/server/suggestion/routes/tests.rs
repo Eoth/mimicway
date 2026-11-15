@@ -381,13 +381,8 @@ fn generated_documents() -> impl proptest::strategy::Strategy<Value = Vec<XmlNod
 #[test]
 fn xml_skeleton_describes_the_first_paths_of_the_document_that_fit() {
     use proptest::prelude::*;
-    use proptest::test_runner::{Config, RngSeed, TestRunner};
-    let config = Config {
-        cases: 1024,
-        rng_seed: RngSeed::Fixed(0x736b_656c_6574_6f6e),
-        failure_persistence: None,
-        ..Config::default()
-    };
+    use proptest::test_runner::TestRunner;
+    let config = crate::test_seed::config(1024, 0x736b_656c_6574_6f6e);
     let (cut, whole) = (std::cell::Cell::new(0), std::cell::Cell::new(0));
     let result = TestRunner::new(config).run(&generated_documents(), |nodes| {
         let mut xml = String::new();

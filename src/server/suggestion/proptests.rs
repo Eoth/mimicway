@@ -158,6 +158,8 @@ fn endpoints(calls: &[(String, ObservedExchange)]) -> Vec<(ObservationKey, Vec<O
 }
 
 proptest! {
+    #![proptest_config(crate::test_seed::config(256, 0x7375_6767_6573_7421))]
+
     #[test]
     fn suggest_never_panics(obs in prop::collection::vec(arb_exchange(), 0..15)) {
         let calls: Vec<(String, ObservedExchange)> = obs.into_iter().map(|e| ("/fuzz".to_string(), e)).collect();

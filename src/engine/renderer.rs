@@ -530,6 +530,7 @@ mod tests {
 
     #[test]
     fn render_fake_integer_range() {
+        crate::test_seed::draw_from(0x7261_6e67_6531);
         let frags = vec![BodyFragment::FakeData {
             kind: FakeKind::Integer { min: 10, max: 20 },
         }];
@@ -546,6 +547,7 @@ mod tests {
     // The email form is narrower than that of a web form (WHATWG), which takes ASCII only before the `@`.
     #[test]
     fn every_kind_of_fake_data_has_its_form_and_varies() {
+        crate::test_seed::draw_from(0x666f_726d_7331);
         use regex::Regex;
         use std::collections::BTreeSet;
         let day = |offset: i64| {
@@ -688,6 +690,7 @@ mod tests {
     // of the French bank details (bank, branch, account and key, 23 digits, a multiple of 97).
     #[test]
     fn fake_identifiers_pass_their_own_check() {
+        crate::test_seed::draw_from(0x6c75_686e_3937);
         fn luhn(digits: &str) -> bool {
             let sum: u32 = digits
                 .bytes()
@@ -747,6 +750,7 @@ mod tests {
     // minimum.
     #[test]
     fn a_fake_integer_takes_every_value_of_its_range() {
+        crate::test_seed::draw_from(0x7261_6e67_6532);
         use std::collections::BTreeSet;
         let drawn: BTreeSet<String> = (0..512)
             .map(|_| TemplateRenderer::fake_data(&FakeKind::Integer { min: -2, max: 3 }))
@@ -828,6 +832,7 @@ mod tests {
 
     #[test]
     fn chaos_error_rate_zero_never_triggers() {
+        crate::test_seed::draw_from(0x6368_616f_7330);
         let config = ChaosConfig {
             delay_ms: None,
             delay_min_ms: None,
@@ -842,6 +847,7 @@ mod tests {
 
     #[test]
     fn chaos_error_rate_below_zero_or_nan_never_triggers_and_above_one_always_does() {
+        crate::test_seed::draw_from(0x6368_616f_7331);
         let config = |rate: f64| ChaosConfig {
             delay_ms: None,
             delay_min_ms: None,
@@ -860,6 +866,7 @@ mod tests {
     // maximum gives the minimum; otherwise the fixed delay, if any.
     #[test]
     fn chaos_delay_is_drawn_between_its_bounds_or_fixed() {
+        crate::test_seed::draw_from(0x6465_6c61_7931);
         use std::collections::BTreeSet;
         let config = |delay_ms, delay_min_ms, delay_max_ms| ChaosConfig {
             delay_ms,
@@ -893,6 +900,7 @@ mod tests {
 
     #[test]
     fn chaos_error_rate_one_always_triggers() {
+        crate::test_seed::draw_from(0x6368_616f_7332);
         let config = ChaosConfig {
             delay_ms: None,
             delay_min_ms: None,

@@ -808,7 +808,7 @@ Defects and debts found on the way. They are taken by bundle: the items of a bun
 
 | Bundle | Items | Goes with |
 |---|---|---|
-| The judges | E52, then E50; E49 waits for the maintainer | first, before the themes |
+| The judges | E52; E49 waits for the maintainer | first, before the themes |
 | Weight | E10 | "Lightest, with the proof" (0.6) |
 | Keyboard | E42, E47 | "Accessible" (0.6) |
 | Screen reader | E15, E43 | "Accessible" (0.6) |
@@ -1089,16 +1089,6 @@ Size S
 **What.** Read the log of the first attempt of that run (a maintainer, with a token) and name the failing test; if it is neither of the two, open its ticket.
 
 **Done when.** The test that failed is named, and the Rust job is green on the commit that follows.
-
-### E50. Property tests that draw new cases on every CI run
-
-Size S
-
-**Why.** The property tests (`conflict_judge.rs`, `json_pointer/tests.rs`, `template.rs`, the two `proptests.rs` of `server/suggestion/`) draw new cases on every run. A defect they find then turns the CI red on whatever commit runs next, as a dependency update did with the conflict judge (E49), and the failing case is lost with the runner: the `proptest-regressions/` file stays on it, and the log needs a token. A fixed seed would keep the CI on known cases and leave exploration to a run by hand; a drawn seed keeps finding defects.
-
-**What.** Decide between a fixed seed in the CI (`PROPTEST_RNG_SEED`, read by proptest 1.12 when the test's config keeps the defaults), with an exploration run of many seeds when a judge or its subject changes, and drawn seeds printed in the job so a red run can be replayed. Write the decision where the tests are, then apply it to every property test, found by reading the code.
-
-**Done when.** Every property test runs on the chosen seeds in the CI, a test or check refuses one that does not, and a red run can be replayed from what the job shows.
 
 ### E52. The rest of the rule engine in the mutation gate
 

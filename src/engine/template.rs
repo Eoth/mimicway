@@ -788,6 +788,8 @@ mod tests {
     }
 
     proptest::proptest! {
+        #![proptest_config(crate::test_seed::config(256, 0x6c69_7465_7261_6c73))]
+
         #[test]
         fn any_text_survives_a_literal_template(text in "[{}\"a|() ]{0,24}") {
             let (p, q, h) = empty_ctx();
@@ -828,13 +830,8 @@ mod tests {
     #[test]
     fn an_expression_ends_at_its_own_closing_braces_whatever_its_texts_hold() {
         use proptest::prelude::*;
-        use proptest::test_runner::{Config, RngSeed, TestRunner};
-        let config = Config {
-            cases: 512,
-            rng_seed: RngSeed::Fixed(0x7465_6d70_6c61_7465),
-            failure_persistence: None,
-            ..Config::default()
-        };
+        use proptest::test_runner::TestRunner;
+        let config = crate::test_seed::config(512, 0x7465_6d70_6c61_7465);
         let part = (
             "[a-z }]{0,4}",
             prop_oneof![

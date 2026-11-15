@@ -1078,13 +1078,8 @@ mod tests {
     #[test]
     fn parse_date_accepts_a_date_exactly_when_each_field_is_valid() {
         use proptest::prelude::*;
-        use proptest::test_runner::{Config, RngSeed, TestRunner};
-        let config = Config {
-            cases: 1024,
-            rng_seed: RngSeed::Fixed(0x7061_7273_655f_6474),
-            failure_persistence: None,
-            ..Config::default()
-        };
+        use proptest::test_runner::TestRunner;
+        let config = crate::test_seed::config(1024, 0x7061_7273_655f_6474);
         let around = |limits: Vec<u32>, wide: std::ops::RangeInclusive<u32>| {
             prop_oneof![prop::sample::select(limits), wide]
         };
@@ -1954,13 +1949,8 @@ mod tests {
     #[test]
     fn parse_xml_items_finds_what_a_walk_of_the_tree_finds() {
         use proptest::prelude::*;
-        use proptest::test_runner::{Config, RngSeed, TestRunner};
-        let config = Config {
-            cases: 1024,
-            rng_seed: RngSeed::Fixed(0x786d_6c5f_6974_656d),
-            failure_persistence: None,
-            ..Config::default()
-        };
+        use proptest::test_runner::TestRunner;
+        let config = crate::test_seed::config(1024, 0x786d_6c5f_6974_656d);
         let (with_items, with_text) = (std::cell::Cell::new(0), std::cell::Cell::new(0));
         let with_cdata = std::cell::Cell::new(0);
         let result = TestRunner::new(config).run(&generated_documents(), |(nodes, path)| {
@@ -2036,13 +2026,8 @@ mod tests {
     #[test]
     fn extract_xpath_finds_what_a_walk_of_the_tree_finds() {
         use proptest::prelude::*;
-        use proptest::test_runner::{Config, RngSeed, TestRunner};
-        let config = Config {
-            cases: 1024,
-            rng_seed: RngSeed::Fixed(0x7870_6174_685f_6a64),
-            failure_persistence: None,
-            ..Config::default()
-        };
+        use proptest::test_runner::TestRunner;
+        let config = crate::test_seed::config(1024, 0x7870_6174_685f_6a64);
         let (with_value, with_text) = (std::cell::Cell::new(0), std::cell::Cell::new(0));
         let with_cdata = std::cell::Cell::new(0);
         let result = TestRunner::new(config).run(&generated_documents(), |(nodes, path)| {
@@ -2084,13 +2069,8 @@ mod tests {
     #[test]
     fn xml_element_escapes_every_markup_character_of_a_text() {
         use proptest::prelude::*;
-        use proptest::test_runner::{Config, RngSeed, TestRunner};
-        let config = Config {
-            cases: 256,
-            rng_seed: RngSeed::Fixed(0x6573_6361_7065_5f74),
-            failure_persistence: None,
-            ..Config::default()
-        };
+        use proptest::test_runner::TestRunner;
+        let config = crate::test_seed::config(256, 0x6573_6361_7065_5f74);
         let result = TestRunner::new(config).run(&"[a-c&<>\"' é]{0,12}", |text| {
             let xml = xml_element_impl("t", &rhai::Dynamic::from(text.clone())).unwrap();
             let inner = &xml["<t>".len()..xml.len() - "</t>".len()];

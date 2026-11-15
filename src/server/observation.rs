@@ -618,13 +618,8 @@ mod tests {
     #[test]
     fn eviction_agrees_with_a_scan_of_the_endpoints_by_last_update() {
         use proptest::prelude::*;
-        use proptest::test_runner::{Config, RngSeed, TestRunner};
-        let config = Config {
-            cases: 512,
-            rng_seed: RngSeed::Fixed(0x6f62_7365_7276_6564),
-            failure_persistence: None,
-            ..Config::default()
-        };
+        use proptest::test_runner::TestRunner;
+        let config = crate::test_seed::config(512, 0x6f62_7365_7276_6564);
         let strategy = (0..5usize, 0..4usize, prop::collection::vec(arb_op(), 0..40));
         let result = TestRunner::new(config).run(&strategy, |(max_keys, cap, ops)| {
             let store = ObservationStore::new();
