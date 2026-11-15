@@ -31,4 +31,5 @@ Un nouveau clic dans les 2 minutes qui suivent un test reprend son résultat san
 
 - Aucun prérequis : disponible dans toutes les installations.
 - Proposé seulement quand le service a une `real_target_url`.
+- Quand l'administrateur liste les cibles permises (`PROXY_ALLOWED_TARGETS`), une cible hors de la liste est donnée injoignable avec cette raison, et aucune connexion n'est ouverte ([modèle de sécurité](security.md#où-le-proxy-peut-se-connecter)).
 - Le résultat n'est **pas enregistré** avec le service : c'est un état temporaire, effacé au redémarrage de Mimicway.

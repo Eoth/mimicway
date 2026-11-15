@@ -50,22 +50,12 @@ At the maintainers' request, templates in response headers then server-sent even
 
 | Theme | Items, in order | Taken together because |
 |---|---|---|
-| Bounded | T4, T6, T10 | what the instance may reach, how often it may be asked, and the last unmaintained library |
+| Bounded | T6, T10 | how often the instance may be asked, and the last unmaintained library |
 | Proved | T13, T15 | the proof a security team asks for, and the page that holds it |
 | Scored | R10, R16, R17, R18 | the public scores; most of what is left waits for the maintainer's own steps |
 | Lightest, with the proof | E10 (in the backlog), G1, G2 | one measuring job, its budgets |
 | Accessible | T20, then the keyboard bundle and the screen reader bundle | the same judge and the same screens |
 | Words anyone can read | R12, R13, R14, R9, then the forms and messages bundle | the same screens and catalogues, one regeneration of the screenshots |
-
-### T4. Restrict where the proxy may connect
-
-Size S
-
-**Why.** An editor can point a proxy at any host the server reaches: internal services, cloud metadata endpoints. Today only the network can stop it.
-
-**What.** `PROXY_ALLOWED_TARGETS`: a list of hosts, domains or CIDR ranges that proxy targets must match, checked when a service is saved and again when a request is forwarded (after DNS resolution); link-local addresses refused unless listed.
-
-**Done when.** A target outside the list is refused at save time and at forwarding time, with tests for DNS names that resolve to a forbidden address.
 
 ### T6. Rate limits
 
@@ -437,7 +427,7 @@ Size M
 
 **Why.** Asynchronous APIs answer "accepted", then call back later (payments, document processing). Mocking them today needs another tool.
 
-**What.** A rule can schedule an HTTP call after its response: target, delay, method, templated body and headers. The callback target is an outbound flow: it obeys the proxy allow-list (T4) and appears in the security model.
+**What.** A rule can schedule an HTTP call after its response: target, delay, method, templated body and headers. The callback target is an outbound flow: it obeys the proxy allow-list ([decision 3](decisions/0003-where-the-proxy-may-connect.md)) and appears in the security model.
 
 **Done when.** An end-to-end test receives the callback with values taken from the original request.
 
@@ -734,7 +724,7 @@ Size L, to split (the composer, the sending by the server, the display of the an
 
 **Why.** To try a mock, or the real API behind it, the user leaves for another tool, then comes back to read the log. The guided first mock (U18) already calls the demo service from its panel; nothing does it for the user's own services.
 
-**What.** A composer: method, URL, headers, body, with the helpers of the response templates. The server sends the request (no cross-origin limit, one place to bound and to log). Where it may go: on an instance that listens on this machine only, anywhere, as any tool of its user could; on an instance that listens beyond it, only to the targets of `PROXY_ALLOWED_TARGETS` (T4), an unset list allowing the loopback and the targets of the user's own services, and, with authentication on, only for a member of a group. Redirects are not followed (the answer is shown), and the address connected to is the one that was checked. The response is shown like a service response, in an opaque origin ([decision 1](decisions/0001-service-responses-in-an-opaque-origin.md)), bounded in size and streamed beyond. A line of the request log can be sent again, edited first. The security model, which says today that Mimicway never connects to a host taken from a request, is rewritten for this flow.
+**What.** A composer: method, URL, headers, body, with the helpers of the response templates. The server sends the request (no cross-origin limit, one place to bound and to log). Where it may go: on an instance that listens on this machine only, anywhere, as any tool of its user could; on an instance that listens beyond it, only to the targets of `PROXY_ALLOWED_TARGETS` ([decision 3](decisions/0003-where-the-proxy-may-connect.md)), an unset list allowing the loopback and the targets of the user's own services, and, with authentication on, only for a member of a group. Redirects are not followed (the answer is shown), and the address connected to is the one that was checked. The response is shown like a service response, in an opaque origin ([decision 1](decisions/0001-service-responses-in-an-opaque-origin.md)), bounded in size and streamed beyond. A line of the request log can be sent again, edited first. The security model, which says today that Mimicway never connects to a host taken from a request, is rewritten for this flow.
 
 **Done when.** End-to-end tests send a request to a mocked service and to an allowed external target, see a target outside the list refused on an instance that listens beyond this machine, see a redirect to a refused target shown and not followed, and find that the displayed response cannot reach the interface.
 

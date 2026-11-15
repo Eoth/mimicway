@@ -319,6 +319,14 @@ async fn put_config(
 ) -> Result<Json<Arc<MockConfig>>, AppError> {
     require_super_admin(&user)?;
     let config = check_imported_config(config)?;
+    let current = state.store.snapshot().await;
+    for service in &config.services {
+        let stored = current
+            .services
+            .iter()
+            .find(|s| service_matches(s, service.group_name.as_deref(), &service.name));
+        check_target(&state, service, stored).await?;
+    }
     state
         .store
         .replace_capped(config)
@@ -997,6 +1005,28 @@ fn check_service_slot(
     Ok(())
 }
 
+/// With `PROXY_ALLOWED_TARGETS` set, a target that enters the configuration (a new service, a changed target) is judged
+/// as a connection to it would be (decision 3). A target already stored for this service is not judged again: it is at
+/// each connection anyway, and an edit of a rule is not refused for a target saved before the list.
+async fn check_target(
+    state: &AppState,
+    service: &Service,
+    stored: Option<&Service>,
+) -> Result<(), AppError> {
+    let Some(targets) = state.proxy.allowed_targets() else {
+        return Ok(());
+    };
+    let target = &service.real_target_url;
+    if target.trim().is_empty() || stored.is_some_and(|s| s.real_target_url == *target) {
+        return Ok(());
+    }
+    targets.check(target).await.map_err(|objection| {
+        let message = objection.message();
+        tracing::warn!(service = %service.name, reason = %message, "service rejected: target outside PROXY_ALLOWED_TARGETS");
+        AppError::Validation(message)
+    })
+}
+
 async fn create_service(
     State(state): State<AppState>,
     Extension(user): Extension<AuthUser>,
@@ -1007,6 +1037,11 @@ async fn create_service(
         tracing::warn!(service = %service.name, field = %e.field, reason = %e.message, "service rejected");
         return Err(AppError::Validation(e.message));
     }
+    // The right to create is checked again under the write lock; here it comes before the lookup of the target, which
+    // would tell a user without that right where a name resolves.
+    let current = state.store.snapshot().await;
+    check_service_scope(&state, &user, &current, service.group_name.as_deref())?;
+    check_target(&state, &service, None).await?;
 
     let updated = state
         .store
@@ -1039,6 +1074,25 @@ async fn update_service_impl(
     if let Err(e) = validate_service(&service) {
         tracing::warn!(service = %name, field = %e.field, reason = %e.message, "service rejected");
         return Err(AppError::Validation(e.message));
+    }
+    {
+        // The rights are checked again under the write lock; here they come before the lookup of the target, which
+        // would tell a user without them where a name resolves.
+        let current = state.store.snapshot().await;
+        let stored = current
+            .services
+            .iter()
+            .find(|s| service_matches(s, group.as_deref(), &name))
+            .ok_or(AppError::NotFound)?;
+        if state.auth_config.enabled
+            && !can_access_service(&user.username, user.is_super_admin, stored, &current.groups)
+        {
+            return Err(AppError::Forbidden);
+        }
+        if service.group_name != stored.group_name {
+            check_service_scope(&state, &user, &current, service.group_name.as_deref())?;
+        }
+        check_target(&state, &service, Some(stored)).await?;
     }
 
     let updated = state

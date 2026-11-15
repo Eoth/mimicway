@@ -4,8 +4,8 @@
 
 use mimicway::auth::AuthConfig;
 use mimicway::auth::keycloak::KeycloakClient;
-use mimicway::engine::ProxyClient;
 use mimicway::engine::script::ScriptEngine;
+use mimicway::engine::{AllowedTargets, ProxyClient};
 use mimicway::server::browser_guard::BrowserGuard;
 use mimicway::server::ping::PingCache;
 use mimicway::server::request_log::RequestLog;
@@ -39,6 +39,21 @@ async fn main() {
     let bind_ip = bind_address().unwrap_or_else(|message| exit_with(&message));
 
     let auth_config = AuthConfig::from_env().unwrap_or_else(|message| exit_with(&message));
+
+    let allowed = AllowedTargets::from_setting(|name| std::env::var(name));
+    let proxy = match allowed.unwrap_or_else(|message| exit_with(&message)) {
+        Some(targets) => {
+            tracing::info!(
+                targets = %targets.describe(),
+                "proxy targets restricted by PROXY_ALLOWED_TARGETS"
+            );
+            ProxyClient::restricted(targets)
+        }
+        None => {
+            tracing::info!("proxy targets: any (PROXY_ALLOWED_TARGETS unset)");
+            ProxyClient::new()
+        }
+    };
 
     let data_dir = MockStore::data_path();
     let store = MockStore::load_or_init(&data_dir)
@@ -103,7 +118,7 @@ async fn main() {
 
     let state = AppState {
         store,
-        proxy: ProxyClient::new(),
+        proxy,
         seq_counters: Arc::new(RwLock::new(HashMap::new())),
         request_log: RequestLog::new(),
         auth_config,

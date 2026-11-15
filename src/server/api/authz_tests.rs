@@ -31,6 +31,11 @@ fn grouped(name: &str, group: &str) -> Service {
 }
 
 async fn start() -> App {
+    start_with(None).await
+}
+
+/// With `allowed_targets`, the proxy connects only within that `PROXY_ALLOWED_TARGETS` list.
+async fn start_with(allowed_targets: Option<&str>) -> App {
     let realm = FakeRealm::start().await;
     let auth_config = realm.auth_config(vec!["root".into()]);
     let config = MockConfig {
@@ -43,6 +48,11 @@ async fn start() -> App {
     let data_dir = temp_data_dir("authz");
     let mut state = test_state(&data_dir, config, auth_config.clone()).await;
     state.keycloak = Some(KeycloakClient::new(auth_config));
+    if let Some(list) = allowed_targets {
+        state.proxy = crate::engine::ProxyClient::restricted(
+            crate::engine::AllowedTargets::parse(list).unwrap(),
+        );
+    }
     let root = serve(crate::server::build_router(state, &data_dir)).await;
     App {
         root,
@@ -114,6 +124,77 @@ async fn a_service_moves_only_where_its_editor_may_create_services() {
         .put("root", path, service_json("billing", Some("team-b")))
         .await;
     assert_eq!(status, StatusCode::OK);
+}
+
+/// With `PROXY_ALLOWED_TARGETS` set, saving a target looks its name up: a user without the right to save the service
+/// is refused before the lookup, and learns nothing of where a name resolves.
+#[tokio::test]
+async fn a_target_is_looked_up_only_for_a_user_who_may_save_its_service() {
+    let app = start_with(Some("10.0.0.0/8")).await;
+    let aimed = |name: &str, group: &str| {
+        let mut service = service_json(name, Some(group));
+        service["real_target_url"] = json!("http://localhost:1/");
+        service
+    };
+    let billing = "/groups/team-a/services/billing";
+    let refused = [
+        (
+            "dave",
+            reqwest::Method::POST,
+            "/services",
+            aimed("fresh", "team-a"),
+        ),
+        (
+            "carol",
+            reqwest::Method::POST,
+            "/services",
+            aimed("fresh", "team-a"),
+        ),
+        (
+            "carol",
+            reqwest::Method::PUT,
+            billing,
+            aimed("billing", "team-a"),
+        ),
+        (
+            "bob",
+            reqwest::Method::PUT,
+            billing,
+            aimed("billing", "team-b"),
+        ),
+    ];
+    for (user, method, path, body) in refused {
+        let (status, body) = app.call(user, method.clone(), path, Some(body)).await;
+        assert_eq!(
+            status,
+            StatusCode::FORBIDDEN,
+            "{user} {method} {path}: {body}"
+        );
+    }
+    let allowed = [
+        (
+            "alice",
+            reqwest::Method::POST,
+            "/services",
+            aimed("fresh", "team-a"),
+        ),
+        (
+            "bob",
+            reqwest::Method::PUT,
+            billing,
+            aimed("billing", "team-a"),
+        ),
+    ];
+    for (user, method, path, body) in allowed {
+        let (status, body) = app.call(user, method.clone(), path, Some(body)).await;
+        assert_eq!(
+            status,
+            StatusCode::BAD_REQUEST,
+            "{user} {method} {path}: {body}"
+        );
+        let message = body["error"].as_str().unwrap();
+        assert!(message.contains("resolves to 127.0.0.1"), "{message}");
+    }
 }
 
 #[tokio::test]

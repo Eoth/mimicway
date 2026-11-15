@@ -21,7 +21,7 @@ Read along the path a request takes, from the outside in. Production code lives 
 | 4 | `src/auth/middleware.rs`, `src/auth/keycloak.rs` | Which paths require a token; local JWT validation (algorithms, issuer, expiry, client); key-set refresh limits. |
 | 5 | `src/server/api.rs` | Authorization of each endpoint (matrix below); validation of every mutation, done under the store's write lock (`try_update`). |
 | 6 | `src/server/validation.rs` | Names, reserved routes, dot segments, regular expressions, backup file names (path traversal). |
-| 7 | `src/server/intercept.rs`, `src/engine/proxy.rs` | Service traffic: matching, mock rendering, proxying (the only outbound HTTP), timeouts, hop-by-hop headers. |
+| 7 | `src/server/intercept.rs`, `src/engine/proxy.rs`, `src/engine/proxy/targets.rs` | Service traffic: matching, mock rendering, proxying (the only outbound HTTP), timeouts, hop-by-hop headers; where the proxy may connect (`PROXY_ALLOWED_TARGETS`, judged by the resolver handed to the HTTP client and before sending to an address, [decision 3](decisions/0003-where-the-proxy-may-connect.md)). |
 | 8 | `src/engine/script.rs`, `src/engine/script_budget.rs`, `src/engine/script_json.rs`, `alloc/src/lib.rs` | Rhai sandbox: disabled module loading and `eval`, native functions; limits of a run (operations, time, memory, variables, size of each value), the functions that stop before building a value over them, and the allocator that counts what a run holds (the project's only `unsafe` code). |
 | 9 | `src/engine/template.rs`, `src/engine/renderer.rs`, `src/engine/matcher.rs`, `src/engine/regex_cache.rs` | Response templates, chaos injection, condition evaluation on untrusted input. |
 | 10 | `src/store/mod.rs` | Persistence: atomic writes, backups, restore. |

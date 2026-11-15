@@ -4,7 +4,13 @@ use futures_util::StreamExt;
 use reqwest::Client;
 use serde::Serialize;
 use std::collections::HashMap;
+use std::net::SocketAddr;
+use std::sync::Arc;
 use std::time::Duration;
+
+mod targets;
+pub use targets::AllowedTargets;
+pub(crate) use targets::Objection;
 
 const PING_TIMEOUT: Duration = Duration::from_secs(3);
 
@@ -28,6 +34,39 @@ pub fn now_ms() -> u64 {
 #[derive(Clone)]
 pub struct ProxyClient {
     client: Client,
+    /// `PROXY_ALLOWED_TARGETS` when set (decision 3); `None` allows every target.
+    targets: Option<Arc<AllowedTargets>>,
+}
+
+/// What a relay answers instead of the backend's response.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProxyError {
+    /// The backend could not be reached or read: 502, or 504 after a timeout.
+    Upstream(StatusCode),
+    /// The target is outside `PROXY_ALLOWED_TARGETS`: nothing was sent to it.
+    Refused,
+}
+
+/// The body of a relay refused by `PROXY_ALLOWED_TARGETS`. Written in English, like every response of a service.
+pub const REFUSED_TARGET: &str = "The target of this service is outside the targets this server may relay to \
+(PROXY_ALLOWED_TARGETS): the request was not forwarded.";
+
+impl ProxyError {
+    pub fn status(self) -> StatusCode {
+        match self {
+            ProxyError::Upstream(status) => status,
+            ProxyError::Refused => StatusCode::BAD_GATEWAY,
+        }
+    }
+}
+
+impl axum::response::IntoResponse for ProxyError {
+    fn into_response(self) -> axum::response::Response {
+        match self {
+            ProxyError::Upstream(status) => status.into_response(),
+            ProxyError::Refused => (StatusCode::BAD_GATEWAY, REFUSED_TARGET).into_response(),
+        }
+    }
 }
 
 impl Default for ProxyClient {
@@ -59,56 +98,133 @@ impl ProxyClient {
     /// Without these bounds, a backend that accepts the connection and never answers held the client's request
     /// (and a task) open forever.
     pub fn with_timeouts(connect: Duration, read: Duration) -> Self {
-        Self {
-            client: Client::builder()
-                .redirect(reqwest::redirect::Policy::none())
-                .connect_timeout(connect)
-                .read_timeout(read)
-                .build()
-                .expect("reqwest client"),
+        Self::build(connect, read, None)
+    }
+
+    /// A client that connects only where `targets` allows (`PROXY_ALLOWED_TARGETS`), with the usual timeouts.
+    pub fn restricted(targets: AllowedTargets) -> Self {
+        Self::build(
+            Duration::from_secs(10),
+            read_timeout_from_env(),
+            Some(Arc::new(targets)),
+        )
+    }
+
+    /// With a list, names resolve through `targets::Gate`, and the system's proxy variables are ignored: a connection
+    /// through an HTTP proxy would reach the proxy's address, not the target's, and the target would be resolved by
+    /// the proxy, out of reach of the list. Redirects are never followed: a redirect to an address would reach a
+    /// connection that neither `Gate` (never asked for an address) nor `check_address` (the first URL only) judged.
+    fn build(connect: Duration, read: Duration, targets: Option<Arc<AllowedTargets>>) -> Self {
+        let mut builder = Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .connect_timeout(connect)
+            .read_timeout(read);
+        if let Some(targets) = &targets {
+            builder = builder
+                .no_proxy()
+                .dns_resolver(Arc::new(targets::Gate(Arc::clone(targets))));
         }
+        Self {
+            client: builder.build().expect("reqwest client"),
+            targets,
+        }
+    }
+
+    /// The list this client connects within, if any.
+    pub fn allowed_targets(&self) -> Option<&AllowedTargets> {
+        self.targets.as_deref()
+    }
+
+    /// A target written as an address never reaches the resolver (`targets::Gate`): it is judged here, on the URL as
+    /// the HTTP client reads it, before anything is sent.
+    fn check_address(&self, url: &str) -> Result<(), ProxyError> {
+        let Some(targets) = &self.targets else {
+            return Ok(());
+        };
+        let address = match reqwest::Url::parse(url).map(|u| u.host().map(|h| h.to_owned())) {
+            Ok(Some(url::Host::Ipv4(address))) => std::net::IpAddr::V4(address),
+            Ok(Some(url::Host::Ipv6(address))) => std::net::IpAddr::V6(address),
+            _ => return Ok(()),
+        };
+        if targets.admits(address, false) {
+            Ok(())
+        } else {
+            tracing::warn!(url = %crate::server::redaction::redact_url_credentials(url), "proxy target refused");
+            Err(ProxyError::Refused)
+        }
+    }
+
+    /// The error of a request the HTTP client could not send: `Refused` when the resolver found no address the list
+    /// admits.
+    fn send_error(e: reqwest::Error, url: &str, what: &str) -> ProxyError {
+        let url = crate::server::redaction::redact_url_credentials(url);
+        if targets::refused_in(&e) {
+            tracing::warn!(url = %url, "proxy target refused");
+            return ProxyError::Refused;
+        }
+        let status = upstream_error_status(&e);
+        tracing::error!(error = %e.without_url(), url = %url, "{what}");
+        ProxyError::Upstream(status)
     }
 
     /// Opens a TCP connection to the target's host and port (the URL's port, else 443 for https and 80 otherwise) and
     /// closes it. Nothing else: no HTTP request, no TLS handshake, no call to any route of the backend, so the answer
     /// says whether the socket opened in time, not whether the API works.
     pub async fn ping(&self, url: &str) -> PingStatus {
+        let unreachable = |error: String| PingStatus {
+            reachable: false,
+            checked_at: now_ms(),
+            error: Some(error),
+        };
         let (host, port) = match parse_host_port(url) {
             Ok(hp) => hp,
-            Err(e) => {
-                return PingStatus {
-                    reachable: false,
-                    checked_at: now_ms(),
-                    error: Some(e),
-                };
-            }
+            Err(e) => return unreachable(e),
         };
 
-        match tokio::time::timeout(
-            PING_TIMEOUT,
-            tokio::net::TcpStream::connect((host.as_str(), port)),
-        )
-        .await
-        {
-            Ok(Ok(_stream)) => PingStatus {
+        match tokio::time::timeout(PING_TIMEOUT, self.ping_connect(&host, port)).await {
+            Ok(Ok(())) => PingStatus {
                 reachable: true,
                 checked_at: now_ms(),
                 error: None,
             },
-            Ok(Err(e)) => PingStatus {
-                reachable: false,
-                checked_at: now_ms(),
-                error: Some(e.to_string()),
-            },
-            Err(_elapsed) => PingStatus {
-                reachable: false,
-                checked_at: now_ms(),
-                error: Some(crate::i18n::tr(
-                    "no answer after {0} s",
-                    &[&PING_TIMEOUT.as_secs()],
-                )),
-            },
+            Ok(Err(e)) => unreachable(e),
+            Err(_elapsed) => unreachable(crate::i18n::tr(
+                "no answer after {0} s",
+                &[&PING_TIMEOUT.as_secs()],
+            )),
         }
+    }
+
+    /// Opens and drops one TCP connection, to the addresses the list admits when there is one.
+    async fn ping_connect(&self, host: &url::Host<String>, port: u16) -> Result<(), String> {
+        let addresses: Vec<SocketAddr> = match (&self.targets, host) {
+            (Some(targets), host) => match targets.connectable(borrowed(host), port).await {
+                Ok(addresses) => addresses,
+                Err(targets::Blocked::Unresolved(e)) => return Err(e.to_string()),
+                Err(targets::Blocked::Refused(addresses)) => {
+                    let objection = match addresses.is_empty() {
+                        true => Objection::Outside {
+                            host: host.to_string(),
+                        },
+                        false => Objection::ResolvesOutside {
+                            host: host.to_string(),
+                            addresses,
+                        },
+                    };
+                    return Err(objection.message());
+                }
+            },
+            (None, url::Host::Ipv4(address)) => vec![SocketAddr::new((*address).into(), port)],
+            (None, url::Host::Ipv6(address)) => vec![SocketAddr::new((*address).into(), port)],
+            (None, url::Host::Domain(name)) => tokio::net::lookup_host((name.as_str(), port))
+                .await
+                .map_err(|e| e.to_string())?
+                .collect(),
+        };
+        tokio::net::TcpStream::connect(&addresses[..])
+            .await
+            .map(drop)
+            .map_err(|e| e.to_string())
     }
 
     pub async fn forward(
@@ -116,10 +232,11 @@ impl ProxyClient {
         target_base: &str,
         remaining_path: &str,
         req: Request<Body>,
-    ) -> Result<Response<Body>, StatusCode> {
+    ) -> Result<Response<Body>, ProxyError> {
         let (parts, body) = req.into_parts();
 
         let url = target_url(target_base, remaining_path, parts.uri.query());
+        self.check_address(&url)?;
 
         let method = reqwest::Method::from_bytes(parts.method.as_str().as_bytes())
             .unwrap_or(reqwest::Method::GET);
@@ -150,15 +267,10 @@ impl ProxyClient {
         });
         builder = builder.body(reqwest::Body::wrap_stream(req_stream));
 
-        let upstream_resp = builder.send().await.map_err(|e| {
-            let status = upstream_error_status(&e);
-            tracing::error!(
-                error = %e.without_url(),
-                url = %crate::server::redaction::redact_url_credentials(&url),
-                "proxy forward failed"
-            );
-            status
-        })?;
+        let upstream_resp = builder
+            .send()
+            .await
+            .map_err(|e| Self::send_error(e, &url, "proxy forward failed"))?;
 
         let status = StatusCode::from_u16(upstream_resp.status().as_u16())
             .unwrap_or(StatusCode::BAD_GATEWAY);
@@ -173,7 +285,7 @@ impl ProxyClient {
         let resp_stream = upstream_resp.bytes_stream();
         response
             .body(Body::from_stream(resp_stream))
-            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+            .map_err(|_| ProxyError::Upstream(StatusCode::INTERNAL_SERVER_ERROR))
     }
 
     /// `forward()`, plus a copy of the request and the response for traffic observation (`server::observation`). Only
@@ -195,7 +307,7 @@ impl ProxyClient {
         remaining_path: &str,
         req: Request<Body>,
         max_buffer: usize,
-    ) -> Result<(Response<Body>, Option<ProxyCaptureRaw>), StatusCode> {
+    ) -> Result<(Response<Body>, Option<ProxyCaptureRaw>), ProxyError> {
         let (parts, body) = req.into_parts();
 
         let request_content_length = parts
@@ -230,6 +342,7 @@ impl ProxyClient {
             })
             .unwrap_or_default();
         let url = target_url(target_base, remaining_path, parts.uri.query());
+        self.check_address(&url)?;
 
         let method = reqwest::Method::from_bytes(parts.method.as_str().as_bytes())
             .unwrap_or(reqwest::Method::GET);
@@ -264,19 +377,14 @@ impl ProxyClient {
 
         let body_bytes = axum::body::to_bytes(body, max_buffer).await.map_err(|e| {
             tracing::error!(error = %e, "observed request body exceeds capture buffer");
-            StatusCode::PAYLOAD_TOO_LARGE
+            ProxyError::Upstream(StatusCode::PAYLOAD_TOO_LARGE)
         })?;
         builder = builder.body(body_bytes.to_vec());
 
-        let upstream_resp = builder.send().await.map_err(|e| {
-            let status = upstream_error_status(&e);
-            tracing::error!(
-                error = %e.without_url(),
-                url = %crate::server::redaction::redact_url_credentials(&url),
-                "proxy forward (observed) failed"
-            );
-            status
-        })?;
+        let upstream_resp = builder
+            .send()
+            .await
+            .map_err(|e| Self::send_error(e, &url, "proxy forward (observed) failed"))?;
 
         let status = StatusCode::from_u16(upstream_resp.status().as_u16())
             .unwrap_or(StatusCode::BAD_GATEWAY);
@@ -304,7 +412,7 @@ impl ProxyClient {
             let resp_stream = upstream_resp.bytes_stream();
             let resp = response_builder
                 .body(Body::from_stream(resp_stream))
-                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+                .map_err(|_| ProxyError::Upstream(StatusCode::INTERNAL_SERVER_ERROR))?;
             return Ok((resp, None));
         }
 
@@ -315,11 +423,11 @@ impl ProxyClient {
                 url = %crate::server::redaction::redact_url_credentials(&url),
                 "reading observed response body failed"
             );
-            status
+            ProxyError::Upstream(status)
         })?;
         let resp = response_builder
             .body(Body::from(response_bytes.clone()))
-            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+            .map_err(|_| ProxyError::Upstream(StatusCode::INTERNAL_SERVER_ERROR))?;
 
         let capture = ProxyCaptureRaw {
             request_host: (!original_host.is_empty()).then_some(original_host),
@@ -365,16 +473,24 @@ pub(crate) fn target_url(target_base: &str, remaining_path: &str, query: Option<
 }
 
 /// Host and port of a URL for the TCP check: the URL's port, else 443 for https and 80 for anything else.
-fn parse_host_port(url: &str) -> Result<(String, u16), String> {
+fn parse_host_port(url: &str) -> Result<(url::Host<String>, u16), String> {
     let parsed = url::Url::parse(url).map_err(|e| crate::i18n::tr("invalid URL: {0}", &[&e]))?;
     let host = parsed
-        .host_str()
+        .host()
         .ok_or_else(|| crate::i18n::tr("URL without a host", &[]))?
-        .to_string();
+        .to_owned();
     let port = parsed
         .port()
         .unwrap_or(if parsed.scheme() == "https" { 443 } else { 80 });
     Ok((host, port))
+}
+
+fn borrowed(host: &url::Host<String>) -> url::Host<&str> {
+    match host {
+        url::Host::Domain(name) => url::Host::Domain(name.as_str()),
+        url::Host::Ipv4(address) => url::Host::Ipv4(*address),
+        url::Host::Ipv6(address) => url::Host::Ipv6(*address),
+    }
 }
 
 /// 504 when the backend did not answer in time, 502 for any other failure to reach it.
@@ -430,7 +546,10 @@ mod tests {
             .unwrap();
 
         let result = client.forward("http://127.0.0.1:1", "/test", req).await;
-        assert_eq!(result.unwrap_err(), StatusCode::BAD_GATEWAY);
+        assert_eq!(
+            result.unwrap_err(),
+            ProxyError::Upstream(StatusCode::BAD_GATEWAY)
+        );
     }
 
     #[tokio::test]
@@ -515,7 +634,7 @@ mod tests {
         // Parsing only, no network I/O: resolving the host and port never sends a request.
         let (host, port) =
             parse_host_port("http://example.invalid:1234/some/business/path").unwrap();
-        assert_eq!(host, "example.invalid");
+        assert_eq!(host, url::Host::Domain("example.invalid".to_string()));
         assert_eq!(port, 1234);
     }
 
@@ -523,7 +642,7 @@ mod tests {
     fn parse_host_port_explicit_port() {
         assert_eq!(
             parse_host_port("http://svc.default.svc:9090").unwrap(),
-            ("svc.default.svc".to_string(), 9090)
+            (url::Host::Domain("svc.default.svc".to_string()), 9090)
         );
     }
 
@@ -531,7 +650,7 @@ mod tests {
     fn parse_host_port_defaults_http_80() {
         assert_eq!(
             parse_host_port("http://svc.default.svc").unwrap(),
-            ("svc.default.svc".to_string(), 80)
+            (url::Host::Domain("svc.default.svc".to_string()), 80)
         );
     }
 
@@ -539,7 +658,7 @@ mod tests {
     fn parse_host_port_defaults_https_443() {
         assert_eq!(
             parse_host_port("https://secure.example.com").unwrap(),
-            ("secure.example.com".to_string(), 443)
+            (url::Host::Domain("secure.example.com".to_string()), 443)
         );
     }
 
@@ -815,7 +934,10 @@ mod tests {
         let result = client
             .forward(&format!("http://{addr}"), "/x", Request::new(Body::empty()))
             .await;
-        assert_eq!(result.err(), Some(StatusCode::GATEWAY_TIMEOUT));
+        assert_eq!(
+            result.err(),
+            Some(ProxyError::Upstream(StatusCode::GATEWAY_TIMEOUT))
+        );
         assert!(started.elapsed() < std::time::Duration::from_secs(5));
     }
 }

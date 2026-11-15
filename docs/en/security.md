@@ -25,10 +25,26 @@ There is no other one: no telemetry, no update check, no hard-coded host. Outbou
 
 | Flow | Trigger | Destination | Bounds |
 |---|---|---|---|
-| Availability ping | A user clicks "test the target" | `real_target_url` of that service | TCP connection only, no HTTP request, no TLS handshake; 3 s timeout; result cached 2 minutes |
-| Proxy | A request matches a service in proxy mode, or a rule with `action: proxy` | `real_target_url` of that service, never another host | 10 s to connect, 120 s of silence at most (`PROXY_READ_TIMEOUT_SECS`); redirects are not followed; paths with `.`/`..` segments are refused before forwarding |
+| Availability ping | A user clicks "test the target" | `real_target_url` of that service, within `PROXY_ALLOWED_TARGETS` when set | TCP connection only, no HTTP request, no TLS handshake; 3 s timeout; result cached 2 minutes |
+| Proxy | A request matches a service in proxy mode, or a rule with `action: proxy` | `real_target_url` of that service, never another host, within `PROXY_ALLOWED_TARGETS` when set; with that list unset, through the HTTP proxy that `HTTP_PROXY`, `HTTPS_PROXY` or `ALL_PROXY` names, if the operator sets one | 10 s to connect, 120 s of silence at most (`PROXY_READ_TIMEOUT_SECS`); redirects are not followed; paths with `.`/`..` segments are refused before forwarding |
+| Target lookup | Saving a new or changed proxy target while `PROXY_ALLOWED_TARGETS` is set | The system's DNS resolver, for the target's name | 5 s; no connection to the target |
 | Keycloak | `AUTH_ENABLED=true` only | `KEYCLOAK_URL` | Login, token refresh, realm key set (cached 5 minutes); 5 s to connect, 10 s overall |
 | Kafka | Built with `--features messaging-kafka` **and** `KAFKA_ENABLED=true` | `KAFKA_BROKERS` | Consumer and producer on the configured topics |
+
+## Where the proxy may connect
+
+`PROXY_ALLOWED_TARGETS` lists the targets the proxies may reach, separated by commas: a host name (`api.example.com`), its subdomains (`*.example.com`: any depth, not `example.com` itself), an address (`10.0.0.5`, `::1`) or a range (`10.0.0.0/8`, `fd00::/8`). Ports are not restricted. **Unset, nothing changes: every target is allowed**, as before the setting existed. Set but empty, no target is allowed. A value that cannot be read (not UTF-8, a port, a scheme, a path, a `*` elsewhere than a leading `*.`, a range with bits set past its prefix) stops the server at start and names the entry: a misspelt list never falls back to allowing everything.
+
+The list applies to the addresses a connection really uses ([decision 3](../../decisions/0003-where-the-proxy-may-connect.md), `src/engine/proxy/targets.rs`). The relay's HTTP client resolves a target's name through Mimicway's own resolver, which hands it only the addresses the list admits: a name that resolves elsewhere, or elsewhere a moment later, cannot lead the connection outside. A target written as an address, in any spelling the URL standard reads (`2130706433`, `0x7f.1`, `[::ffff:127.0.0.1]`), is judged before anything is sent. The same judgement serves the three relays (a service in proxy mode, an observed service, a rule with `action: proxy`), the WSDL requests let through, and the availability check.
+
+- A name that a name or subdomains entry matches may connect to the addresses it resolves to; a name that no entry matches, only to those an address or range entry holds.
+- Link-local addresses (`169.254.0.0/16`, where most clouds serve their metadata, and `fe80::/10`), unspecified ones (`0.0.0.0`, which Linux connects to the machine itself, and `::`) and the metadata endpoints of AWS over IPv6 (`fd00:ec2::254`) and of Alibaba Cloud (`100.100.100.200`) are admitted only by an entry inside their own range (`169.254.169.254`, `169.254.0.0/16`, `fd00:ec2::254`): a listed name that resolves there is refused, and `0.0.0.0/0` or `fd00::/8` does not open them. It does admit loopback addresses (`127.0.0.1`, the machine's own services): list narrower ranges to keep those out.
+- An IPv4 address written in IPv6 (`::ffff:a.b.c.d`) is judged as that IPv4 address.
+- A refused relay answers 502 with a sentence that names `PROXY_ALLOWED_TARGETS`, and is written in the request log; a refused availability check reports the target unreachable, with the reason.
+- Saving refuses a new or changed target outside the list (creating a service, changing its target, importing a configuration), and says why, once the editor's right to save the service is checked (a user without it learns nothing of where a name resolves); a name that no entry matches and that does not resolve is refused too, since nothing proves it inside. A target already stored is judged at each connection, not when its service is saved again.
+- With the list set, the relay connects directly: `HTTP_PROXY`, `HTTPS_PROXY` and `ALL_PROXY` are ignored, so that the address judged is the address connected. Redirects are never followed.
+
+Tests: `src/engine/proxy/targets/tests.rs` resolves real names and sends spellings of loopback and unspecified addresses to real sockets, through each relay, the availability check and saving. Not seen: IPv6 addresses that embed an IPv4 address other than in the mapped form (NAT64, 6to4) are judged as IPv6 addresses; a listed name is trusted with every address its DNS gives outside the special ranges; a cloud metadata endpoint outside link-local other than the two named is an ordinary address.
 
 ## Who is trusted with what
 
@@ -36,7 +52,7 @@ There is no other one: no telemetry, no update check, no hard-coded host. Outbou
 
 **Configuration editors** (UI and API users) define responses, proxy targets and scripts. Without authentication, anyone who can reach the management API is an editor with every right: that is the intended mode for a developer's machine, which is why the binary only listens on loopback by default. With `AUTH_ENABLED=true`, editors are Keycloak users and rights follow groups: a group admin manages the group's services and members, a member edits its services, and only super-admins (`SUPER_ADMINS`) manage ungrouped services and the raw TCP mocks, read the Kafka message log or simulate messages, reset the configuration or restore backups. These boundaries are checked on every endpoint, including moves between groups, the full configuration export and the request log (`src/server/api.rs`, tests in `src/server/api/authz_tests.rs`).
 
-Because an editor chooses proxy targets, Mimicway will send HTTP requests to any host an editor configures: that is what a proxy is. Decide who may edit (authentication) and restrict where the process may connect (network policy) accordingly.
+Because an editor chooses proxy targets, Mimicway sends HTTP requests to any host an editor configures, unless the operator lists the allowed ones in `PROXY_ALLOWED_TARGETS` ([above](#where-the-proxy-may-connect)). Decide who may edit (authentication), set that list, and keep a network policy as the outer fence.
 
 **Rule scripts** (Rhai) are written by editors and run on every matching request, in a sandbox: at most 10,000 operations, 500 ms, 16 MiB of memory (counted by the allocator, whatever holds it) and 64 variables per run, bounded call depth, string, array and map sizes (the native functions, `replace` and `split` stop before building a value over those sizes), no file access (`import` resolves nothing), no `eval`, no network, and output of `print`/`debug` sent to the debug log. The native functions never panic, whatever their arguments (`src/engine/script.rs`, tests next to it).
 
@@ -83,7 +99,7 @@ The login form uses Keycloak's password grant. Replacing it with the authorizati
 
 1. Shared instance: set `AUTH_ENABLED=true` with Keycloak and list `SUPER_ADMINS`.
 2. Keep the default loopback binding on workstations; in a cluster, expose Mimicway through your ingress with TLS (Mimicway itself serves plain HTTP).
-3. Restrict egress (Kubernetes `NetworkPolicy`, firewall) to the backends you actually proxy and to Keycloak. The Kubernetes base refuses everything but name resolution: add a policy of your own for those ([k8s/README.md](../../k8s/README.md#network-policy)).
+3. List the backends you actually proxy in `PROXY_ALLOWED_TARGETS`, and restrict egress (Kubernetes `NetworkPolicy`, firewall) to them and to Keycloak. The Kubernetes base refuses everything but name resolution: add a policy of your own for those ([k8s/README.md](../../k8s/README.md#network-policy)).
 4. Set `CORS_ALLOWED_ORIGINS` only if the UI is served from another origin than the API.
 5. Add your own credential header names to `REDACT_HEADERS`.
 6. Use the provided image and manifests, or reproduce their restrictions (non-root, read-only root filesystem, no capabilities).
@@ -115,11 +131,12 @@ The sections above state the facts. This one ties them into an argument, the pro
 | A website that a developer visits while Mimicway runs on their machine | Cross-site requests to the management API, DNS rebinding | The browser guard: CORS allow-list, refusal of cross-site writes, host name check without authentication |
 | Anyone on a network the port is exposed to | Reading or changing the mocks | Loopback by default; authentication with Keycloak; TLS at the ingress |
 | An authenticated user | Reaching another group's services, or administration | Authorization on every endpoint, tested through the real router with signed tokens |
+| An editor, trusted to configure | Pointing a proxy at internal services or the cloud metadata endpoint | `PROXY_ALLOWED_TARGETS`, judged on the addresses connected, after DNS; link-local addresses only when listed on their own; an egress policy |
 | An editor, trusted to configure | Escaping from a rule script | The Rhai sandbox: no file, network, `import` or `eval`, bounded operations, sizes and depth |
 | The applications under test, a proxied backend | Oversized or malformed input, path traversal, resource exhaustion | Body limit, typed parsing, XML without DTD, size-limited regular expressions, dot segments refused, timeouts, fuzzed parsers |
 | A compromised dependency or CI action | Malicious code or a known vulnerability in the build | Lock files, actions and images pinned by digest, cargo deny, OSV, npm audit, Trivy, Dependabot, CodeQL |
 
-The operator (environment, container, network) is trusted. Editors are trusted to choose proxy targets: forwarding to the host an editor configured is what a proxy does, so restricting egress belongs to the deployment (point 3 of the hardening checklist).
+The operator (environment, container, network) is trusted. Editors are trusted to choose proxy targets: forwarding to the host an editor configured is what a proxy does. The deployment bounds that choice, with `PROXY_ALLOWED_TARGETS` and with an egress policy (point 3 of the hardening checklist).
 
 ### Trust boundaries
 
@@ -158,7 +175,7 @@ The operator (environment, container, network) is trusted. Editors are trusted t
 | Identification and authentication failures (A07, CWE-287) | Delegated to Keycloak; tokens checked locally for signature, issuer, expiry and client. |
 | Software and data integrity failures (A08, CWE-502) | Typed deserialization only; actions and base images pinned; releases signed, with their provenance; configuration written atomically, with backups. |
 | Security logging and monitoring failures (A09) | Request log and server logs without credentials; an audit log of configuration changes is planned. |
-| Server-side request forgery (A10, CWE-918) | Requests go only to the target an editor configured, never to a host taken from the request; redirects are not followed and dot segments are refused. |
+| Server-side request forgery (A10, CWE-918) | Requests go only to the target an editor configured, never to a host taken from the request, and only within `PROXY_ALLOWED_TARGETS` when it is set, judged on the addresses connected; redirects are not followed and dot segments are refused. |
 | Path traversal (CWE-22) | Backup names checked before any disk access; embedded interface files served from a fixed table, a `STATIC_DIR` through tower-http's `ServeDir`, which refuses parent segments. |
 | Uncontrolled resource consumption (CWE-400) | Limits on bodies, logs, observations and queues; size-limited regular expressions; bounded script operations; timeouts on proxying and Keycloak. |
 | Cross-site request forgery (CWE-352) | Cross-site writes refused by the browser guard. |

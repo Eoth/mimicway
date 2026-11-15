@@ -194,16 +194,16 @@ async fn do_proxy(
                 .log_proxy(service, method_str, path, &target, status, captured);
             resp
         }
-        Err(status) => {
+        Err(error) => {
             state.request_log.log_proxy(
                 service,
                 method_str,
                 path,
                 &target,
-                status.as_u16(),
+                error.status().as_u16(),
                 captured,
             );
-            status.into_response()
+            error.into_response()
         }
     }
 }
@@ -261,16 +261,16 @@ async fn do_proxy_observed(
             }
             resp
         }
-        Err(status) => {
+        Err(error) => {
             state.request_log.log_proxy(
                 service,
                 method_str,
                 path,
                 target,
-                status.as_u16(),
+                error.status().as_u16(),
                 captured,
             );
-            status.into_response()
+            error.into_response()
         }
     }
 }

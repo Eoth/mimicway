@@ -3,7 +3,9 @@
 // status, a response sent whole or in chunks) goes to a local backend that answers with what it received, once
 // directly and once through each way Mimicway relays: a service in proxy mode, the same service observed for
 // suggestions, and a mocked service whose rule says `proxy`. The relayed response must be the direct one, byte for byte,
-// in its status, the values of each header in their order, and the body, which holds what the backend received.
+// in its status, the values of each header in their order, and the body, which holds what the backend received. A
+// second run sets `PROXY_ALLOWED_TARGETS` and names the backend `localhost`, which the list holds: the list's resolver
+// and its direct connections must change nothing either.
 //
 // The only differences allowed come from `proxy.rs` and the router, never from a list of this test's own:
 // - headers that `is_hop_by_hop` names, on both sides, which HTTP lets a proxy change (RFC 9110 §7.6.1);
@@ -30,6 +32,7 @@ use std::collections::BTreeMap;
 
 const SEED: u64 = 0x6d69_6d69_6377_6179;
 const CASES: u32 = 96;
+const CASES_WITH_LIST: u32 = 32;
 /// Set by the backend so that hyper does not stamp each response with the current second, which the direct and the
 /// relayed calls may straddle.
 const BACKEND_DATE: &str = "Sun, 01 Nov 2026 00:00:00 GMT";
@@ -276,8 +279,13 @@ struct Setup {
 }
 
 impl Setup {
-    async fn start() -> Self {
+    /// With `listed`, the services reach the backend through the name `localhost`, the only entry of the list.
+    async fn start(listed: bool) -> Self {
         let backend = serve(axum::Router::new().fallback(echo)).await;
+        let target = match listed {
+            true => backend.replace("127.0.0.1", "localhost"),
+            false => backend.clone(),
+        };
         let rules: Vec<_> = METHODS
             .iter()
             .map(|m| {
@@ -290,7 +298,7 @@ impl Setup {
             .collect();
         let service = |name: &str, mocked: bool, rules: &[serde_json::Value]| {
             serde_json::json!({
-                "name": name, "listen_path": "", "real_target_url": backend, "is_mocked": mocked,
+                "name": name, "listen_path": "", "real_target_url": target, "is_mocked": mocked,
                 "rewrite_directory_urls": false, "group_name": null, "wsdl_mode": "mock", "rules": rules
             })
         };
@@ -300,7 +308,12 @@ impl Setup {
         }))
         .unwrap();
         let data_dir = temp_data_dir("proxy-judge");
-        let state = test_state(&data_dir, config, auth_disabled()).await;
+        let mut state = test_state(&data_dir, config, auth_disabled()).await;
+        if listed {
+            state.proxy = crate::engine::ProxyClient::restricted(
+                crate::engine::AllowedTargets::parse("localhost").unwrap(),
+            );
+        }
         state.observation.toggle.enable(None, "observed");
         let mimicway = serve(crate::server::build_router(state, &data_dir)).await;
         let client = reqwest::Client::builder()
@@ -424,17 +437,26 @@ impl Setup {
     }
 }
 
-#[test]
-fn every_relay_answers_what_the_backend_answers_directly() {
+fn judge(listed: bool, cases: u32, seed: u64) {
     let rt = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
         .enable_all()
         .build()
         .unwrap();
-    let setup = rt.block_on(Setup::start());
-    let config = crate::test_seed::config(CASES, SEED);
+    let setup = rt.block_on(Setup::start(listed));
+    let config = crate::test_seed::config(cases, seed);
     let result = TestRunner::new(config).run(&arb_case(), |case| rt.block_on(setup.check(&case)));
     if let Err(e) = result {
         panic!("{e}");
     }
+}
+
+#[test]
+fn every_relay_answers_what_the_backend_answers_directly() {
+    judge(false, CASES, SEED);
+}
+
+#[test]
+fn every_relay_answers_the_same_when_the_list_holds_its_target() {
+    judge(true, CASES_WITH_LIST, SEED ^ 1);
 }

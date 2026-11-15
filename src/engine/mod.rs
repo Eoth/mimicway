@@ -12,6 +12,6 @@ mod template_dates;
 
 pub use matcher::{MatchEngine, RequestData};
 pub(crate) use proxy::target_url;
-pub use proxy::{PingStatus, ProxyClient};
+pub use proxy::{AllowedTargets, PingStatus, ProxyClient, ProxyError, REFUSED_TARGET};
 pub use renderer::{ChaosMode, TemplateRenderer, apply_chaos_and_render};
 pub use template::TemplateContext;
