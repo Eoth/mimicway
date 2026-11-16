@@ -44,7 +44,77 @@ Items are gathered in **themes**: the items of a theme touch the same screens or
 4. The judges come before the lists above: E52, a test whose verdict comes from outside the code under test (mutations).
 5. An item that waits for a step of the maintainers, for a decision or for an upstream release holds neither its theme nor its release: what can be done is done, the wait is written in its **Progress**, and the work goes on.
 
-At the maintainers' request, templates in response headers then server-sent events came first, before the lists above; both are in the [changelog](CHANGELOG.md).
+At the maintainers' request, templates in response headers then server-sent events came first, before the lists above; both are in the [changelog](CHANGELOG.md). So does [a chain of services, observed end to end](#asked-first-a-chain-of-services-observed-end-to-end), asked next.
+
+## Asked first: a chain of services, observed end to end
+
+A directory answers with the addresses of the services it knows, each address is a SOAP service, and the application calls them one after the other. Observing such a chain today stops at the first step. Tried on 2026-11-16 against a local directory and a local SOAP backend (version 0.5.0 plus `develop`): ten calls to four names of a directory, two of which give the same address, are answered "no field explains the responses"; nine calls to three operations of one SOAP endpoint, the same; a call whose relay fails leaves a line in the request log and nothing of what was sent. These items make the chain work without a rule written by hand; they ship together, before the releases below.
+
+| Theme | Items, in order | Taken together because |
+|---|---|---|
+| Screens that fit | U37 | the log screens and their tables, independent of the rest |
+| Suggestions that explain more | U32, U33, U34 | one algorithm (`src/server/suggestion.rs`), one judge: the suggested rules replayed on the calls they come from |
+| The chain and its calls | U36, U35 | the observation store, its panel and the list of backends |
+
+### U32. One suggested rule per answer, whatever the number of values that lead to it
+
+Size M
+
+**Why.** A field explains the observed responses only when each response has one value of it: a directory that gives the same address for two names (an alias, two versions of one service) has a response reached by two values, so the name is discarded and nothing is suggested, where the answer is plain: one rule per address. And one response that nothing explains hides all the others: a route answered the same way five times and once by a server error gets no suggestion at all.
+
+**What.** A field explains the responses when each of its values leads to one response; a response reached by several values gets one rule, whose condition accepts any of them (`any_of`). Among the fields that explain, the one with the fewest values is kept, so that an identifier that changes at every call never wins over the name that decides; the table of what is chosen, and of what is refused for lack of evidence (a field whose every value was seen once), is written before the code. Responses with a `5xx` status that no field explains are set aside: the suggestion is computed on the others and says how many calls were left out and with which status. The answer of `GET …/suggestions` only gains fields.
+
+**Done when.** The trial above gives three rules for the four names, one of them accepting two names; a route with one unexplained `500` among identical answers still gets its rule, and the panel says one call was left out; the property test that replays suggestions on the calls they come from draws several values per response and unexplained errors, and still passes.
+
+### U33. Suggestions that read XML and nested JSON bodies
+
+Size M
+
+**Why.** Every operation of a SOAP service is a `POST` to the same address: what tells two calls apart is in the body, and the only body fields tried are the top-level scalars of a JSON object. Observing a SOAP service suggests nothing, and neither does a JSON body whose deciding field is one level down.
+
+**What.** The operation of a SOAP call, the element its `Body` holds, splits a route as a path does: each operation gets its own suggestion, whose rules carry the condition `Envelope/Body/<operation>` exists, in the syntax of XPath conditions. Inside an operation, and for any XML body, the texts of the elements are fields like the others (condition on their path); so are the scalars of a JSON body at any depth (JSON Pointer). The number of fields read from a body and their depth are bounded, the bounds written next to the code; a body cut by the size limit of observation gives no field, and the suggestion says so. Reading follows the readers the conditions already use, so that a suggested condition matches what it was drawn from.
+
+**Done when.** Observing one SOAP endpoint called for three operations gives one suggestion per operation; a rule suggested from an XML or a nested JSON field matches the calls it comes from (replay judge, with generated bodies: namespaces, CDATA, repeated elements); the scale test counts the suggestions over bodies with many fields and stays linear.
+
+### U34. Suggested responses that repeat what the request sent
+
+Size L, split: the values, then the lists
+
+**Why.** Many operations answer with what they were asked: the reference of the request, its dates, each line of a list with its date and its type. A response copied from one observed call answers the next call with the reference of another, and the application refuses it. A response is generalized today in one case only: when the value that tells the calls apart is all that differs, and that value comes from the path, the query or a header.
+
+**What.** Values first: when the responses of a route (or of an operation, U33) differ only where they repeat values of their own request (path, query, header, JSON or XML body field), one rule is suggested, whose response reads each value from the request (`{{xpath.…}}`, the JSON equivalent) and keeps the rest as literal text; a value seen with a single content proves nothing and stays literal. Then lists: when the request holds a repeated element and the response a block repeated as many times, each block being the same text around values of the element of the same rank, the rule is suggested with a script that reads the items (`parse_xml_items`, `parse_json`) and writes one block per item, escaped for its format. In both cases the rule is suggested only if, rendered by the engine for each observed request, it gives back the observed response byte for byte; otherwise nothing changes. The panel names the request fields the response repeats.
+
+**Done when.** A SOAP operation that repeats a reference, then one that answers a list of two, one and three items with a block per item, each get one rule that answers a request never seen with its own values (end-to-end test against a real backend, then against the mock alone); the replay judge renders every suggested rule, scripts included, on generated exchanges (values with `&`, `<`, quotes, empty lists).
+
+### U36. The calls of an observed service can be read, failed ones included
+
+Size M
+
+**Why.** What observation captured only shows through the rules it suggests. When a relay fails (backend unreachable, timeout, target refused), the caller gets `502`, the request log keeps one line without the request, and observation keeps nothing: the request that broke cannot be read again, nor sent again by hand to find out why. The request log keeps no request for a service in proxy mode, on purpose (nothing is buffered on that path).
+
+**What.** For an observed service only, the panel lists the calls kept, most recent first, and opens one: request (method, path, query, headers, body) and response, or the reason no response came. A failed relay is kept with its request, in a bounded list of its own so that failures never push the good samples out, and never feeds a suggestion. One call can be copied as a `curl` command or its request body downloaded, as kept. Nothing leaves what observation already promises, and the security model says so: opt-in per service, memory only, bounded, forgotten when observation stops, credentials redacted before anything is kept (a copied command holds `[redacted]`, never the secret), a body cut at `TRAFFIC_OBSERVATION_MAX_BODY_SIZE` shown as cut with its real size and the setting to raise; reading a call asks for the same right on the service as its suggestions.
+
+**Done when.** A call relayed to a stopped backend is listed with its whole request and the reason, and its copied command replays it once the backend is back (end-to-end test); a user without access to the service reads none of its calls (authorization test); a test searches every answer of the new endpoints for a credential sent in the request and finds none; the scale test counts the list.
+
+### U35. The services a directory names, created in one go
+
+Size M
+
+**Why.** Putting a service in front of each backend a directory names takes, per backend, a form to open, save and leave, then a refresh; a directory of twenty services takes twenty rounds, and each new service still has to be observed by hand. One service is offered per origin, where each address of one host is often a service of its own, mocked or not independently.
+
+**What.** "Backends named in the responses" offers, next to the single creation, one creation for all: a list with a line per service to create, its name and target editable, a box per line, and one box to observe them as soon as they exist. Each line goes through the checks of the service form (name, duplicates, `PROXY_ALLOWED_TARGETS`); a refused line says why and blocks none of the others. For an origin with several addresses, the list offers one service per address (named after the last segment of its path, target the address) or one for the origin. The suggested rules of the directory then point to the new services as they do today.
+
+**Done when.** From a directory naming three addresses on one host, one confirmation creates three observed proxy services, the directory's suggested rules send the application to them, and a call through the mocked directory then through one of them reaches the real backend (end-to-end test); a line refused by `PROXY_ALLOWED_TARGETS` leaves the two others created.
+
+### U37. Log screens that fit their window and keep their filters
+
+Size S
+
+**Why.** The table of the request log is wider than its window as soon as a path or a target is long: the details button, in the last column, is out of sight, and every entry asks for a sideways scroll to reach it. A filter set on the log is lost on leaving the screen, so following one service across the log and its rules means setting the filter again each time.
+
+**What.** The tables of the request log and of the Kafka messages fit the width of their container at every width down to 320 CSS pixels (WCAG 1.4.10): long values are cut or wrapped inside their cell, whole in the details, and the details button is always in view. The other screens are checked the same way and fixed where they overflow. The filters of both logs are kept while the page stays open, in memory only (nothing written to the browser's storage, a path filter can hold an identifier), with their count shown and one button to clear them.
+
+**Done when.** An end-to-end test fills the log with a path of 300 characters and finds no horizontal overflow at 1280, 768 and 320 pixels, the details button inside the viewport, on each screen it visits; a filter set, the screen left and opened again, still filters, and is gone after a reload.
 
 ## Release 0.6: approved at first sight
 
@@ -791,6 +861,16 @@ Size M. **Decision needed** (whether to offer it at all; never installed by Mimi
 **What.** An endpoint, off by default, that offers the management API over that protocol, with the tokens and scopes of T2. The user declares it in their own tool; Mimicway writes nothing outside its data directory to make itself known.
 
 **Done when.** With the endpoint on, a client of the protocol lists and creates a mock within the scope of its token; with it off, its path answers 404.
+
+### U38. A relayed directory whose addresses already point to Mimicway
+
+Size M. Decision needed: relayed traffic is never changed today, and the guide says so.
+
+**Why.** A directory has to be mocked before the application reaches the services put in front of the backends it names (U35), and a mocked directory only knows the names that were observed: a name never seen gets no answer, or the real address when a rule forwards it, and the application leaves Mimicway again.
+
+**What.** Decide whether a service in proxy mode may, when asked to, rewrite in the responses it relays the addresses of the backends that a service of Mimicway stands in front of, as the suggested rules already do: the directory stays the real one, every name included, and the whole chain goes through Mimicway. To weigh: the promise that a relay changes nothing (the relay judge, `src/engine/proxy/judge.rs`), the buffering of a response that is streamed today, the address written from the caller's `Host`. The `rewrite_directory_urls` key of a service, read by no code, was kept for this.
+
+**Done when.** The decision is written in `decisions/`, and, if it is yes, the item is rewritten with its judge.
 
 ## Engineering backlog
 
