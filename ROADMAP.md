@@ -1191,3 +1191,13 @@ Size S
 **What.** Saving refuses a target that is not an absolute URL with a host; the relay refuses a URL whose host is not its target's own, for a target saved before the check.
 
 **Done when.** `http:`, `http:/` and `http:///x` are refused when saved, a stored one is refused when relayed (a test seen red on the current code), and a path that starts with `//` still reaches a target that has a host, as written (`target_url`).
+
+### E63. The fuzz target of suggestions sends request bodies
+
+Size S
+
+**Why.** Suggestions now read the request body of every observed call (`src/server/suggestion/body_fields.rs`: the SOAP operation, the texts of XML elements, the scalars of a JSON body), a body that comes from a client possibly hostile. The fuzz target `suggestions` (`src/fuzzing.rs`) builds every call with an empty request body: ClusterFuzzLite never reaches that reading, only the property tests and the scale test do.
+
+**What.** The fuzz target draws a request body for some calls (raw bytes, and XML or JSON built around the drawn text), and replays the suggestions on them through `suggestion::replay::check`, as it does for responses.
+
+**Done when.** The target compiles with `--cfg fuzzing` and runs in the CI; a corpus entry holds a SOAP call and a JSON call whose bodies decide the answer.
