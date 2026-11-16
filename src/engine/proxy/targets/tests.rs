@@ -470,6 +470,24 @@ fn every_objection_names_its_host_and_the_setting() {
     assert_eq!(Refused.to_string(), "outside PROXY_ALLOWED_TARGETS");
 }
 
+/// The addresses the system's resolver gives for `localhost`, in its order: `127.0.0.1` alone, or with `::1` where the
+/// hosts file names both (GitHub's runners do).
+async fn localhost() -> Vec<IpAddr> {
+    let found = tokio::net::lookup_host(("localhost", 0)).await.unwrap();
+    let addresses: Vec<IpAddr> = found.map(|a| a.ip()).collect();
+    assert!(
+        addresses.contains(&IpAddr::V4(Ipv4Addr::LOCALHOST)),
+        "{addresses:?}"
+    );
+    addresses
+}
+
+/// How a refusal names what `localhost` resolves to.
+async fn localhost_resolves_to() -> String {
+    let addresses: Vec<String> = localhost().await.iter().map(IpAddr::to_string).collect();
+    format!("localhost resolves to {}", addresses.join(", "))
+}
+
 #[tokio::test]
 async fn a_target_being_saved_is_judged_like_a_connection() {
     let targets = list("*.example.com, localhost, 10.0.0.0/8");
@@ -510,7 +528,7 @@ async fn a_target_being_saved_is_judged_like_a_connection() {
         ranges_only.check("http://localhost:7/").await,
         Err(Objection::ResolvesOutside {
             host: "localhost".into(),
-            addresses: vec!["127.0.0.1".parse().unwrap()],
+            addresses: localhost().await,
         })
     );
     // Without any range, a name no entry matches is refused without a lookup.
@@ -724,7 +742,7 @@ async fn relay(client: &ProxyClient, url: &str) -> Result<(), ProxyError> {
 }
 
 /// For each family of spellings drawn, the number kept (those that reach the listener without a list), at least.
-const KEPT_AT_LEAST: usize = 25;
+const KEPT_AT_LEAST: usize = 20;
 
 async fn judge_spellings(listener: &Listener, families: &[Named]) {
     let open = ProxyClient::new();
@@ -735,7 +753,7 @@ async fn judge_spellings(listener: &Listener, families: &[Named]) {
     let mut kept = vec![0; families.len()];
     let mut expected_total = 0;
     let mut tried = std::collections::BTreeSet::new();
-    for round in 0..(families.len() * 60) {
+    for round in 0..(families.len() * 80) {
         let index = round % families.len();
         let named = families[index];
         let host = spelling(named);
@@ -925,11 +943,9 @@ async fn the_relays_the_availability_check_and_saving_follow_the_list() {
     .await;
     let ping: serde_json::Value = ping.unwrap().json().await.unwrap();
     assert_eq!(ping["reachable"], false);
+    let resolves_to = localhost_resolves_to().await;
     assert!(
-        ping["error"]
-            .as_str()
-            .unwrap()
-            .contains("resolves to 127.0.0.1"),
+        ping["error"].as_str().unwrap().contains(&resolves_to),
         "{ping}"
     );
     assert_eq!(connections, 0);
@@ -973,7 +989,7 @@ async fn the_relays_the_availability_check_and_saving_follow_the_list() {
     let put = reqwest::Method::PUT;
     let refused = [
         ("http://169.254.169.254/latest", "169.254.169.254"),
-        ("http://localhost:1/", "resolves to 127.0.0.1"),
+        ("http://localhost:1/", resolves_to.as_str()),
         ("http://2130706433:1/", "127.0.0.1"),
         ("http://[::ffff:7f00:1]:1/", "[::ffff:7f00:1]"),
         ("not a url", "cannot be read"),

@@ -193,7 +193,10 @@ async fn a_target_is_looked_up_only_for_a_user_who_may_save_its_service() {
             "{user} {method} {path}: {body}"
         );
         let message = body["error"].as_str().unwrap();
-        assert!(message.contains("resolves to 127.0.0.1"), "{message}");
+        assert!(
+            message.contains("localhost resolves to") && message.contains("127.0.0.1"),
+            "{message}"
+        );
     }
 }
 
