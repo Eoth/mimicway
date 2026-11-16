@@ -63,6 +63,7 @@ fn endpoint(
             service_name: "directory".into(),
             method: "GET".into(),
             sub_path: path.into(),
+            operation: None,
         },
         exchanges,
     )

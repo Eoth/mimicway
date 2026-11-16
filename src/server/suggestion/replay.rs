@@ -59,8 +59,9 @@ fn answer(
 
 /// Suggests rules for `endpoints`, saves all of them in the order given, and replays every observed call of a route
 /// that got rules: each must get back the status and the body the backend sent, and each route's pattern must match
-/// the paths it lists. A route with more paths than are listed is skipped (its members are not all known). The calls a
-/// suggestion left out must all be server errors, as many as it says, and are not replayed.
+/// the paths it lists. A route with more paths than are listed is skipped (its members are not all known). A suggestion
+/// for a SOAP operation stands for the calls in which the reader of XPath conditions finds that operation; the calls it
+/// left out must all be server errors, as many as it says, and are not replayed.
 pub(crate) fn check(endpoints: &[(ObservationKey, Vec<ObservedExchange>)]) -> Result<(), String> {
     let suggestions = suggest_for_service(endpoints);
     let rules: Vec<Rule> = suggestions
@@ -82,12 +83,21 @@ pub(crate) fn check(endpoints: &[(ObservationKey, Vec<ObservedExchange>)]) -> Re
         {
             continue;
         }
+        let operation = suggestion
+            .operation
+            .as_ref()
+            .map(|name| format!("Envelope/Body/{name}"));
         let calls: Vec<(&ObservationKey, &ObservedExchange)> = endpoints
             .iter()
             .filter(|(key, _)| {
                 key.method == suggestion.method && suggestion.paths.contains(&key.sub_path)
             })
             .flat_map(|(key, exchanges)| exchanges.iter().map(move |e| (key, e)))
+            .filter(|(_, e)| {
+                operation.as_ref().is_none_or(|path| {
+                    MatchEngine::extract_xpath(e.request_body.as_bytes(), path).is_some()
+                })
+            })
             .collect();
         for left in &suggestion.left_out {
             let count = calls

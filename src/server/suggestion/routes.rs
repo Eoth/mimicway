@@ -24,10 +24,10 @@ const MAX_SEGMENTS: usize = 32;
 const MAX_SKELETON: usize = 4096;
 const MAX_XML_EVENTS: usize = 4096;
 
-/// One literal path of a method, with the exchanges observed on it.
+/// One literal path of a method, with the exchanges observed on it (those of every operation of the path).
 pub(super) struct ObservedPath<'a> {
     pub path: &'a str,
-    pub exchanges: &'a [ObservedExchange],
+    pub exchanges: Vec<&'a ObservedExchange>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -196,7 +196,11 @@ impl<'p> Inference<'_, 'p> {
         }
         let mut by_shape: BTreeMap<Shape, (BTreeSet<&'p str>, usize)> = BTreeMap::new();
         for (value, paths) in words {
-            let exchanges = || paths.iter().flat_map(|&p| self.paths[p].exchanges.iter());
+            let exchanges = || {
+                paths
+                    .iter()
+                    .flat_map(|&p| self.paths[p].exchanges.iter().copied())
+            };
             let Some(shape) = dominant_shape(exchanges()) else {
                 continue;
             };

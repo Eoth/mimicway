@@ -3,9 +3,11 @@
 // to invalidate, and suggestions can never lag behind what was observed.
 //
 // First the literal paths of each method are grouped into route patterns (`routes`): `/orders/1` and `/orders/2`
-// pool their samples under `/orders/{id}`, whose parameter becomes a condition source like any request field.
+// pool their samples under `/orders/{id}`, whose parameter becomes a condition source like any request field. A route
+// whose calls all name one SOAP operation each (`body_fields`) is split further, one suggestion per operation, each of
+// its rules carrying the condition `Envelope/Body/<operation>` exists.
 //
-// Then, per route, the trap: two calls to the same route can legitimately get different answers, and a
+// Then, per route (or operation), the trap: two calls to the same route can legitimately get different answers, and a
 // rule built from the first answer seen would silently break the others. Hence three steps: (1) group the observations
 // by equivalent response; (2) one group gives an unconditional rule; (3) several groups need a request field whose
 // every value leads to one group (`find_discriminator`, and the table above it of what is chosen and refused) before
@@ -20,6 +22,7 @@ use crate::server::observation::{ObservationKey, ObservedExchange};
 use std::collections::hash_map::Entry;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
+mod body_fields;
 pub mod links;
 mod routes;
 
@@ -37,9 +40,11 @@ pub fn min_samples() -> usize {
 }
 
 /// Request headers never used to tell responses apart: they change from call to call by nature (timestamps,
-/// correlation and tracing ids, credentials), not because of a decision of the backend. A condition on them could
-/// fit the sample perfectly and still be useless or harmful (a rule conditioned on a token never matches again).
+/// correlation and tracing ids, credentials, the length of the body), not because of a decision of the backend. A
+/// condition on them could fit the sample perfectly and still be useless or harmful (a rule conditioned on a token
+/// never matches again, one on a length breaks as soon as a value in the body changes).
 const NOISY_HEADERS: &[&str] = &[
+    "content-length",
     "date",
     "x-request-id",
     "x-correlation-id",
@@ -57,8 +62,8 @@ const NOISY_HEADERS: &[&str] = &[
 pub struct SuggestedRule {
     pub method: String,
     pub sub_path: String,
-    /// Every condition of the rule: the value that leads to its response (`all_of`), or the values (`any_of`, one `Eq`
-    /// each) when several lead to it.
+    /// Every condition of the rule: the SOAP operation (`all_of`), the value that leads to its response (`all_of`), or
+    /// the values (`any_of`, one `Eq` each) when several lead to it.
     pub conditions: ConditionGroup,
     /// The one condition of the rule when it has exactly one, in `all_of`; `None` otherwise, `conditions` then says
     /// everything.
@@ -97,8 +102,12 @@ pub struct EndpointSuggestion {
     pub paths: Vec<String>,
     pub path_count: usize,
     pub sample_count: usize,
+    /// The SOAP operation the suggestion stands for, when the route's calls name one each (`body_fields`).
+    pub operation: Option<String>,
     /// Calls answered with a server error that no field explains, left out of the suggestion, by status.
     pub left_out: Vec<LeftOut>,
+    /// Calls whose request body was cut at `observation::max_body_size()`: no field of their body was read.
+    pub truncated_request_bodies: usize,
     #[serde(flatten)]
     pub outcome: Suggestion,
 }
@@ -137,16 +146,24 @@ impl<'a> ObservedRoute<'a> {
 pub(super) fn observed_routes(
     endpoints: &[(ObservationKey, Vec<ObservedExchange>)],
 ) -> Vec<ObservedRoute<'_>> {
-    let mut by_method: BTreeMap<&str, Vec<routes::ObservedPath>> = BTreeMap::new();
+    // The operations of one path are endpoints of their own (`ObservationKey::operation`): their exchanges are pooled
+    // again here, routes are inferred from paths. Paths keep the order of their first endpoint.
+    let mut by_method: BTreeMap<&str, (Vec<routes::ObservedPath>, HashMap<&str, usize>)> =
+        BTreeMap::new();
     for (key, exchanges) in endpoints {
-        by_method
-            .entry(key.method.as_str())
-            .or_default()
-            .push(routes::ObservedPath {
+        let (paths, index) = by_method.entry(key.method.as_str()).or_default();
+        let at = *index.entry(key.sub_path.as_str()).or_insert_with(|| {
+            paths.push(routes::ObservedPath {
                 path: &key.sub_path,
-                exchanges,
+                exchanges: Vec::new(),
             });
+            paths.len() - 1
+        });
+        paths[at].exchanges.extend(exchanges);
     }
+    let by_method = by_method
+        .into_iter()
+        .map(|(method, (paths, _))| (method, paths));
 
     let mut observed = Vec::new();
     for (method, paths) in by_method {
@@ -162,7 +179,7 @@ pub(super) fn observed_routes(
                 let path = &paths[member];
                 literal_paths.push(path.path);
                 let params = route.params_of(path.path);
-                for exchange in path.exchanges {
+                for &exchange in &path.exchanges {
                     let mut path_params: BTreeMap<String, String> = exchange
                         .request_path_params
                         .iter()
@@ -188,8 +205,14 @@ pub(super) fn observed_routes(
     observed
 }
 
-/// The suggestions for one service, one per route (`observed_routes`); a route observed fewer than `min_samples()`
-/// times is left out.
+/// The SOAP operation an observed request names, as suggestions read it (`body_fields`): what splits the observation of
+/// one address into one endpoint per operation (`ObservationKey::operation`).
+pub fn request_operation(exchange: &ObservedExchange) -> Option<String> {
+    body_fields::read(&exchange.request_body, exchange.request_body_truncated).operation
+}
+
+/// The suggestions for one service, one per route (`observed_routes`), or one per operation of a route whose calls
+/// all name one SOAP operation; a route or an operation observed fewer than `min_samples()` times is left out.
 pub fn suggest_for_service(
     endpoints: &[(ObservationKey, Vec<ObservedExchange>)],
 ) -> Vec<EndpointSuggestion> {
@@ -200,37 +223,59 @@ pub fn suggest_for_service(
             .iter()
             .map(|sample| Call {
                 sample,
-                body: json_top_level_fields(&sample.exchange.request_body),
+                body: body_fields::read(
+                    &sample.exchange.request_body,
+                    sample.exchange.request_body_truncated,
+                ),
             })
             .collect();
-        let group: Vec<&Call> = calls.iter().collect();
-        let Some((outcome, left_out)) = suggest_calls(route.method, &route.pattern, &group, &[])
-        else {
-            continue;
-        };
-        suggestions.push(EndpointSuggestion {
-            method: route.method.to_string(),
-            path_count: route.literal_paths.len(),
-            paths: route
-                .literal_paths
-                .iter()
-                .take(MAX_LISTED_PATHS)
-                .map(|p| p.to_string())
-                .collect(),
-            sub_path: route.pattern.clone(),
-            sample_count: group.len(),
-            left_out,
-            outcome,
-        });
+        let mut by_operation: BTreeMap<Option<&str>, Vec<&Call>> = BTreeMap::new();
+        let split = calls.iter().all(|c| c.body.operation.is_some());
+        for call in &calls {
+            let operation = split.then_some(call.body.operation.as_deref()).flatten();
+            by_operation.entry(operation).or_default().push(call);
+        }
+        for (operation, group) in by_operation {
+            let base: Vec<Condition> = operation
+                .map(|name| Condition {
+                    source: ConditionSource::XPath(format!("Envelope/Body/{name}")),
+                    operator: Operator::Exists,
+                })
+                .into_iter()
+                .collect();
+            let Some((outcome, left_out)) =
+                suggest_calls(route.method, &route.pattern, &group, &base)
+            else {
+                continue;
+            };
+            suggestions.push(EndpointSuggestion {
+                method: route.method.to_string(),
+                path_count: route.literal_paths.len(),
+                paths: route
+                    .literal_paths
+                    .iter()
+                    .take(MAX_LISTED_PATHS)
+                    .map(|p| p.to_string())
+                    .collect(),
+                sub_path: route.pattern.clone(),
+                sample_count: group.len(),
+                operation: operation.map(str::to_string),
+                left_out,
+                truncated_request_bodies: group
+                    .iter()
+                    .filter(|c| c.sample.exchange.request_body_truncated)
+                    .count(),
+                outcome,
+            });
+        }
     }
     suggestions
 }
 
-/// One observed call of a route, with the fields of its request body.
+/// One observed call of a route, with what its request body offers.
 struct Call<'a> {
     sample: &'a Sample<'a>,
-    /// The top-level scalars of a JSON body, by their JSON pointer.
-    body: Vec<(String, String)>,
+    body: body_fields::BodyReading,
 }
 
 impl Call<'_> {
@@ -251,10 +296,16 @@ impl Call<'_> {
             .request_query_params
             .iter()
             .map(|(k, v)| (Candidate::QueryParam(k), v.as_str()));
+        // `body_fields` reads JSON pointers and XPaths only.
         let body = self
             .body
+            .fields
             .iter()
-            .map(|(pointer, v)| (Candidate::JsonPointer(pointer), v.as_str()));
+            .filter_map(|(source, v)| match source {
+                ConditionSource::XPath(p) => Some((Candidate::XPath(p), v.as_str())),
+                ConditionSource::JsonPointer(p) => Some((Candidate::JsonPointer(p), v.as_str())),
+                _ => None,
+            });
         let headers = exchange
             .request_headers
             .iter()
@@ -264,28 +315,6 @@ impl Call<'_> {
     }
 }
 
-/// Reads the request body as a flat JSON object (no arrays or nested objects for now): each scalar field becomes a
-/// JSON pointer (`/key`, escaped as RFC 6901 says: `~` and `/` in a name are written `~0` and `~1`).
-fn json_top_level_fields(body: &str) -> Vec<(String, String)> {
-    let Ok(serde_json::Value::Object(map)) = serde_json::from_str::<serde_json::Value>(body) else {
-        return Vec::new();
-    };
-    map.into_iter()
-        .filter_map(|(k, v)| {
-            let value = match v {
-                serde_json::Value::String(s) => s,
-                serde_json::Value::Number(n) => n.to_string(),
-                serde_json::Value::Bool(b) => b.to_string(),
-                _ => return None,
-            };
-            Some((
-                format!("/{}", k.replace('~', "~0").replace('/', "~1")),
-                value,
-            ))
-        })
-        .collect()
-}
-
 /// What makes two responses equal: status and body, byte for byte. Bodies are already truncated to
 /// `observation::max_body_size()`, so two bodies that differ only beyond that point count as equal. Response
 /// headers are left out: the same body with another correlation header is not a different answer to explain.
@@ -293,7 +322,8 @@ fn response_signature(exchange: &ObservedExchange) -> (u16, &str) {
     (exchange.response_status, exchange.response_body.as_str())
 }
 
-/// The suggestion for the calls of one route (oldest first), each rule carrying the conditions `base` first, and the calls set aside. `None` while there are fewer calls than `min_samples()`: no decision yet, either way.
+/// The suggestion for the calls of one route or operation (oldest first), each rule carrying the conditions `base`
+/// first, and the calls set aside. `None` while there are fewer calls than `min_samples()`: no decision yet, either way.
 /// When no field explains the responses, the calls answered with a `5xx` status are set aside and the others tried
 /// alone, if there are still `min_samples()` of them: a server error that nothing in the request explains says nothing
 /// about the answers the others got.
@@ -519,6 +549,8 @@ enum Candidate<'a> {
     QueryParam(&'a str),
     /// A scalar of a JSON body, by its pointer, already escaped (RFC 6901).
     JsonPointer(&'a str),
+    /// The text of an element of an XML body, by its path of local names.
+    XPath(&'a str),
     Header(&'a str),
 }
 
@@ -528,6 +560,7 @@ impl Candidate<'_> {
             Candidate::PathParam(k) => ConditionSource::PathParam(k.to_string()),
             Candidate::QueryParam(k) => ConditionSource::QueryParam(k.to_string()),
             Candidate::JsonPointer(k) => ConditionSource::JsonPointer(k.to_string()),
+            Candidate::XPath(k) => ConditionSource::XPath(k.to_string()),
             Candidate::Header(k) => ConditionSource::Header(k.to_string()),
         }
     }
@@ -540,7 +573,7 @@ impl Candidate<'_> {
             Candidate::PathParam(k) => ("path", k),
             Candidate::QueryParam(k) => ("query", k),
             Candidate::Header(k) => ("header", k),
-            Candidate::JsonPointer(_) => return None,
+            Candidate::JsonPointer(_) | Candidate::XPath(_) => return None,
         };
         let plain = !key.is_empty()
             && key
@@ -567,12 +600,12 @@ struct FieldStats<'a> {
 }
 
 // Which field tells the response groups apart. A field of the request (path parameter, query parameter, body field,
-// header) is judged on the calls of one route, after the calls answered with a server error are set aside
+// header) is judged on the calls of one route or operation, after the calls answered with a server error are set aside
 // when that is needed (`suggest_calls`); `n` calls, `k > 1` response groups.
 //
 // | The field                                                          | Verdict                                         |
 // |--------------------------------------------------------------------|-------------------------------------------------|
-// | missing from at least one call                                     | refused: an `Eq` condition never matches a call |
+// | missing from at least one call (a body cut at the size limit too)  | refused: an `Eq` condition never matches a call |
 // |                                                                    | without it                                      |
 // | a noisy header (`NOISY_HEADERS`)                                   | never a candidate                               |
 // | one of its values seen with two responses                          | refused: it does not explain them               |
@@ -585,7 +618,7 @@ struct FieldStats<'a> {
 //
 // Among the fields that explain, the one with the fewest distinct values wins: it cannot have fewer than `k`, and an
 // identifier that changes at every call never wins over the name that decides. On a tie, the order of `Candidate`
-// (path parameter, query parameter, JSON field, header), then the name of the field, in byte order. No field
+// (path parameter, query parameter, JSON field, XML field, header), then the name of the field, in byte order. No field
 // explains: `None`.
 //
 // One pass over the fields of every call, whatever their number: each (field, value) of a call updates its field's

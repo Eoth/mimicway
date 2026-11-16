@@ -48,23 +48,13 @@ At the maintainers' request, templates in response headers then server-sent even
 
 ## Asked first: a chain of services, observed end to end
 
-A directory answers with the addresses of the services it knows, each address is a SOAP service, and the application calls them one after the other. Observing such a chain today stops at the first step. Tried on 2026-11-16 against a local directory and a local SOAP backend (version 0.5.0 plus `develop`): ten calls to four names of a directory, two of which give the same address, were answered "no field explains the responses" (now three rules, one of them accepting two names); nine calls to three operations of one SOAP endpoint, the same; a call whose relay fails leaves a line in the request log and nothing of what was sent. These items make the chain work without a rule written by hand; they ship together, before the releases below.
+A directory answers with the addresses of the services it knows, each address is a SOAP service, and the application calls them one after the other. Observing such a chain today stops at the first step. Tried on 2026-11-16 against a local directory and a local SOAP backend (version 0.5.0 plus `develop`): ten calls to four names of a directory, two of which give the same address, were answered "no field explains the responses" (now three rules, one of them accepting two names); nine calls to three operations of one SOAP endpoint, the same (now one suggestion per operation); a call whose relay fails leaves a line in the request log and nothing of what was sent. These items make the chain work without a rule written by hand; they ship together, before the releases below.
 
 | Theme | Items, in order | Taken together because |
 |---|---|---|
 | Screens that fit | U37 | the log screens and their tables, independent of the rest |
-| Suggestions that explain more | U33, U34 | one algorithm (`src/server/suggestion.rs`), one judge: the suggested rules replayed on the calls they come from |
+| Suggestions that explain more | U34 | one algorithm (`src/server/suggestion.rs`), one judge: the suggested rules replayed on the calls they come from |
 | The chain and its calls | U36, U35 | the observation store, its panel and the list of backends |
-
-### U33. Suggestions that read XML and nested JSON bodies
-
-Size M
-
-**Why.** Every operation of a SOAP service is a `POST` to the same address: what tells two calls apart is in the body, and the only body fields tried are the top-level scalars of a JSON object. Observing a SOAP service suggests nothing, and neither does a JSON body whose deciding field is one level down.
-
-**What.** The operation of a SOAP call, the element its `Body` holds, splits a route as a path does: each operation gets its own suggestion, whose rules carry the condition `Envelope/Body/<operation>` exists, in the syntax of XPath conditions. Inside an operation, and for any XML body, the texts of the elements are fields like the others (condition on their path); so are the scalars of a JSON body at any depth (JSON Pointer). The number of fields read from a body and their depth are bounded, the bounds written next to the code; a body cut by the size limit of observation gives no field, and the suggestion says so. Reading follows the readers the conditions already use, so that a suggested condition matches what it was drawn from.
-
-**Done when.** Observing one SOAP endpoint called for three operations gives one suggestion per operation; a rule suggested from an XML or a nested JSON field matches the calls it comes from (replay judge, with generated bodies: namespaces, CDATA, repeated elements); the scale test counts the suggestions over bodies with many fields and stays linear.
 
 ### U34. Suggested responses that repeat what the request sent
 
@@ -72,7 +62,7 @@ Size L, split: the values, then the lists
 
 **Why.** Many operations answer with what they were asked: the reference of the request, its dates, each line of a list with its date and its type. A response copied from one observed call answers the next call with the reference of another, and the application refuses it. A response is generalized today in one case only: when the value that tells the calls apart is all that differs, and that value comes from the path, the query or a header.
 
-**What.** Values first: when the responses of a route (or of an operation, U33) differ only where they repeat values of their own request (path, query, header, JSON or XML body field), one rule is suggested, whose response reads each value from the request (`{{xpath.…}}`, the JSON equivalent) and keeps the rest as literal text; a value seen with a single content proves nothing and stays literal. Then lists: when the request holds a repeated element and the response a block repeated as many times, each block being the same text around values of the element of the same rank, the rule is suggested with a script that reads the items (`parse_xml_items`, `parse_json`) and writes one block per item, escaped for its format. In both cases the rule is suggested only if, rendered by the engine for each observed request, it gives back the observed response byte for byte; otherwise nothing changes. The panel names the request fields the response repeats.
+**What.** Values first: when the responses of a route (or of a SOAP operation) differ only where they repeat values of their own request (path, query, header, JSON or XML body field), one rule is suggested, whose response reads each value from the request (`{{xpath.…}}`, the JSON equivalent) and keeps the rest as literal text; a value seen with a single content proves nothing and stays literal. Then lists: when the request holds a repeated element and the response a block repeated as many times, each block being the same text around values of the element of the same rank, the rule is suggested with a script that reads the items (`parse_xml_items`, `parse_json`) and writes one block per item, escaped for its format. In both cases the rule is suggested only if, rendered by the engine for each observed request, it gives back the observed response byte for byte; otherwise nothing changes. The panel names the request fields the response repeats.
 
 **Done when.** A SOAP operation that repeats a reference, then one that answers a list of two, one and three items with a block per item, each get one rule that answers a request never seen with its own values (end-to-end test against a real backend, then against the mock alone); the replay judge renders every suggested rule, scripts included, on generated exchanges (values with `&`, `<`, quotes, empty lists).
 

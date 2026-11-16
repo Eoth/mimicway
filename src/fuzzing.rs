@@ -145,6 +145,7 @@ pub fn suggestions(data: &[u8]) {
                     service_name: "fuzz".into(),
                     method: "GET".into(),
                     sub_path: path,
+                    operation: None,
                 },
                 vec![exchange],
             )),

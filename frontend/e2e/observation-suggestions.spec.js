@@ -303,4 +303,105 @@ test.describe('Observed proxy traffic and suggested rules', () => {
       directory.close();
     }
   });
+
+  test('each operation of a SOAP endpoint gets its suggestion, a rule may accept several values, and an unexplained error is set aside', async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(30000);
+    // One SOAP address, two operations. GetStatus answers by reference, R1 and R2 the same way, and once fails with a
+    // server error for a reference that otherwise succeeds.
+    let r1Calls = 0;
+    const target = await new Promise((resolve) => {
+      const server = http.createServer((req, res) => {
+        let request = '';
+        req.on('data', (chunk) => (request += chunk));
+        req.on('end', () => {
+          let status = 200;
+          let inner = '<Pong/>';
+          const ref = /<o:ref>(.*?)<\/o:ref>/.exec(request)?.[1];
+          if (ref) {
+            if (ref === 'R1') r1Calls += 1;
+            if (ref === 'R1' && r1Calls === 3) status = 500;
+            inner = `<GetStatusResponse><status>${ref === 'R3' ? 'CLOSED' : 'OPEN'}</status></GetStatusResponse>`;
+          }
+          const body =
+            status === 500
+              ? '<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><soap:Fault/></soap:Body></soap:Envelope>'
+              : `<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body>${inner}</soap:Body></soap:Envelope>`;
+          res.writeHead(status, { 'content-type': 'text/xml', 'content-length': Buffer.byteLength(body) });
+          res.end(body);
+        });
+      });
+      server.listen(0, '127.0.0.1', () => resolve(server));
+    });
+    const targetPort = target.address().port;
+    const envelope = (operation, inner) =>
+      '<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:o="urn:orders"><soap:Body>' +
+      `<o:${operation}>${inner}</o:${operation}></soap:Body></soap:Envelope>`;
+
+    try {
+      const created = await request.post(`${API}/services`, { data: proxyService('orders-soap', targetPort) });
+      expect(created.ok()).toBe(true);
+      await request.post(`${API}/services/orders-soap/observe`);
+      const calls = [
+        ['Ping', ''],
+        ['Ping', ''],
+        ['Ping', ''],
+        ...['R1', 'R1', 'R2', 'R3', 'R3', 'R1'].map((ref) => ['GetStatus', `<o:ref>${ref}</o:ref>`]),
+      ];
+      for (const [operation, inner] of calls) {
+        await request.post('http://localhost:7342/orders-soap/ws/OrderService', {
+          data: envelope(operation, inner),
+          headers: { 'content-type': 'text/xml' },
+        });
+      }
+
+      await page.goto('/');
+      await page.waitForLoadState('networkidle');
+      await page.getByText('No group').click();
+      await page.getByTestId('service-card-configure-button-orders-soap').click();
+      await page.getByTestId('observation-refresh-suggestions-button-orders-soap').click();
+
+      await expect(page.getByTestId('observation-suggestion-operation-orders-soap-0')).toHaveText(
+        'SOAP operation GetStatus: its rules answer only the calls that name it.',
+      );
+      await expect(page.getByTestId('observation-suggestion-operation-orders-soap-1')).toHaveText(
+        'SOAP operation Ping: its rules answer only the calls that name it.',
+      );
+      await expect(page.getByTestId('observation-suggestion-left-out-orders-soap-0')).toHaveText(
+        '1 call was left out: it got a server error (500) that nothing in the request explains.',
+      );
+      const both = page.getByTestId('observation-suggestion-orders-soap-0-0');
+      await expect(both).toContainText('if XML element of the body "Envelope/Body/GetStatus/ref" is "R1" or "R2"');
+
+      await page.getByTestId('observation-use-suggestion-orders-soap-0-0').click();
+      await page.getByTestId('rule-form-name-input').fill('open-status');
+      await page.getByTestId('rule-form-submit-button').click();
+      await expect(page.getByTestId('rule-list-item-open-status')).toBeVisible();
+
+      // Mocked, with no backend left: the rule answers R2 and nothing else.
+      const saved = await (await request.get(`${API}/services/orders-soap`)).json();
+      const rule = saved.rules.find((r) => r.name === 'open-status');
+      expect(rule.conditions.all_of).toEqual([
+        { source: { type: 'XPath', key: 'Envelope/Body/GetStatus' }, operator: { type: 'Exists' } },
+      ]);
+      expect(rule.conditions.any_of.map((c) => c.operator.value)).toEqual(['R1', 'R2']);
+      const updated = await request.put(`${API}/services/orders-soap`, {
+        data: { ...saved, is_mocked: true, real_target_url: '' },
+      });
+      expect(updated.ok()).toBe(true);
+      const answer = await request.post('http://localhost:7342/orders-soap/ws/OrderService', {
+        data: envelope('GetStatus', '<o:ref>R2</o:ref>'),
+      });
+      expect(answer.status()).toBe(200);
+      expect(await answer.text()).toContain('<status>OPEN</status>');
+      const other = await request.post('http://localhost:7342/orders-soap/ws/OrderService', {
+        data: envelope('GetStatus', '<o:ref>R3</o:ref>'),
+      });
+      expect(await other.text()).not.toContain('<status>OPEN</status>');
+    } finally {
+      target.close();
+    }
+  });
 });

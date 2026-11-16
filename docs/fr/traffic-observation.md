@@ -21,7 +21,7 @@ Deux appels au même point d'accès (même méthode, même chemin) peuvent légi
 Mimicway attend donc d'avoir vu **plusieurs appels** à une route (voir la section suivante) avant de proposer quoi que ce soit, puis :
 
 - Quand toutes les réponses observées sont identiques, il propose une règle **sans condition**.
-- Quand les réponses varient et qu'un paramètre de chemin, un paramètre de requête, un champ du corps JSON ou un en-tête **prédit** quelle réponse revient (chacune de ses valeurs reçoit toujours la même réponse), il propose **une règle par réponse**, avec sa condition. Une réponse atteinte par plusieurs valeurs, comme un annuaire qui donne la même adresse pour deux noms, reçoit une seule règle qui accepte chacune d'elles (conditions « au moins une »).
+- Quand les réponses varient et qu'un paramètre de chemin, un paramètre de requête, un champ du corps ou un en-tête **prédit** quelle réponse revient (chacune de ses valeurs reçoit toujours la même réponse), il propose **une règle par réponse**, avec sa condition. Une réponse atteinte par plusieurs valeurs, comme un annuaire qui donne la même adresse pour deux noms, reçoit une seule règle qui accepte chacune d'elles (conditions « au moins une »).
 - Quand les réponses varient **et qu'aucun champ ne l'explique de façon fiable**, il ne propose aucune règle. Un message signale la variation, plutôt qu'une règle qui casserait silencieusement certains appels.
 
 Quand plusieurs champs expliqueraient les réponses, Mimicway garde celui qui a **le moins de valeurs différentes** : le nom qui décide l'emporte sur un identifiant qui change à chaque appel. Un champ dont chaque valeur n'a été vue qu'une fois, et qui demanderait plusieurs valeurs pour une même réponse, n'est jamais choisi : n'importe quel identifiant propre à chaque appel conviendrait, il ne prouve donc rien.
@@ -44,6 +44,17 @@ Les paramètres du modèle sont les premiers champs avec lesquels Mimicway tente
 ![Une seule règle proposée pour tous les noms d'un annuaire, sa réponse reprenant le nom](screenshots/observation-route-suggestion.png)
 
 Un chemin littéral voisin d'un modèle, comme `/users/me` à côté de `/users/{id}`, est proposé en premier : les règles s'appliquent dans leur ordre, et la plus précise doit venir d'abord.
+
+## Opérations SOAP et champs du corps
+
+Chaque opération d'un service SOAP est un `POST` vers la même adresse : ce qui distingue deux appels est l'élément que contient le `Body` de l'enveloppe. Quand chaque appel d'une route nomme **une** opération, Mimicway propose des règles **par opération** : chaque suggestion nomme son opération, et chacune de ses règles porte la condition `Envelope/Body/<opération>` existe, dans la syntaxe des conditions XPath (les préfixes d'espaces de noms sont ignorés), si bien qu'elle ne répond jamais à une autre opération. Une route dont un appel ne nomme aucune opération, ou plusieurs, n'est pas découpée. L'observation garde les appels de chaque opération à part, comme pour chaque chemin : une opération très appelée ne chasse jamais les appels des autres.
+
+Dans une opération, et pour tout corps, les champs du corps sont essayés comme les autres champs de la requête :
+
+- dans un corps XML, le texte de chaque élément qui ne contient pas d'autre élément, lu au premier élément de son chemin, comme le lit une condition XPath (`Envelope/Body/getStatus/ref`) ; une section CDATA est lue comme du texte ;
+- dans un corps JSON, chaque texte, nombre ou booléen à toute profondeur, sous forme de pointeur JSON (`/order/shipping/kind`).
+
+Une règle proposée à partir d'un tel champ correspond aux appels dont elle vient : le champ est lu comme la condition écrite à partir de lui lit la requête. La lecture d'un corps est bornée : les 64 premiers champs d'un corps, sur 16 niveaux au plus, un chemin de 256 octets et une valeur de 256 octets au plus ; au-delà, aucun champ. Un corps de requête coupé à la taille maximale de l'observation (`TRAFFIC_OBSERVATION_MAX_BODY_SIZE`) ne donne ni champ ni opération, et la suggestion dit combien de corps ont été coupés : augmentez ce réglage quand un champ attendu n'est jamais utilisé.
 
 ## Utiliser une suggestion
 
@@ -72,7 +83,7 @@ Seules les **règles suggérées** sont réécrites. Le trafic que Mimicway rela
 - Seulement pour un service en mode **proxy pur** (`is_mocked` désactivé) : « Observer ce service » est refusé sinon, puisque l'observation n'a de sens que sur du trafic relayé à un vrai backend.
 - Un appel n'est capturé que si les tailles de sa requête et de sa réponse sont connues à l'avance (un en-tête `Content-Length`, ou pas de corps). Une réponse envoyée par morceaux (`Transfer-Encoding: chunked`, sans taille annoncée) est toujours relayée normalement, mais pas observée.
 - Un chemin de plus de 32 segments n'est pas proposé.
-- Le nombre d'observations conservées est borné, par chemin et au total (voir les réglages `TRAFFIC_OBSERVATION_*` dans le README) : au-delà, les plus anciennes sont remplacées par les plus récentes, si bien que la mémoire ne croît jamais sans limite.
+- Le nombre d'observations conservées est borné, par chemin (par opération pour une adresse SOAP) et au total (voir les réglages `TRAFFIC_OBSERVATION_*` dans le README) : au-delà, les plus anciennes sont remplacées par les plus récentes, si bien que la mémoire ne croît jamais sans limite.
 - Les identifiants ne sont jamais capturés : `Authorization`, les cookies, les en-têtes de clé d'API et tout en-tête listé dans `REDACT_HEADERS` sont conservés comme `[redacted]`, et les règles suggérées ne les recopient jamais.
 - L'observation s'arrête d'elle-même quand son service est supprimé, renommé ou déplacé dans un autre groupe, et à chaque réinitialisation complète de la configuration. Ce qu'elle a observé est alors oublié, comme quand vous arrêtez d'observer : observer à nouveau repart de zéro, et un service créé plus tard sous le même nom n'hérite jamais du trafic d'un autre.
 - Comme pour le [journal des requêtes](request-log.md), rien n'est écrit sur disque : un redémarrage de Mimicway repart sans aucune observation.

@@ -423,7 +423,7 @@ describe('ObservationSuggestions', () => {
     });
   });
 
-  describe('rules with several values, and calls left out', () => {
+  describe('rules with several values, operations and calls left out', () => {
     const eq = (type, key, value) => ({ source: { type, key }, operator: { type: 'Eq', value } });
     const response = (value) => ({ status: 200, headers: [], body: [{ type: 'Literal', value }], chaos: null });
 
@@ -483,6 +483,79 @@ describe('ObservationSuggestions', () => {
       expect(onUseSuggestion).toHaveBeenCalledWith(
         expect.objectContaining({ conditions: { all_of: [], any_of: both } }),
       );
+    });
+
+    it('names the operation of a suggestion once, and the field that decides on each rule', async () => {
+      const operation = {
+        source: { type: 'XPath', key: 'Envelope/Body/GetStatus' },
+        operator: { type: 'Exists', value: undefined },
+      };
+      const reference = eq('XPath', 'Envelope/Body/GetStatus/ref', 'R1');
+      const { getByText, getByTestId, queryByText, onUseSuggestion } = await shown([
+        {
+          method: 'POST',
+          sub_path: '/ws/OrderService',
+          paths: ['/ws/OrderService'],
+          path_count: 1,
+          sample_count: 4,
+          operation: 'GetStatus',
+          left_out: [],
+          truncated_request_bodies: 2,
+          outcome: 'Conditional',
+          rules: [
+            {
+              method: 'POST',
+              sub_path: '/ws/OrderService',
+              conditions: { all_of: [operation, reference], any_of: [] },
+              condition: null,
+              sample_count: 4,
+              response: response('<status>R1-OPEN</status>'),
+            },
+          ],
+        },
+      ]);
+
+      await waitFor(() =>
+        expect(getByTestId('observation-suggestion-operation-svc-a-0')).toHaveTextContent(
+          'SOAP operation GetStatus: its rules answer only the calls that name it.',
+        ),
+      );
+      expect(getByText('if XML element of the body "Envelope/Body/GetStatus/ref" = "R1"')).toBeInTheDocument();
+      expect(queryByText(/Envelope\/Body\/GetStatus"/)).not.toBeInTheDocument();
+      expect(getByTestId('observation-suggestion-truncated-svc-a-0')).toHaveTextContent(
+        '2 request bodies were cut at the size limit of observation: their fields could not be read.',
+      );
+
+      await fireEvent.click(getByText('Use this suggestion'));
+      expect(onUseSuggestion).toHaveBeenCalledWith(
+        expect.objectContaining({ conditions: { all_of: [operation, reference], any_of: [] } }),
+      );
+    });
+
+    it('says an unconditional rule of an operation has no other condition', async () => {
+      const operation = { source: { type: 'XPath', key: 'Envelope/Body/Ping' }, operator: { type: 'Exists' } };
+      const { getByText } = await shown([
+        {
+          method: 'POST',
+          sub_path: '/ws/OrderService',
+          paths: ['/ws/OrderService'],
+          path_count: 1,
+          sample_count: 3,
+          operation: 'Ping',
+          left_out: [],
+          truncated_request_bodies: 0,
+          outcome: 'Unconditional',
+          rule: {
+            method: 'POST',
+            sub_path: '/ws/OrderService',
+            conditions: { all_of: [operation], any_of: [] },
+            condition: operation,
+            sample_count: 3,
+            response: response('<Pong/>'),
+          },
+        },
+      ]);
+      await waitFor(() => expect(getByText('no condition (3 identical calls)')).toBeInTheDocument());
     });
   });
 });

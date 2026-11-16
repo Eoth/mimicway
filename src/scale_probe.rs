@@ -105,6 +105,16 @@ pub const FAMILIES: &[Family] = &[
         env: &[],
         run: suggestions,
     },
+    // Past the 64 fields read from a body: the count follows the reading of each body, not the choice of a field. The
+    // limit of an observed body is raised so that 4n is not cut, which would read no field at all.
+    Family {
+        name: "suggestion-bodies",
+        n: 2000,
+        growth: Growth::Linear,
+        about: "suggestions from 6 calls of a SOAP operation and 6 of a JSON route, each request body holding n fields",
+        env: &[("TRAFFIC_OBSERVATION_MAX_BODY_SIZE", "1048576")],
+        run: suggestion_bodies,
+    },
     // 4n stays under 256 values, where Rhai's string interner starts to evict (`throttle_cache`): a step at a threshold,
     // bounded per value, that the ratio would read as growth. Rhai refuses maps of more than 500 keys anyway.
     Family {
@@ -453,6 +463,7 @@ fn suggestions(n: usize) {
         service_name: "svc".into(),
         method: "GET".into(),
         sub_path: format!("/orders/{i}"),
+        operation: None,
     };
     let exchange = |i: usize| {
         ObservedExchange::new(
@@ -471,6 +482,78 @@ fn suggestions(n: usize) {
         .collect();
     warm_then_measure(&mut || {
         black_box(crate::server::suggestion::suggest_for_service(&endpoints));
+    });
+}
+
+fn suggestion_bodies(n: usize) {
+    let kinds = ["a", "b", "c"];
+    let xml = |kind: &str| {
+        let mut body = String::from(
+            "<soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\"><soap:Body>\
+             <o:Book xmlns:o=\"urn:o\">",
+        );
+        body.push_str(&format!("<o:kind>{kind}</o:kind>"));
+        for j in 0..n {
+            let group = j % 10;
+            body.push_str(&format!("<o:g{group}><o:f{j}>v{j}</o:f{j}></o:g{group}>"));
+        }
+        body.push_str("</o:Book></soap:Body></soap:Envelope>");
+        body
+    };
+    let json = |kind: &str| {
+        let lines: Vec<Value> = (0..n).map(|j| json!({ format!("f{j}"): j })).collect();
+        json!({ "kind": kind, "lines": lines }).to_string()
+    };
+    let call = |request: String, kind: &str| {
+        ObservedExchange::new(
+            HashMap::new(),
+            HashMap::new(),
+            request.as_bytes(),
+            None,
+            200,
+            HashMap::new(),
+            format!("<booked>{kind}</booked>").as_bytes(),
+            Some("text/xml".into()),
+        )
+    };
+    let key = |path: &str| ObservationKey {
+        group_name: None,
+        service_name: "svc".into(),
+        method: "POST".into(),
+        sub_path: path.into(),
+        operation: None,
+    };
+    let endpoints = vec![
+        (
+            key("/ws/booking"),
+            (0..6)
+                .map(|i| call(xml(kinds[i % 3]), kinds[i % 3]))
+                .collect(),
+        ),
+        (
+            key("/api/v1/orders"),
+            (0..6)
+                .map(|i| call(json(kinds[i % 3]), kinds[i % 3]))
+                .collect(),
+        ),
+    ];
+    warm_then_measure(&mut || {
+        let suggestions = crate::server::suggestion::suggest_for_service(&endpoints);
+        let decided = suggestions.iter().all(|s| {
+            matches!(
+                s.outcome,
+                crate::server::suggestion::Suggestion::Conditional { .. }
+            )
+        });
+        assert!(
+            suggestions.len() == 2 && decided,
+            "one rule per kind on each route: {:?}",
+            suggestions
+                .iter()
+                .map(|s| (&s.sub_path, &s.operation, s.sample_count))
+                .collect::<Vec<_>>()
+        );
+        black_box(suggestions);
     });
 }
 
@@ -529,6 +612,7 @@ fn observed_calls(order: &[usize]) -> Vec<(ObservationKey, ObservedExchange)> {
                 service_name: "svc".into(),
                 method: "GET".into(),
                 sub_path: format!("/orders/{i}"),
+                operation: None,
             };
             (key, exchange.clone())
         })

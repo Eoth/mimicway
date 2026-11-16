@@ -21,7 +21,7 @@ Two calls to the same endpoint (same method, same path) can legitimately get dif
 Mimicway therefore waits until it has seen **several calls** to a route (see the next section) before suggesting anything, then:
 
 - When every observed response is the same, it suggests a rule **without conditions**.
-- When the responses vary and a path parameter, a query parameter, a JSON body field or a header **predicts** which response comes back (each of its values always gets the same response), it suggests **one rule per response**, with its condition. A response reached by several values, such as a directory giving the same address for two names, gets one rule that accepts any of them ("any of" conditions).
+- When the responses vary and a path parameter, a query parameter, a field of the body or a header **predicts** which response comes back (each of its values always gets the same response), it suggests **one rule per response**, with its condition. A response reached by several values, such as a directory giving the same address for two names, gets one rule that accepts any of them ("any of" conditions).
 - When the responses vary **and no field explains it reliably**, it suggests no rule. A message reports the variance, rather than a rule that would silently break some calls.
 
 When several fields would explain the responses, Mimicway keeps the one with the **fewest different values**: the name that decides wins over an identifier that changes at every call. A field whose every value was seen only once, and which would need several values for one response, is never chosen: any identifier unique to each call would fit, so it proves nothing.
@@ -44,6 +44,17 @@ The pattern's parameters are the first fields Mimicway tries to explain the resp
 ![A single suggested rule for every name of a directory, its response repeating the name](screenshots/observation-route-suggestion.png)
 
 A literal path next to a pattern, such as `/users/me` next to `/users/{id}`, is suggested first: rules apply in their order, and the more specific one must come first.
+
+## SOAP operations and fields of the body
+
+Every operation of a SOAP service is a `POST` to the same address: what tells two calls apart is the element the `Body` of the envelope holds. When every call of a route names **one** operation, Mimicway suggests rules **per operation**: each suggestion names its operation, and each of its rules carries the condition `Envelope/Body/<operation>` exists, in the syntax of XPath conditions (namespace prefixes are ignored), so that it never answers another operation. A route where one call names no operation, or several, is not split. Observation keeps the calls of each operation apart, as it does for each path: one busy operation never pushes the calls of the others out.
+
+Inside an operation, and for any body, the fields of the body are tried like the other fields of the request:
+
+- in an XML body, the text of each element that holds no other element, read at the first element of its path, as an XPath condition reads it (`Envelope/Body/getStatus/ref`); a CDATA section is read as text;
+- in a JSON body, each string, number or boolean at any depth, as a JSON pointer (`/order/shipping/kind`).
+
+A rule suggested from such a field matches the calls it was drawn from: the field is read as the condition written from it reads the request. Reading a body is bounded: the first 64 fields of a body, 16 levels deep at most, a path of 256 bytes and a value of 256 bytes at most; anything beyond gives no field. A request body cut at the size limit of observation (`TRAFFIC_OBSERVATION_MAX_BODY_SIZE`) gives no field and no operation, and the suggestion says how many bodies were cut: raise that setting when a field you expect is never used.
 
 ## Using a suggestion
 
@@ -72,7 +83,7 @@ Only the **suggested rules** are rewritten. The traffic Mimicway relays is never
 - Only for a service in **pure proxy** mode (`is_mocked` off): "Observe this service" is refused otherwise, since observation only makes sense on traffic relayed to a real backend.
 - A call is captured only when the sizes of its request and response are known in advance (a `Content-Length` header, or no body). A response streamed in chunks (`Transfer-Encoding: chunked`, no announced size) is still relayed normally but not observed.
 - A path of more than 32 segments is not suggested.
-- The number of observations kept is bounded, per path and overall (see the `TRAFFIC_OBSERVATION_*` settings in the README): beyond that, the oldest are replaced by the newest, so memory never grows without limit.
+- The number of observations kept is bounded, per path (per operation for a SOAP address) and overall (see the `TRAFFIC_OBSERVATION_*` settings in the README): beyond that, the oldest are replaced by the newest, so memory never grows without limit.
 - Credentials are never captured: `Authorization`, cookies, API-key headers and any header listed in `REDACT_HEADERS` are kept as `[redacted]`, and suggested rules never copy them.
 - Observation stops by itself when its service is deleted, renamed or moved to another group, and on every full reset of the configuration. What it observed is then forgotten, as when you stop observing: observing again starts from nothing, and a service created later under the same name never inherits another one's traffic.
 - Like the [request log](request-log.md), nothing is written to disk: a restart of Mimicway starts with no observation.

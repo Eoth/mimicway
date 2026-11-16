@@ -24,7 +24,10 @@ fn patterns(
     let observed: Vec<ObservedPath> = paths
         .iter()
         .zip(&exchanges)
-        .map(|(path, exchanges)| ObservedPath { path, exchanges })
+        .map(|(path, exchanges)| ObservedPath {
+            path,
+            exchanges: exchanges.iter().collect(),
+        })
         .collect();
     infer(&observed, &BTreeSet::new())
         .into_iter()
@@ -240,20 +243,20 @@ fn parameter_names_are_unique_in_a_pattern() {
     let routes = patterns(&["/a/1/2", "/a/3/4"], text);
     assert_eq!(routes[0].0, "/a/{id}/{id2}");
     let reserved = BTreeSet::from(["id".to_string()]);
-    let exchanges = vec![text("")];
+    let exchanges = [text("")];
     let observed = [ObservedPath {
         path: "/a/1",
-        exchanges: &exchanges,
+        exchanges: exchanges.iter().collect(),
     }];
     assert_eq!(infer(&observed, &reserved)[0].pattern(), "/a/{id2}");
 }
 
 #[test]
 fn parameter_values_are_decoded_like_the_matcher_decodes_them() {
-    let exchanges = vec![text("")];
+    let exchanges = [text("")];
     let observed = [ObservedPath {
         path: "/files/2026-10-12/caf%C3%A9",
-        exchanges: &exchanges,
+        exchanges: exchanges.iter().collect(),
     }];
     let route = &infer(&observed, &BTreeSet::new())[0];
     assert_eq!(route.pattern(), "/files/{id}/caf%C3%A9");

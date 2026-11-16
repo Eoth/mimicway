@@ -65,6 +65,19 @@ impl App {
         (resp.status().as_u16(), resp.text().await.unwrap())
     }
 
+    /// `POST` of `body` on a service URL: the status and the body.
+    async fn post(&self, path: &str, body: &str) -> (u16, String) {
+        let resp = self
+            .client
+            .post(format!("{}{path}", self.root))
+            .header("content-type", "text/xml")
+            .body(body.to_string())
+            .send()
+            .await
+            .unwrap();
+        (resp.status().as_u16(), resp.text().await.unwrap())
+    }
+
     async fn suggestions(&self, service: &str) -> Vec<Value> {
         self.client
             .get(format!("{}/api/services/{service}/suggestions", self.root))
@@ -96,7 +109,7 @@ impl App {
                 json!({
                     "name": format!("suggested-{i}"), "method": rule["method"], "sub_path": rule["sub_path"],
                     "action": "mock", "script": null,
-                    "conditions": {"all_of": rule["condition"].as_object().map_or(vec![], |_| vec![rule["condition"].clone()]), "any_of": []},
+                    "conditions": rule["conditions"],
                     "response": rule["response"],
                 })
             })
@@ -299,4 +312,60 @@ async fn a_directory_rule_sends_the_application_to_the_service_in_front_of_the_b
         app.call("/backend-127-0-0-1/orders/1").await,
         (200, "order 1".to_string())
     );
+}
+
+#[tokio::test]
+async fn each_operation_of_a_soap_address_keeps_its_own_calls_and_gets_its_suggestion() {
+    // Four operations called four times each: sixteen calls to one address, twice what an observed endpoint keeps. Each
+    // operation is an endpoint of its own, so none pushes the calls of another out.
+    const OPERATIONS: [&str; 4] = ["Book", "Cancel", "GetStatus", "Ping"];
+    let target = backend(axum::Router::new().fallback(|body: String| async move {
+        let operation = OPERATIONS
+            .iter()
+            .find(|op| body.contains(&format!(":{op}>")))
+            .unwrap();
+        format!("<Envelope><Body><{operation}Response/></Body></Envelope>")
+    }))
+    .await;
+    let app = start(vec![proxied("orders", "/*", &target)]).await;
+    app.observe("orders").await;
+    let envelope = |operation: &str| {
+        format!(
+            "<s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:o=\"urn:o\"><s:Body>\
+             <o:{operation}><o:id>1</o:id></o:{operation}></s:Body></s:Envelope>"
+        )
+    };
+    for operation in OPERATIONS {
+        for _ in 0..4 {
+            assert_eq!(
+                app.post("/orders/ws/OrderService", &envelope(operation))
+                    .await
+                    .0,
+                200
+            );
+        }
+    }
+
+    let suggestions = app.suggestions("orders").await;
+    let operations: Vec<&str> = suggestions
+        .iter()
+        .map(|s| s["operation"].as_str().unwrap_or("none"))
+        .collect();
+    assert_eq!(operations, OPERATIONS);
+    assert!(
+        suggestions.iter().all(|s| s["sample_count"] == 4),
+        "{suggestions:?}"
+    );
+    let rules: Vec<&Value> = suggestions.iter().map(|s| &s["rule"]).collect();
+    app.save_as_mock("orders", &rules).await;
+    for operation in OPERATIONS {
+        assert_eq!(
+            app.post("/orders/ws/OrderService", &envelope(operation))
+                .await,
+            (
+                200,
+                format!("<Envelope><Body><{operation}Response/></Body></Envelope>")
+            )
+        );
+    }
 }

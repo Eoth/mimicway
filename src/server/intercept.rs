@@ -239,12 +239,6 @@ async fn do_proxy_observed(
             if let Some(raw) = capture {
                 // Keyed by group name, like the API that enables observation and lists suggestions (the
                 // group code only exists in service URLs).
-                let key = crate::server::observation::ObservationKey {
-                    group_name: service.group_name.clone(),
-                    service_name: service.name.clone(),
-                    method: method_str.to_string(),
-                    sub_path: route.sub_path,
-                };
                 let mut exchange = crate::server::observation::ObservedExchange::new(
                     raw.request_query_params,
                     raw.request_headers,
@@ -257,6 +251,13 @@ async fn do_proxy_observed(
                 );
                 exchange.request_path_params = route.path_params;
                 exchange.request_host = raw.request_host;
+                let key = crate::server::observation::ObservationKey {
+                    group_name: service.group_name.clone(),
+                    service_name: service.name.clone(),
+                    method: method_str.to_string(),
+                    sub_path: route.sub_path,
+                    operation: crate::server::suggestion::request_operation(&exchange),
+                };
                 state.observation.store.record(key, exchange);
             }
             resp

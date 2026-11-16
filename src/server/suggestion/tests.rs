@@ -52,6 +52,7 @@ fn key(method: &str, path: &str) -> ObservationKey {
         service_name: "svc".into(),
         method: method.into(),
         sub_path: path.into(),
+        operation: None,
     }
 }
 
@@ -816,9 +817,203 @@ fn the_new_fields_of_a_suggestion_are_serialized() {
         json[0]["left_out"],
         serde_json::json!([{ "status": 502, "count": 1 }])
     );
+    assert_eq!(json[0]["operation"], serde_json::Value::Null);
+    assert_eq!(json[0]["truncated_request_bodies"], 0);
     assert_eq!(
         json[0]["rule"]["conditions"],
         serde_json::json!({ "all_of": [], "any_of": [] })
     );
     assert_eq!(json[0]["rule"]["condition"], serde_json::Value::Null);
+}
+
+// --- SOAP operations, XML and nested JSON bodies
+
+/// A call to `path` (a `POST`) with a request body, answered `status` with `body`.
+fn posted(request: &str, status: u16, body: &str) -> ObservedExchange {
+    let mut e = xml(status, body);
+    e.request_body = request.to_string();
+    e
+}
+
+fn soap(operation: &str, inner: &str) -> String {
+    format!(
+        "<soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:o=\"urn:orders\">\
+         <soap:Body><o:{operation}>{inner}</o:{operation}></soap:Body></soap:Envelope>"
+    )
+}
+
+fn soap_answer(inner: &str) -> String {
+    format!(
+        "<soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\"><soap:Body>{inner}</soap:Body>\
+         </soap:Envelope>"
+    )
+}
+
+fn soap_calls() -> Vec<(ObservationKey, Vec<ObservedExchange>)> {
+    let mut calls = Vec::new();
+    for _ in 0..3 {
+        calls.push(posted(&soap("Ping", ""), 200, &soap_answer("<Pong/>")));
+    }
+    for reference in ["R1", "R2", "R1", "R3", "R2"] {
+        calls.push(posted(
+            &soap("GetStatus", &format!("<o:ref>{reference}</o:ref>")),
+            200,
+            &soap_answer(&format!(
+                "<GetStatusResponse><status>{reference}-OPEN</status></GetStatusResponse>"
+            )),
+        ));
+    }
+    for kind in ["a", "b", "a"] {
+        calls.push(posted(
+            &soap("Book", &format!("<o:slot><o:type>{kind}</o:type></o:slot>")),
+            200,
+            &soap_answer("<BookResponse>OK</BookResponse>"),
+        ));
+    }
+    vec![(key("POST", "/ws/OrderService"), calls)]
+}
+
+#[test]
+fn each_operation_of_a_soap_endpoint_gets_its_own_suggestion() {
+    let endpoints = soap_calls();
+    let suggestions = suggest_for_service(&endpoints);
+    let operations: Vec<Option<&str>> =
+        suggestions.iter().map(|s| s.operation.as_deref()).collect();
+    assert_eq!(
+        operations,
+        vec![Some("Book"), Some("GetStatus"), Some("Ping")]
+    );
+    let exists = |name: &str| Condition {
+        source: ConditionSource::XPath(format!("Envelope/Body/{name}")),
+        operator: Operator::Exists,
+    };
+
+    let Suggestion::Unconditional { rule } = &suggestions[2].outcome else {
+        panic!(
+            "expected an unconditional suggestion for Ping, got {:?}",
+            suggestions[2]
+        );
+    };
+    assert_eq!(rule.conditions.all_of, vec![exists("Ping")]);
+    assert_eq!(rule.condition, Some(exists("Ping")));
+    assert_eq!(suggestions[2].sample_count, 3);
+
+    // The reference decides the status: one rule per reference, each with the operation and the reference.
+    let Suggestion::Conditional { rules } = &suggestions[1].outcome else {
+        panic!(
+            "expected a conditional suggestion for GetStatus, got {:?}",
+            suggestions[1]
+        );
+    };
+    assert_eq!(rules.len(), 3);
+    assert_eq!(
+        rules[0].conditions.all_of,
+        vec![
+            exists("GetStatus"),
+            Condition {
+                source: ConditionSource::XPath("Envelope/Body/GetStatus/ref".into()),
+                operator: Operator::Eq("R1".into()),
+            },
+        ]
+    );
+    assert_eq!(rules[0].condition, None);
+
+    assert!(matches!(
+        suggestions[0].outcome,
+        Suggestion::Unconditional { .. }
+    ));
+    assert_eq!(super::replay::check(&endpoints), Ok(()));
+}
+
+#[test]
+fn a_route_where_one_call_names_no_operation_is_not_split() {
+    let mut endpoints = soap_calls();
+    endpoints[0].1.push(posted("not xml", 200, "plain"));
+    let suggestions = suggest_for_service(&endpoints);
+    assert_eq!(suggestions.len(), 1);
+    assert_eq!(suggestions[0].operation, None);
+}
+
+#[test]
+fn a_field_of_a_nested_json_body_tells_the_responses_apart() {
+    let calls: Vec<ObservedExchange> = [
+        ("express", "fast"),
+        ("standard", "slow"),
+        ("express", "fast"),
+        ("eco", "slow"),
+    ]
+    .iter()
+    .enumerate()
+    .map(|(i, (kind, answer))| {
+        // The identifier changes at every call: it explains the sample too, for lack of evidence only.
+        let mut e = exchange(200, answer);
+        e.request_body = format!(r#"{{"order":{{"shipping":{{"kind":"{kind}"}},"id":{i}}}}}"#);
+        e
+    })
+    .collect();
+    let (source, values) = accepted_values(&suggest("POST", "/orders", &calls).unwrap()).unwrap();
+    assert_eq!(
+        source,
+        ConditionSource::JsonPointer("/order/shipping/kind".into())
+    );
+    assert_eq!(
+        values,
+        vec![
+            vec!["express".to_string()],
+            vec!["eco".to_string(), "standard".to_string()]
+        ]
+    );
+}
+
+#[test]
+fn a_body_cut_at_the_size_limit_gives_no_field_and_is_counted() {
+    let calls: Vec<ObservedExchange> = ["on", "on", "off"]
+        .iter()
+        .enumerate()
+        .map(|(i, mode)| {
+            let mut e = exchange(200, mode);
+            e.request_body = format!(r#"{{"mode":"{mode}"}}"#);
+            e.request_body_truncated = i == 2;
+            e
+        })
+        .collect();
+    let suggestions = suggest_for_service(&[(key("POST", "/toggle"), calls)]);
+    assert_eq!(suggestions[0].truncated_request_bodies, 1);
+    assert!(matches!(
+        suggestions[0].outcome,
+        Suggestion::VarianceUnexplained { .. }
+    ));
+}
+
+#[test]
+fn the_length_of_a_body_never_explains_its_answer() {
+    // A longer body got the server error: its length tells the calls apart, the backend did not decide on it.
+    let calls: Vec<ObservedExchange> = ["", "", "", "<o:msg>boom</o:msg>"]
+        .iter()
+        .map(|inner| {
+            let request = soap("Ping", inner);
+            let failed = !inner.is_empty();
+            let mut e = posted(
+                &request,
+                if failed { 500 } else { 200 },
+                &soap_answer(if failed { "<Fault/>" } else { "<Pong/>" }),
+            );
+            e.request_headers
+                .insert("content-length".into(), request.len().to_string());
+            e
+        })
+        .collect();
+    let suggestions = suggest_for_service(&[(key("POST", "/ws/OrderService"), calls)]);
+    assert_eq!(suggestions.len(), 1, "{suggestions:?}");
+    assert!(
+        matches!(suggestions[0].outcome, Suggestion::Unconditional { .. }),
+        "{suggestions:?}"
+    );
+    assert_eq!(
+        suggestions[0].left_out,
+        vec![LeftOut {
+            status: 500,
+            count: 1
+        }]
+    );
 }

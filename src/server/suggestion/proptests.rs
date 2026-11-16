@@ -155,6 +155,7 @@ fn endpoints(calls: &[(String, ObservedExchange)]) -> Vec<(ObservationKey, Vec<O
                     service_name: "svc".into(),
                     method: "GET".into(),
                     sub_path: path.clone(),
+                    operation: None,
                 },
                 vec![exchange.clone()],
             )),
@@ -232,4 +233,182 @@ proptest! {
         let result = super::replay::check(&endpoints(&calls));
         prop_assert!(result.is_ok(), "{}", result.unwrap_err());
     }
+}
+
+/// The values a body field takes, each written three ways in XML (plain, CDATA, with a reference) so that the same value
+/// reads the same whatever its writing.
+const VALUES: &[&str] = &["R1", "R2", "R3", "R4", "a&b"];
+const BODY_OPERATIONS: &[&str] = &["GetStatus", "Book", "Ping"];
+
+fn xml_text(value: &str, writing: usize) -> String {
+    match writing {
+        0 => value.replace('&', "&amp;"),
+        1 => format!("<![CDATA[{value}]]>"),
+        _ => value.replace('&', "&#38;"),
+    }
+}
+
+/// One call with a body: the operation (SOAP) or nothing (JSON), the value of the deciding field, how it is written,
+/// a counter that changes at every call, and repeated items.
+#[derive(Debug, Clone)]
+struct BodyCall {
+    soap: bool,
+    prefix: bool,
+    operation: usize,
+    value: usize,
+    writing: usize,
+    items: usize,
+    odd: Option<u16>,
+}
+
+fn request_body(call: &BodyCall, seq: usize) -> String {
+    let value = VALUES[call.value];
+    if call.soap {
+        let (p, ns) = if call.prefix {
+            (
+                "soap:",
+                " xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\"",
+            )
+        } else {
+            ("", "")
+        };
+        let items: String = (0..call.items)
+            .map(|i| format!("<o:item><o:n>{i}</o:n></o:item>"))
+            .collect();
+        format!(
+            "<{p}Envelope{ns} xmlns:o=\"urn:o\"><{p}Header><o:seq>{seq}</o:seq></{p}Header><{p}Body>\
+             <o:{op}><o:ref>{text}</o:ref>{items}</o:{op}></{p}Body></{p}Envelope>",
+            op = BODY_OPERATIONS[call.operation],
+            text = xml_text(value, call.writing),
+        )
+    } else {
+        let items: Vec<String> = (0..call.items).map(|i| format!("{{\"n\":{i}}}")).collect();
+        format!(
+            "{{\"req\":{{\"meta\":{{\"seq\":{seq}}},\"ref\":{}}},\"items\":[{}]}}",
+            serde_json::Value::from(value),
+            items.join(",")
+        )
+    }
+}
+
+/// Calls with XML or JSON bodies on one or two paths. Each (operation, value) answers with the response its table gives,
+/// so that several values often lead to one response; a few calls answer a server error, or another status, that
+/// nothing in the request explains.
+fn arb_body_calls() -> impl Strategy<Value = Vec<(String, ObservedExchange)>> {
+    let call = (
+        prop::bool::weighted(0.7),
+        any::<bool>(),
+        0..BODY_OPERATIONS.len(),
+        0..VALUES.len(),
+        0usize..3,
+        0usize..3,
+        prop::option::weighted(0.1, prop::sample::select(vec![500u16, 503, 404])),
+    )
+        .prop_map(
+            |(soap, prefix, operation, value, writing, items, odd)| BodyCall {
+                soap,
+                prefix,
+                operation,
+                value,
+                writing,
+                items,
+                odd,
+            },
+        );
+    (
+        prop::collection::vec(0usize..3, BODY_OPERATIONS.len() * VALUES.len()),
+        // Every body SOAP, every body JSON, or both.
+        0usize..3,
+        prop::collection::vec((call, prop::bool::weighted(0.2)), 0..24),
+    )
+        .prop_map(|(table, kinds, calls)| {
+            calls
+                .into_iter()
+                .enumerate()
+                .map(|(seq, (mut call, second_path))| {
+                    if kinds < 2 {
+                        call.soap = kinds == 0;
+                    }
+                    let answer = table[call.operation * VALUES.len() + call.value];
+                    let (status, body) = match call.odd {
+                        Some(status) => (status, format!("error {status}")),
+                        None => (200, format!("<r>{answer}</r>")),
+                    };
+                    let exchange = ObservedExchange::new(
+                        HashMap::new(),
+                        HashMap::new(),
+                        request_body(&call, seq).as_bytes(),
+                        None,
+                        status,
+                        HashMap::new(),
+                        body.as_bytes(),
+                        Some("text/xml".into()),
+                    );
+                    let path = if second_path { "/ws/b" } else { "/ws/a" };
+                    (path.to_string(), exchange)
+                })
+                .collect()
+        })
+}
+
+fn posted_endpoints(
+    calls: &[(String, ObservedExchange)],
+) -> Vec<(ObservationKey, Vec<ObservedExchange>)> {
+    let mut out = endpoints(calls);
+    for (key, _) in &mut out {
+        key.method = "POST".into();
+    }
+    out
+}
+
+#[test]
+fn rules_suggested_from_bodies_answer_every_call_they_come_from_as_observed() {
+    use proptest::test_runner::TestRunner;
+    use std::cell::Cell;
+    let config = crate::test_seed::config(512, 0x626f_6479_5f72_706c);
+    let (operations, several_values, set_aside, xml_fields, json_fields) = (
+        Cell::new(0),
+        Cell::new(0),
+        Cell::new(0),
+        Cell::new(0),
+        Cell::new(0),
+    );
+    let result = TestRunner::new(config).run(&arb_body_calls(), |calls| {
+        let endpoints = posted_endpoints(&calls);
+        let replayed = super::replay::check(&endpoints);
+        prop_assert!(replayed.is_ok(), "{}", replayed.unwrap_err());
+        for suggestion in suggest_for_service(&endpoints) {
+            operations.set(operations.get() + usize::from(suggestion.operation.is_some()));
+            set_aside.set(set_aside.get() + usize::from(!suggestion.left_out.is_empty()));
+            for rule in suggestion_rules(&suggestion.outcome) {
+                several_values
+                    .set(several_values.get() + usize::from(rule.conditions.any_of.len() > 1));
+                for condition in rule.conditions.all_of.iter().chain(&rule.conditions.any_of) {
+                    match (&condition.source, &condition.operator) {
+                        (ConditionSource::XPath(_), Operator::Eq(_)) => {
+                            xml_fields.set(xml_fields.get() + 1)
+                        }
+                        (ConditionSource::JsonPointer(_), _) => {
+                            json_fields.set(json_fields.get() + 1)
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+        Ok(())
+    });
+    if let Err(failure) = result {
+        panic!("{failure}");
+    }
+    // The cases the judge must see, for the written seed.
+    assert!(
+        operations.get() >= 100
+            && several_values.get() >= 50
+            && set_aside.get() >= 10
+            && xml_fields.get() >= 50
+            && json_fields.get() >= 10,
+        "operations {operations:?}, several values {several_values:?}, set aside {set_aside:?}, \
+         XML fields {xml_fields:?}, JSON fields {json_fields:?}"
+    );
 }

@@ -8,11 +8,12 @@
   // server, conflict check), rather than through a one-click endpoint that would skip them.
   //
   // A suggestion stands for a route: the server groups the observed paths under a pattern (`/orders/{id}`), listed with
-  // a few of the paths it covers, so the user sees what the pattern was inferred from.
+  // a few of the paths it covers, so the user sees what the pattern was inferred from. A route whose calls each name a
+  // SOAP operation gets one suggestion per operation, whose rules all carry that operation as a condition.
   //
-  // A rule may carry several conditions (`conditions`, all_of and any_of): the value that leads to its response, or the
-  // values when several lead to it. The summary says them in words; the draft passed to the rule form carries every
-  // condition.
+  // A rule may carry several conditions (`conditions`, all_of and any_of): the operation, then the value that leads to
+  // its response, or the values when several lead to it. The summary names the operation once, beside the route, and
+  // says the rest in words; the draft passed to the rule form carries every condition.
   //
   // The backends named in the responses (a directory's addresses, links, redirects) come with them: the application
   // calls those directly, past Mimicway. "Create a proxy service in front of it" opens the usual service form filled
@@ -118,6 +119,8 @@
         return t('HTTP header');
       case 'JsonPointer':
         return t('JSON field of the body');
+      case 'XPath':
+        return t('XML element of the body');
       case 'PathParam':
         return t('Path parameter');
       default:
@@ -138,6 +141,16 @@
   // Every condition of a rule; a server that only sends `condition` still gives its one condition.
   function ruleConditions(rule) {
     return rule.conditions ?? { all_of: rule.condition ? [rule.condition] : [], any_of: [] };
+  }
+
+  // The condition that names the suggestion's SOAP operation, said once beside the route rather than on each rule.
+  function isOperation(suggestion, condition) {
+    return (
+      !!suggestion.operation &&
+      condition.source?.type === 'XPath' &&
+      condition.operator?.type === 'Exists' &&
+      condition.source?.key === `Envelope/Body/${suggestion.operation}`
+    );
   }
 
   function toRuleDraft(rule) {
@@ -191,7 +204,7 @@
 
   function ruleSummary(suggestion, rule) {
     const { all_of, any_of } = ruleConditions(rule);
-    const parts = all_of.map(conditionSummary);
+    const parts = all_of.filter((c) => !isOperation(suggestion, c)).map(conditionSummary);
     if (any_of.length) parts.push(anyOfSummary(any_of));
     if (parts.length) return t('if {0}', parts.join(t(' and ')));
     if (suggestion.outcome === 'Echo') {
@@ -262,6 +275,11 @@
             )}
           </p>
         {/if}
+        {#if suggestion.operation}
+          <p class="suggestion-paths" data-testid="observation-suggestion-operation-{serviceName}-{i}">
+            {t('SOAP operation {0}: its rules answer only the calls that name it.', suggestion.operation)}
+          </p>
+        {/if}
         {#if suggestion.left_out?.length}
           <p class="suggestion-paths" data-testid="observation-suggestion-left-out-{serviceName}-{i}">
             {tCount(
@@ -272,9 +290,20 @@
             )}
           </p>
         {/if}
+        {#if suggestion.truncated_request_bodies}
+          <p class="suggestion-paths" data-testid="observation-suggestion-truncated-{serviceName}-{i}">
+            {tCount(
+              suggestion.truncated_request_bodies,
+              '{0} request body was cut at the size limit of observation: its fields could not be read.',
+              '{0} request bodies were cut at the size limit of observation: their fields could not be read.',
+            )}
+          </p>
+        {/if}
         {#if suggestion.outcome === 'VarianceUnexplained'}
           <p class="panel-unexplained" role="status" data-testid="observation-suggestion-unexplained-{serviceName}-{i}">
-            <code>{suggestion.method} {suggestion.sub_path}</code>
+            <code
+              >{suggestion.method} {suggestion.sub_path}{suggestion.operation ? ` ${suggestion.operation}` : ''}</code
+            >
             {t(
               'Varying responses observed ({0} calls, {1} distinct responses) but no field of the request tells them apart reliably: no rule suggested.',
               suggestion.sample_count,

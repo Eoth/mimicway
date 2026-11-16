@@ -4,8 +4,8 @@
 //
 // - `ObservationToggle`: which services a user is observing right now, turned on and off through the API, never
 //   automatically. Until someone turns it on for a service, its proxy stays pure streaming, at no extra cost.
-// - `ObservationStore`: the exchanges (request and backend response) captured meanwhile, grouped by service, method
-//   and literal path, bounded twice (number of endpoints, exchanges per endpoint) so memory never grows unbounded.
+// - `ObservationStore`: the exchanges (request and backend response) captured meanwhile, grouped by service, method,
+//   literal path and SOAP operation, bounded twice (number of endpoints, exchanges per endpoint) so memory never grows unbounded.
 use serde::Serialize;
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::sync::{Arc, RwLock};
@@ -90,6 +90,10 @@ pub struct ObservationKey {
     /// rule suggested from it matches the calls it comes from. `/orders/1` and `/orders/2` are two endpoints here;
     /// suggestions group them under a route pattern (`server::suggestion`).
     pub sub_path: String,
+    /// The SOAP operation the request names (`suggestion::request_operation`), `None` for any other request: the
+    /// operations of one address are endpoints of their own, as paths are, so that each keeps its own samples instead
+    /// of the busiest one pushing the others out.
+    pub operation: Option<String>,
 }
 
 /// An exchange whose two sides were both buffered within `max_buffer_size()`. A partial one (a response too large
@@ -372,6 +376,7 @@ mod tests {
             service_name: "svc".into(),
             method: "GET".into(),
             sub_path: path.into(),
+            operation: None,
         }
     }
 
