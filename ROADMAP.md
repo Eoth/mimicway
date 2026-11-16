@@ -52,9 +52,9 @@ A directory answers with the addresses of the services it knows, each address is
 
 | Theme | Items, in order | Taken together because |
 |---|---|---|
-| Screens that fit | U37 | the log screens and their tables, independent of the rest |
+| Screens that fit | U37, U40 | the log screens, their tables and the list of services, independent of the rest |
 | Suggestions that explain more | U34 | one algorithm (`src/server/suggestion.rs`), one judge: the suggested rules replayed on the calls they come from |
-| The chain and its calls | U36, U35 | the observation store, its panel and the list of backends |
+| The chain and its calls | U36, U35, U39 | the observation store, its panel and the list of backends, then the same steps without a click |
 
 ### U34. Suggested responses that repeat what the request sent
 
@@ -86,6 +86,16 @@ Size M
 
 **Done when.** From a directory naming three addresses on one host, one confirmation creates three observed proxy services, the directory's suggested rules send the application to them, and a call through the mocked directory then through one of them reaches the real backend (end-to-end test); a line refused by `PROXY_ALLOWED_TARGETS` leaves the two others created.
 
+### U39. Observation that goes down the chain by itself
+
+Size L, split: the decision and the relay that points to Mimicway, then the services and rules created without a click
+
+**Why.** Even with every suggestion right, following a chain is a round of clicks at each step: create the services a directory names, observe each, refresh, accept each rule. And the services behind a directory only see traffic once the directory is mocked, so the chain cannot be observed in one run of the application.
+
+**What.** Observation is turned on in one of two modes. Manual is today's: nothing is created without a click. Automatic, chosen explicitly and said on the screen: as the traffic comes, Mimicway creates a proxy service in front of each address the responses name (U35's checks, `PROXY_ALLOWED_TARGETS` included), observes it in the same mode, and saves the suggested rules of each observed service as soon as they are explained, replacing the rules it wrote itself when it knows more and never a rule the user changed. While a service is observed in automatic mode, the addresses it relays that a service of Mimicway stands in front of are replaced by that service's address, so that the application comes through Mimicway for the next step while the directory is still the real one; this is the one case where a relay changes a response, written in `decisions/` before the code, with what it buffers and its bounds. Switching to mock stays a click, one for the chain: Mimicway cannot know it has seen enough. Bounds on what one observation may create (services, rules), written next to the code and shown when reached.
+
+**Done when.** One run of an application through a directory observed in automatic mode leaves, without a click, a proxy service per address, each observed, and rules for the directory and for every operation called, and one click then mocks the chain, which answers with the network cut (end-to-end test); in manual mode and for a proxy that is not observed, the relay judge still finds every response unchanged; a rule edited by the user survives the next automatic save.
+
 ### U37. Log screens that fit their window and keep their filters
 
 Size S
@@ -95,6 +105,16 @@ Size S
 **What.** The tables of the request log and of the Kafka messages fit the width of their container at every width down to 320 CSS pixels (WCAG 1.4.10): long values are cut or wrapped inside their cell, whole in the details, and the details button is always in view. The other screens are checked the same way and fixed where they overflow. The filters of both logs are kept while the page stays open, in memory only (nothing written to the browser's storage, a path filter can hold an identifier), with their count shown and one button to clear them.
 
 **Done when.** An end-to-end test fills the log with a path of 300 characters and finds no horizontal overflow at 1280, 768 and 320 pixels, the details button inside the viewport, on each screen it visits; a filter set, the screen left and opened again, still filters, and is gone after a reload.
+
+### U40. Services of a group, folded to one line
+
+Size S
+
+**Why.** An open group shows every service as a full card (address, target, availability, rules, actions): a group of fifteen fills several screens, and finding one service means scrolling past the others.
+
+**What.** A choice on the list of services, compact or detailed, kept like the theme: compact shows one line per service (name, state, the mock switch, "Configure"), and a button on the line unfolds its card (a disclosure: `aria-expanded`, keyboard, name announced). A folded service asks for no availability check: it is checked when its card unfolds. Search keeps working on what is folded.
+
+**Done when.** In compact view a group of fifteen services fits in one screen at 1280×800 and each line unfolds by keyboard (end-to-end test, judged by axe in both themes); no availability request leaves for a folded service (counted in the test); the choice survives a reload.
 
 ## Release 0.6: approved at first sight
 
@@ -841,16 +861,6 @@ Size M. **Decision needed** (whether to offer it at all; never installed by Mimi
 **What.** An endpoint, off by default, that offers the management API over that protocol, with the tokens and scopes of T2. The user declares it in their own tool; Mimicway writes nothing outside its data directory to make itself known.
 
 **Done when.** With the endpoint on, a client of the protocol lists and creates a mock within the scope of its token; with it off, its path answers 404.
-
-### U38. A relayed directory whose addresses already point to Mimicway
-
-Size M. Decision needed: relayed traffic is never changed today, and the guide says so.
-
-**Why.** A directory has to be mocked before the application reaches the services put in front of the backends it names (U35), and a mocked directory only knows the names that were observed: a name never seen gets no answer, or the real address when a rule forwards it, and the application leaves Mimicway again.
-
-**What.** Decide whether a service in proxy mode may, when asked to, rewrite in the responses it relays the addresses of the backends that a service of Mimicway stands in front of, as the suggested rules already do: the directory stays the real one, every name included, and the whole chain goes through Mimicway. To weigh: the promise that a relay changes nothing (the relay judge, `src/engine/proxy/judge.rs`), the buffering of a response that is streamed today, the address written from the caller's `Host`. The `rewrite_directory_urls` key of a service, read by no code, was kept for this.
-
-**Done when.** The decision is written in `decisions/`, and, if it is yes, the item is rewritten with its judge.
 
 ## Engineering backlog
 
