@@ -94,8 +94,9 @@ fn answer(kind: usize, path: &str, query: &str) -> (String, &'static str) {
     }
 }
 
-/// Calls on `PATHS`: each path answers with its own kind and status, except a few calls that answer otherwise (the
-/// variance a suggestion must explain or refuse).
+/// Calls on `PATHS`: each path answers with its own kind and status, except a few calls that answer otherwise, and a few
+/// that answer a server error nothing explains (the variance a suggestion must explain, set aside or refuse). Paths of
+/// one pattern often share a kind, so that several values lead to one response.
 fn arb_calls() -> impl Strategy<Value = Vec<(String, ObservedExchange)>> {
     (
         prop::collection::vec(
@@ -107,6 +108,7 @@ fn arb_calls() -> impl Strategy<Value = Vec<(String, ObservedExchange)>> {
                 prop::sample::select(WEIGHTED),
                 prop::option::weighted(0.15, 0usize..6),
                 prop::option::of(prop::sample::select(vec!["1", "2", "x"])),
+                prop::option::weighted(0.08, prop::sample::select(vec![500u16, 503])),
             ),
             0..24,
         ),
@@ -114,10 +116,14 @@ fn arb_calls() -> impl Strategy<Value = Vec<(String, ObservedExchange)>> {
         .prop_map(|(per_path, calls)| {
             calls
                 .into_iter()
-                .map(|(p, odd_kind, query)| {
+                .map(|(p, odd_kind, query, error)| {
                     let (kind, status) = per_path[p];
                     let (body, content_type) =
                         answer(odd_kind.unwrap_or(kind), PATHS[p], query.unwrap_or("none"));
+                    let (status, body) = match error {
+                        Some(error) => (error, format!("server error {error}")),
+                        None => (status, body),
+                    };
                     let query: HashMap<String, String> = query
                         .map(|v| ("q".to_string(), v.to_string()))
                         .into_iter()

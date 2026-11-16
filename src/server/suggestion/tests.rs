@@ -517,3 +517,308 @@ fn a_json_field_name_with_a_slash_or_a_tilde_is_escaped_in_its_pointer() {
     let body: serde_json::Value = serde_json::from_str(&calls[0].request_body).unwrap();
     assert_eq!(body.pointer(&pointer), Some(&serde_json::json!("on")));
 }
+
+// --- Several values per response, and server errors set aside
+
+/// The field values and the response of one call, as `(query parameters, status, body)`.
+type Call<'a> = (&'a [(&'a str, &'a str)], u16, &'a str);
+
+fn query_calls(calls: &[Call]) -> Vec<ObservedExchange> {
+    calls
+        .iter()
+        .map(|(query, status, body)| exchange_with_query(*status, body, query))
+        .collect()
+}
+
+/// The source, and the values each rule accepts, of a conditional suggestion.
+fn accepted_values(suggestion: &Suggestion) -> Option<(ConditionSource, Vec<Vec<String>>)> {
+    let Suggestion::Conditional { rules } = suggestion else {
+        return None;
+    };
+    let mut source = None;
+    let values = rules
+        .iter()
+        .map(|rule| {
+            let conditions: Vec<&Condition> = rule
+                .conditions
+                .all_of
+                .iter()
+                .chain(&rule.conditions.any_of)
+                .collect();
+            conditions
+                .into_iter()
+                .map(|c| {
+                    source = Some(c.source.clone());
+                    match &c.operator {
+                        Operator::Eq(v) => v.clone(),
+                        other => panic!("expected Eq, got {other:?}"),
+                    }
+                })
+                .collect()
+        })
+        .collect();
+    Some((source?, values))
+}
+
+#[test]
+fn the_choice_of_a_field_follows_its_table() {
+    // One row per line of the table above `find_discriminator`: the calls, then the field chosen and the values each
+    // response accepts, or `None` when nothing is suggested.
+    let q = |k| ConditionSource::QueryParam(String::from(k));
+    type Row<'a> = (
+        &'a str,
+        Vec<Call<'a>>,
+        Option<(ConditionSource, Vec<Vec<&'a str>>)>,
+    );
+    let rows: Vec<Row> = vec![
+        (
+            "missing from one call",
+            vec![
+                (&[("a", "1")], 200, "x"),
+                (&[("a", "1")], 200, "x"),
+                (&[], 404, "y"),
+            ],
+            None,
+        ),
+        (
+            "one value seen with two responses",
+            vec![
+                (&[("a", "1")], 200, "x"),
+                (&[("a", "1")], 404, "y"),
+                (&[("a", "2")], 404, "y"),
+            ],
+            None,
+        ),
+        (
+            "one value per response",
+            vec![
+                (&[("a", "1")], 200, "x"),
+                (&[("a", "1")], 200, "x"),
+                (&[("a", "2")], 404, "y"),
+            ],
+            Some((q("a"), vec![vec!["1"], vec!["2"]])),
+        ),
+        (
+            "two values for one response, one of them seen twice",
+            vec![
+                (&[("a", "1")], 200, "x"),
+                (&[("a", "1")], 200, "x"),
+                (&[("a", "3")], 200, "x"),
+                (&[("a", "2")], 404, "y"),
+            ],
+            Some((q("a"), vec![vec!["1", "3"], vec!["2"]])),
+        ),
+        (
+            "two values for one response, every value seen once",
+            vec![
+                (&[("a", "1")], 200, "x"),
+                (&[("a", "3")], 200, "x"),
+                (&[("a", "2")], 404, "y"),
+            ],
+            None,
+        ),
+        (
+            "the field with the fewest values wins",
+            vec![
+                (&[("a", "1"), ("b", "p")], 200, "x"),
+                (&[("a", "2"), ("b", "p")], 200, "x"),
+                (&[("a", "1"), ("b", "p")], 200, "x"),
+                (&[("a", "3"), ("b", "q")], 404, "y"),
+                (&[("a", "3"), ("b", "q")], 404, "y"),
+            ],
+            Some((q("b"), vec![vec!["p"], vec!["q"]])),
+        ),
+        (
+            "on a tie, the name in byte order",
+            vec![
+                (&[("b", "1"), ("a", "p")], 200, "x"),
+                (&[("b", "1"), ("a", "p")], 200, "x"),
+                (&[("b", "2"), ("a", "q")], 404, "y"),
+            ],
+            Some((q("a"), vec![vec!["p"], vec!["q"]])),
+        ),
+    ];
+    for (row, calls, expected) in rows {
+        let suggestion = suggest("GET", "/x", &query_calls(&calls)).unwrap();
+        let expected = expected.map(|(source, values)| {
+            let values = values
+                .into_iter()
+                .map(|v| v.into_iter().map(String::from).collect())
+                .collect();
+            (source, values)
+        });
+        assert_eq!(
+            accepted_values(&suggestion),
+            expected,
+            "{row}: {suggestion:?}"
+        );
+        if expected.is_none() {
+            assert!(
+                matches!(suggestion, Suggestion::VarianceUnexplained { .. }),
+                "{row}: {suggestion:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_header_comes_after_a_query_parameter_with_as_many_values() {
+    let calls: Vec<ObservedExchange> = [
+        ("1", "p", 200, "x"),
+        ("1", "p", 200, "x"),
+        ("2", "q", 404, "y"),
+    ]
+    .iter()
+    .map(|(h, q, status, body)| {
+        let mut e = exchange_with_query(*status, body, &[("a", q)]);
+        e.request_headers.insert("x-env".into(), h.to_string());
+        e
+    })
+    .collect();
+    let (source, _) = accepted_values(&suggest("GET", "/x", &calls).unwrap()).unwrap();
+    assert_eq!(source, ConditionSource::QueryParam("a".into()));
+}
+
+/// A directory of services: the address it gives for a name, two names (an alias) giving the same one.
+fn directory_address(name: &str) -> &'static str {
+    match name {
+        "orders" | "ordersV2" => {
+            "<lookup><endpoint>http://backend.internal/ws/OrderService</endpoint></lookup>"
+        }
+        "stock" => "<lookup><endpoint>http://backend.internal/ws/StockService</endpoint></lookup>",
+        _ => "<lookup><endpoint>http://backend.internal/ws/BillingService</endpoint></lookup>",
+    }
+}
+
+#[test]
+fn a_response_reached_by_two_names_is_one_rule_that_accepts_both() {
+    // Ten lookups of four names, each with an identifier of its own: the name decides, the identifier changes at every
+    // call and must not win.
+    let names = [
+        "orders", "stock", "ordersV2", "billing", "orders", "stock", "ordersV2", "billing",
+        "orders", "stock",
+    ];
+    let calls: Vec<(String, ObservedExchange)> = names
+        .iter()
+        .enumerate()
+        .map(|(i, name)| {
+            (
+                format!("/directory/find/{name}/9f86d081/{}", 1000 + i),
+                xml(200, directory_address(name)),
+            )
+        })
+        .collect();
+    let suggestions = suggest_for_service(&observed(
+        calls.iter().map(|(p, e)| (p.as_str(), e.clone())).collect(),
+    ));
+    assert_eq!(suggestions.len(), 1, "{suggestions:?}");
+    assert_eq!(
+        suggestions[0].sub_path,
+        "/directory/find/{name}/{hash}/{id}"
+    );
+    let (source, values) =
+        accepted_values(&suggestions[0].outcome).expect("a conditional suggestion");
+    assert_eq!(source, ConditionSource::PathParam("name".into()));
+    assert_eq!(
+        values,
+        vec![
+            vec!["orders".to_string(), "ordersV2".to_string()],
+            vec!["stock".to_string()],
+            vec!["billing".to_string()],
+        ]
+    );
+    let Suggestion::Conditional { rules } = &suggestions[0].outcome else {
+        unreachable!()
+    };
+    // The rule of two names holds them in `any_of`, and has no single condition to show.
+    assert_eq!(rules[0].conditions.all_of, vec![]);
+    assert_eq!(rules[0].conditions.any_of.len(), 2);
+    assert_eq!(rules[0].condition, None);
+    assert_eq!(
+        rules[1].condition.as_ref(),
+        rules[1].conditions.all_of.first()
+    );
+    let replayed = super::replay::check(&observed(
+        calls.iter().map(|(p, e)| (p.as_str(), e.clone())).collect(),
+    ));
+    assert_eq!(replayed, Ok(()));
+}
+
+#[test]
+fn an_unexplained_server_error_is_set_aside_and_said() {
+    let mut calls: Vec<ObservedExchange> = (0..5).map(|_| exchange(200, "ok")).collect();
+    calls.insert(2, exchange(500, "upstream timeout"));
+    let suggestions = suggest_for_service(&[(key("GET", "/orders"), calls.clone())]);
+    assert_eq!(suggestions.len(), 1);
+    let Suggestion::Unconditional { rule } = &suggestions[0].outcome else {
+        panic!("expected an unconditional suggestion, got {suggestions:?}");
+    };
+    assert_eq!((rule.response.status, rule.sample_count), (200, 5));
+    assert_eq!(suggestions[0].sample_count, 6);
+    assert_eq!(
+        suggestions[0].left_out,
+        vec![LeftOut {
+            status: 500,
+            count: 1
+        }]
+    );
+    assert_eq!(
+        super::replay::check(&[(key("GET", "/orders"), calls)]),
+        Ok(())
+    );
+}
+
+#[test]
+fn a_server_error_that_a_field_explains_keeps_its_rule() {
+    let calls = query_calls(&[
+        (&[("id", "1")], 200, "ok"),
+        (&[("id", "1")], 200, "ok"),
+        (&[("id", "9")], 503, "down"),
+    ]);
+    let suggestions = suggest_for_service(&[(key("GET", "/orders"), calls)]);
+    assert_eq!(suggestions[0].left_out, vec![]);
+    let (_, values) = accepted_values(&suggestions[0].outcome).unwrap();
+    assert_eq!(values.len(), 2);
+}
+
+#[test]
+fn errors_are_set_aside_only_when_enough_calls_remain() {
+    // Two answers are not the three a suggestion waits for.
+    let calls = vec![exchange(200, "ok"), exchange(200, "ok"), exchange(500, "x")];
+    let suggestions = suggest_for_service(&[(key("GET", "/orders"), calls)]);
+    assert!(matches!(
+        suggestions[0].outcome,
+        Suggestion::VarianceUnexplained {
+            response_class_count: 2
+        }
+    ));
+    assert_eq!(suggestions[0].left_out, vec![]);
+}
+
+#[test]
+fn a_client_error_is_never_set_aside() {
+    let mut calls: Vec<ObservedExchange> = (0..5).map(|_| exchange(200, "ok")).collect();
+    calls.push(exchange(404, "missing"));
+    let suggestions = suggest_for_service(&[(key("GET", "/orders"), calls)]);
+    assert!(matches!(
+        suggestions[0].outcome,
+        Suggestion::VarianceUnexplained { .. }
+    ));
+}
+
+#[test]
+fn the_new_fields_of_a_suggestion_are_serialized() {
+    let mut calls: Vec<ObservedExchange> = (0..3).map(|_| exchange(200, "ok")).collect();
+    calls.push(exchange(502, "bad gateway"));
+    let json =
+        serde_json::to_value(suggest_for_service(&[(key("GET", "/orders"), calls)])).unwrap();
+    assert_eq!(
+        json[0]["left_out"],
+        serde_json::json!([{ "status": 502, "count": 1 }])
+    );
+    assert_eq!(
+        json[0]["rule"]["conditions"],
+        serde_json::json!({ "all_of": [], "any_of": [] })
+    );
+    assert_eq!(json[0]["rule"]["condition"], serde_json::Value::Null);
+}

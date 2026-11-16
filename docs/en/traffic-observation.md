@@ -21,8 +21,12 @@ Two calls to the same endpoint (same method, same path) can legitimately get dif
 Mimicway therefore waits until it has seen **several calls** to a route (see the next section) before suggesting anything, then:
 
 - When every observed response is the same, it suggests a rule **without conditions**.
-- When the responses vary and a path parameter, a query parameter, a JSON body field or a header **predicts exactly** which response comes back for which value, it suggests **one rule per value**, each with its condition.
+- When the responses vary and a path parameter, a query parameter, a JSON body field or a header **predicts** which response comes back (each of its values always gets the same response), it suggests **one rule per response**, with its condition. A response reached by several values, such as a directory giving the same address for two names, gets one rule that accepts any of them ("any of" conditions).
 - When the responses vary **and no field explains it reliably**, it suggests no rule. A message reports the variance, rather than a rule that would silently break some calls.
+
+When several fields would explain the responses, Mimicway keeps the one with the **fewest different values**: the name that decides wins over an identifier that changes at every call. A field whose every value was seen only once, and which would need several values for one response, is never chosen: any identifier unique to each call would fit, so it proves nothing.
+
+A call answered with a **server error** (a `5xx` status) that no field explains is set aside: Mimicway suggests the rules for the other calls, if there are still enough of them, and the suggestion says how many calls were left out and with which status. Five identical answers and one `500` give one rule for the five.
 
 ![Suggestions: two conditional rules derived from observed traffic](screenshots/observation-suggestions.png)
 
@@ -43,7 +47,7 @@ A literal path next to a pattern, such as `/users/me` next to `/users/{id}`, is 
 
 ## Using a suggestion
 
-**"Refresh the suggestions"** reads the traffic observed since observation was turned on and computes the suggestions again (nothing refreshes in the background). **"Use this suggestion"** does **not** create the rule: it fills the usual rule form (method, sub-path, condition, response), so that you review, adjust and save it like any other rule.
+**"Refresh the suggestions"** reads the traffic observed since observation was turned on and computes the suggestions again (nothing refreshes in the background). **"Use this suggestion"** does **not** create the rule: it fills the usual rule form (method, sub-path, conditions, response), so that you review, adjust and save it like any other rule.
 
 ![The rule form filled from a suggestion](screenshots/observation-suggestion-prefilled-form.png)
 

@@ -5,15 +5,16 @@
 // First the literal paths of each method are grouped into route patterns (`routes`): `/orders/1` and `/orders/2`
 // pool their samples under `/orders/{id}`, whose parameter becomes a condition source like any request field.
 //
-// Then, per route, the trap: two calls to the same route can legitimately get different answers, and a rule built
-// from the first answer seen would silently break the others. Hence three steps: (1) group the observations by
-// equivalent response; (2) one group gives an unconditional rule; (3) several groups need a request field that tells
-// them apart perfectly (same value, same group; different groups, different values) before anything is suggested.
-// When that value is all that differs between the responses (the backend repeats it), one rule that repeats it
-// (`{{path.name}}`) replaces one rule per value. When no field tells the groups apart, nothing is suggested: no rule
-// beats a fragile one.
+// Then, per route, the trap: two calls to the same route can legitimately get different answers, and a
+// rule built from the first answer seen would silently break the others. Hence three steps: (1) group the observations
+// by equivalent response; (2) one group gives an unconditional rule; (3) several groups need a request field whose
+// every value leads to one group (`find_discriminator`, and the table above it of what is chosen and refused) before
+// anything is suggested: one rule per group, accepting the values that lead to it. When each group has one value and
+// that value is all that differs between the responses (the backend repeats it), one rule that repeats it
+// (`{{path.name}}`) replaces one rule per value. When no field tells the groups apart, the calls answered with a server
+// error are set aside and the others tried alone; failing that, nothing is suggested: no rule beats a fragile one.
 use crate::models::{
-    BodyFragment, Condition, ConditionSource, HeaderEntry, MockResponse, Operator,
+    BodyFragment, Condition, ConditionGroup, ConditionSource, HeaderEntry, MockResponse, Operator,
 };
 use crate::server::observation::{ObservationKey, ObservedExchange};
 use std::collections::hash_map::Entry;
@@ -51,11 +52,16 @@ const NOISY_HEADERS: &[&str] = &[
 ];
 
 /// A suggested rule: the unconditional one (no variance observed, or a response that repeats a request value), or one
-/// of the conditional rules covering each distinct response (`condition` is then `Some`).
+/// of the conditional rules covering each distinct response.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SuggestedRule {
     pub method: String,
     pub sub_path: String,
+    /// Every condition of the rule: the value that leads to its response (`all_of`), or the values (`any_of`, one `Eq`
+    /// each) when several lead to it.
+    pub conditions: ConditionGroup,
+    /// The one condition of the rule when it has exactly one, in `all_of`; `None` otherwise, `conditions` then says
+    /// everything.
     pub condition: Option<Condition>,
     /// The request field whose value the response repeats, through a template fragment of `response.body`.
     pub echo: Option<ConditionSource>,
@@ -74,7 +80,8 @@ pub enum Suggestion {
     /// Responses that differ only by a request value they repeat: one rule, without condition, whose response repeats
     /// that value.
     Echo { rule: Box<SuggestedRule> },
-    /// Variance explained by a request field: one rule per value seen, each with an `Eq` condition.
+    /// Variance explained by a request field: one rule per distinct response, accepting the values of the field that
+    /// lead to it (`Eq`, or `any_of` several `Eq`).
     Conditional { rules: Vec<SuggestedRule> },
     /// Variance that no field explains reliably in the sample: nothing to suggest, only a diagnosis.
     VarianceUnexplained { response_class_count: usize },
@@ -90,8 +97,17 @@ pub struct EndpointSuggestion {
     pub paths: Vec<String>,
     pub path_count: usize,
     pub sample_count: usize,
+    /// Calls answered with a server error that no field explains, left out of the suggestion, by status.
+    pub left_out: Vec<LeftOut>,
     #[serde(flatten)]
     pub outcome: Suggestion,
+}
+
+/// How many calls answered with `status` were set aside.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct LeftOut {
+    pub status: u16,
+    pub count: usize,
 }
 
 /// One observed exchange of a route, with the path parameters it carries: those the route's pattern takes from its
@@ -177,23 +193,95 @@ pub(super) fn observed_routes(
 pub fn suggest_for_service(
     endpoints: &[(ObservationKey, Vec<ObservedExchange>)],
 ) -> Vec<EndpointSuggestion> {
-    observed_routes(endpoints)
-        .into_iter()
-        .filter_map(|route| {
-            let outcome = suggest_route(route.method, &route.pattern, &route.samples)?;
-            Some(EndpointSuggestion {
-                method: route.method.to_string(),
-                path_count: route.literal_paths.len(),
-                paths: route
-                    .literal_paths
-                    .iter()
-                    .take(MAX_LISTED_PATHS)
-                    .map(|p| p.to_string())
-                    .collect(),
-                sub_path: route.pattern,
-                sample_count: route.samples.len(),
-                outcome,
+    let mut suggestions = Vec::new();
+    for route in observed_routes(endpoints) {
+        let calls: Vec<Call> = route
+            .samples
+            .iter()
+            .map(|sample| Call {
+                sample,
+                body: json_top_level_fields(&sample.exchange.request_body),
             })
+            .collect();
+        let group: Vec<&Call> = calls.iter().collect();
+        let Some((outcome, left_out)) = suggest_calls(route.method, &route.pattern, &group, &[])
+        else {
+            continue;
+        };
+        suggestions.push(EndpointSuggestion {
+            method: route.method.to_string(),
+            path_count: route.literal_paths.len(),
+            paths: route
+                .literal_paths
+                .iter()
+                .take(MAX_LISTED_PATHS)
+                .map(|p| p.to_string())
+                .collect(),
+            sub_path: route.pattern.clone(),
+            sample_count: group.len(),
+            left_out,
+            outcome,
+        });
+    }
+    suggestions
+}
+
+/// One observed call of a route, with the fields of its request body.
+struct Call<'a> {
+    sample: &'a Sample<'a>,
+    /// The top-level scalars of a JSON body, by their JSON pointer.
+    body: Vec<(String, String)>,
+}
+
+impl Call<'_> {
+    fn exchange(&self) -> &ObservedExchange {
+        self.sample.exchange
+    }
+
+    /// Every field of the call a condition may read, with its value: path parameters, query parameters, body fields
+    /// and headers, noisy headers left out.
+    fn fields(&self) -> impl Iterator<Item = (Candidate<'_>, &str)> {
+        let exchange = self.exchange();
+        let path = self
+            .sample
+            .path_params
+            .iter()
+            .map(|(k, v)| (Candidate::PathParam(k), v.as_str()));
+        let query = exchange
+            .request_query_params
+            .iter()
+            .map(|(k, v)| (Candidate::QueryParam(k), v.as_str()));
+        let body = self
+            .body
+            .iter()
+            .map(|(pointer, v)| (Candidate::JsonPointer(pointer), v.as_str()));
+        let headers = exchange
+            .request_headers
+            .iter()
+            .filter(|(k, _)| !NOISY_HEADERS.contains(&k.to_lowercase().as_str()))
+            .map(|(k, v)| (Candidate::Header(k), v.as_str()));
+        path.chain(query).chain(body).chain(headers)
+    }
+}
+
+/// Reads the request body as a flat JSON object (no arrays or nested objects for now): each scalar field becomes a
+/// JSON pointer (`/key`, escaped as RFC 6901 says: `~` and `/` in a name are written `~0` and `~1`).
+fn json_top_level_fields(body: &str) -> Vec<(String, String)> {
+    let Ok(serde_json::Value::Object(map)) = serde_json::from_str::<serde_json::Value>(body) else {
+        return Vec::new();
+    };
+    map.into_iter()
+        .filter_map(|(k, v)| {
+            let value = match v {
+                serde_json::Value::String(s) => s,
+                serde_json::Value::Number(n) => n.to_string(),
+                serde_json::Value::Bool(b) => b.to_string(),
+                _ => return None,
+            };
+            Some((
+                format!("/{}", k.replace('~', "~0").replace('/', "~1")),
+                value,
+            ))
         })
         .collect()
 }
@@ -205,79 +293,132 @@ fn response_signature(exchange: &ObservedExchange) -> (u16, &str) {
     (exchange.response_status, exchange.response_body.as_str())
 }
 
-/// The suggestion for one route from its samples (oldest first). `None` while the sample is smaller than
-/// `min_samples()`: no decision yet, either way.
-fn suggest_route(method: &str, sub_path: &str, samples: &[Sample]) -> Option<Suggestion> {
-    if samples.len() < min_samples() {
+/// The suggestion for the calls of one route (oldest first), each rule carrying the conditions `base` first, and the calls set aside. `None` while there are fewer calls than `min_samples()`: no decision yet, either way.
+/// When no field explains the responses, the calls answered with a `5xx` status are set aside and the others tried
+/// alone, if there are still `min_samples()` of them: a server error that nothing in the request explains says nothing
+/// about the answers the others got.
+fn suggest_calls(
+    method: &str,
+    sub_path: &str,
+    calls: &[&Call],
+    base: &[Condition],
+) -> Option<(Suggestion, Vec<LeftOut>)> {
+    if calls.len() < min_samples() {
         return None;
     }
+    let unexplained = match explain(method, sub_path, calls, base) {
+        Ok(suggestion) => return Some((suggestion, Vec::new())),
+        Err(unexplained) => unexplained,
+    };
+    let (errors, kept): (Vec<&Call>, Vec<&Call>) = calls
+        .iter()
+        .partition(|c| c.exchange().response_status >= 500);
+    if !errors.is_empty()
+        && kept.len() >= min_samples()
+        && let Ok(suggestion) = explain(method, sub_path, &kept, base)
+    {
+        let mut by_status: BTreeMap<u16, usize> = BTreeMap::new();
+        for call in errors {
+            *by_status
+                .entry(call.exchange().response_status)
+                .or_default() += 1;
+        }
+        let left_out = by_status
+            .into_iter()
+            .map(|(status, count)| LeftOut { status, count })
+            .collect();
+        return Some((suggestion, left_out));
+    }
+    Some((unexplained, Vec::new()))
+}
 
-    // Groups of equivalent responses, as indices into `samples`, in order of first appearance. Found by signature in a
-    // map: comparing each sample with every group found so far costs samples × groups, quadratic when every response
+/// The suggestion for `calls` when one response, or a field, explains them all; otherwise the diagnosis.
+fn explain(
+    method: &str,
+    sub_path: &str,
+    calls: &[&Call],
+    base: &[Condition],
+) -> Result<Suggestion, Suggestion> {
+    // Groups of equivalent responses, as indices into `calls`, in order of first appearance. Found by signature in a
+    // map: comparing each call with every group found so far costs calls × groups, quadratic when every response
     // differs.
     let mut classes: Vec<Vec<usize>> = Vec::new();
-    let mut class_of: HashMap<(u16, &str), usize> = HashMap::new();
-    for (i, sample) in samples.iter().enumerate() {
-        match class_of.entry(response_signature(sample.exchange)) {
-            Entry::Occupied(class) => classes[*class.get()].push(i),
+    let mut class_index: HashMap<(u16, &str), usize> = HashMap::new();
+    let mut class_of = Vec::with_capacity(calls.len());
+    for (i, call) in calls.iter().enumerate() {
+        let class = match class_index.entry(response_signature(call.exchange())) {
+            Entry::Occupied(class) => *class.get(),
             Entry::Vacant(slot) => {
                 slot.insert(classes.len());
-                classes.push(vec![i]);
+                classes.push(Vec::new());
+                classes.len() - 1
             }
-        }
+        };
+        classes[class].push(i);
+        class_of.push(class);
     }
-    let latest = |class: &[usize]| samples[class[class.len() - 1]].exchange;
-    let rule = |condition, echo, sample_count, response| SuggestedRule {
+    let latest = |class: &[usize]| calls[class[class.len() - 1]].exchange();
+    let rule = |conditions: ConditionGroup, echo, sample_count, response| SuggestedRule {
         method: method.to_string(),
         sub_path: sub_path.to_string(),
-        condition,
+        condition: match (conditions.all_of.as_slice(), conditions.any_of.is_empty()) {
+            ([only], true) => Some(only.clone()),
+            _ => None,
+        },
+        conditions,
         echo,
         sample_count,
         response,
         redirected_to: Vec::new(),
     };
+    let base_group = || ConditionGroup {
+        all_of: base.to_vec(),
+        any_of: Vec::new(),
+    };
 
     if classes.len() == 1 {
         let response = build_response(latest(&classes[0]));
-        return Some(Suggestion::Unconditional {
-            rule: Box::new(rule(None, None, samples.len(), response)),
+        return Ok(Suggestion::Unconditional {
+            rule: Box::new(rule(base_group(), None, calls.len(), response)),
         });
     }
 
-    if let Some((candidate, values)) = find_discriminator(samples, &classes) {
+    let Some(choice) = find_discriminator(calls, &class_of, classes.len()) else {
+        return Err(Suggestion::VarianceUnexplained {
+            response_class_count: classes.len(),
+        });
+    };
+    if choice.values.iter().all(|values| values.len() == 1) {
         let representatives: Vec<&ObservedExchange> = classes.iter().map(|c| latest(c)).collect();
-        if let Some(response) = echo_response(&candidate, &representatives, &values) {
-            return Some(Suggestion::Echo {
+        let values: Vec<&str> = choice.values.iter().map(|v| v[0]).collect();
+        if let Some(response) = echo_response(&choice.candidate, &representatives, &values) {
+            return Ok(Suggestion::Echo {
                 rule: Box::new(rule(
-                    None,
-                    Some(candidate.source()),
-                    samples.len(),
+                    base_group(),
+                    Some(choice.candidate.source()),
+                    calls.len(),
                     response,
                 )),
             });
         }
-        let rules = classes
-            .iter()
-            .zip(values)
-            .map(|(class, value)| {
-                let condition = Condition {
-                    source: candidate.source(),
-                    operator: Operator::Eq(value),
-                };
-                rule(
-                    Some(condition),
-                    None,
-                    class.len(),
-                    build_response(latest(class)),
-                )
-            })
-            .collect();
-        return Some(Suggestion::Conditional { rules });
     }
-
-    Some(Suggestion::VarianceUnexplained {
-        response_class_count: classes.len(),
-    })
+    let rules = classes
+        .iter()
+        .zip(&choice.values)
+        .map(|(class, values)| {
+            let mut conditions = base_group();
+            let equal = |value: &str| Condition {
+                source: choice.candidate.source(),
+                operator: Operator::Eq(value.to_string()),
+            };
+            match values.as_slice() {
+                [one] => conditions.all_of.push(equal(one)),
+                several => conditions.any_of = several.iter().map(|v| equal(v)).collect(),
+            }
+            rule(conditions, None, class.len(), build_response(latest(class)))
+        })
+        .collect();
+    Ok(Suggestion::Conditional { rules })
 }
 
 /// Response headers never copied into a suggested rule (they stay in `ObservedExchange` for inspection):
@@ -324,24 +465,24 @@ fn build_response(exchange: &ObservedExchange) -> MockResponse {
 fn echo_response(
     candidate: &Candidate,
     representatives: &[&ObservedExchange],
-    values: &[String],
+    values: &[&str],
 ) -> Option<MockResponse> {
     let expression = candidate.template_expression()?;
     let latest = representatives.iter().max_by_key(|e| e.timestamp)?;
     let headers = suggested_headers(latest);
     let mut pieces: Option<Vec<&str>> = None;
-    for (exchange, value) in representatives.iter().zip(values) {
+    for (exchange, &value) in representatives.iter().zip(values) {
         if value.is_empty()
             || exchange.response_status != latest.response_status
-            || !exchange.response_body.contains(value.as_str())
-            || headers.iter().any(|h| h.value.contains(value.as_str()))
+            || !exchange.response_body.contains(value)
+            || headers.iter().any(|h| h.value.contains(value))
             || suggested_headers(exchange)
                 .iter()
-                .any(|h| h.value.contains(value.as_str()))
+                .any(|h| h.value.contains(value))
         {
             return None;
         }
-        let split: Vec<&str> = exchange.response_body.split(value.as_str()).collect();
+        let split: Vec<&str> = exchange.response_body.split(value).collect();
         match &pieces {
             None => pieces = Some(split),
             Some(previous) if *previous != split => return None,
@@ -370,44 +511,32 @@ fn echo_response(
     })
 }
 
-/// A candidate condition source, without its value (known once the field is chosen).
-#[derive(Clone)]
-enum Candidate {
-    PathParam(String),
-    QueryParam(String),
-    JsonPointer(String),
-    Header(String),
+/// A candidate condition source, without its value (known once the field is chosen), borrowed from the calls. The
+/// order of the variants is the order of preference between fields with as many values.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+enum Candidate<'a> {
+    PathParam(&'a str),
+    QueryParam(&'a str),
+    /// A scalar of a JSON body, by its pointer, already escaped (RFC 6901).
+    JsonPointer(&'a str),
+    Header(&'a str),
 }
 
-impl Candidate {
+impl Candidate<'_> {
     fn source(&self) -> ConditionSource {
-        match self {
-            Candidate::PathParam(k) => ConditionSource::PathParam(k.clone()),
-            Candidate::QueryParam(k) => ConditionSource::QueryParam(k.clone()),
-            // RFC 6901: `~` and `/` in a name are written `~0` and `~1`, or the pointer names another field.
-            Candidate::JsonPointer(k) => ConditionSource::JsonPointer(format!(
-                "/{}",
-                k.replace('~', "~0").replace('/', "~1")
-            )),
-            Candidate::Header(k) => ConditionSource::Header(k.clone()),
-        }
-    }
-
-    fn extract(&self, sample: &Sample, json_fields: &HashMap<String, String>) -> Option<String> {
-        let exchange = sample.exchange;
-        match self {
-            Candidate::PathParam(k) => sample.path_params.get(k).cloned(),
-            Candidate::QueryParam(k) => exchange.request_query_params.get(k).cloned(),
-            Candidate::JsonPointer(k) => json_fields.get(k).cloned(),
-            Candidate::Header(k) => exchange.request_headers.get(k).cloned(),
+        match *self {
+            Candidate::PathParam(k) => ConditionSource::PathParam(k.to_string()),
+            Candidate::QueryParam(k) => ConditionSource::QueryParam(k.to_string()),
+            Candidate::JsonPointer(k) => ConditionSource::JsonPointer(k.to_string()),
+            Candidate::Header(k) => ConditionSource::Header(k.to_string()),
         }
     }
 
     /// The template expression that reads this source's value in a response. Only for a name made of letters, digits,
     /// `_`, `-` and `.`: a query parameter's name comes from the observed traffic, and an expression ends at the first
-    /// `}}`, so any other name could write more template than the one variable meant.
+    /// `}}`, so any other name could write more template than the one variable meant. Body fields are not repeated yet.
     fn template_expression(&self) -> Option<String> {
-        let (variable, key) = match self {
+        let (variable, key) = match *self {
             Candidate::PathParam(k) => ("path", k),
             Candidate::QueryParam(k) => ("query", k),
             Candidate::Header(k) => ("header", k),
@@ -421,88 +550,93 @@ impl Candidate {
     }
 }
 
-/// Reads the request body as a flat JSON object (no arrays or nested objects for now): each scalar field becomes a
-/// `JsonPointer("/key")` candidate.
-fn json_top_level_fields(body: &str) -> HashMap<String, String> {
-    let Ok(serde_json::Value::Object(map)) = serde_json::from_str::<serde_json::Value>(body) else {
-        return HashMap::new();
-    };
-    map.into_iter()
-        .filter_map(|(k, v)| match v {
-            serde_json::Value::String(s) => Some((k, s)),
-            serde_json::Value::Number(n) => Some((k, n.to_string())),
-            serde_json::Value::Bool(b) => Some((k, b.to_string())),
-            _ => None,
-        })
-        .collect()
+/// The field chosen to tell the responses apart, and for each response group (in the order of `classes`) the values
+/// that lead to it, sorted.
+struct Choice<'a> {
+    candidate: Candidate<'a>,
+    values: Vec<Vec<&'a str>>,
 }
 
-/// Looks, in order of preference (path parameter, query parameter, top-level JSON field, header), for a field whose
-/// value splits the samples exactly like the response groups: same value, same group; different groups, different
-/// values. Returns the chosen field and the value that stands for each group (in the order of `classes`).
-fn find_discriminator(
-    samples: &[Sample],
-    classes: &[Vec<usize>],
-) -> Option<(Candidate, Vec<String>)> {
-    let json_fields: Vec<HashMap<String, String>> = samples
-        .iter()
-        .map(|s| json_top_level_fields(&s.exchange.request_body))
-        .collect();
-
-    let mut path_keys = BTreeSet::new();
-    let mut query_keys = BTreeSet::new();
-    let mut json_keys = BTreeSet::new();
-    let mut header_keys = BTreeSet::new();
-    for (sample, fields) in samples.iter().zip(&json_fields) {
-        path_keys.extend(sample.path_params.keys().cloned());
-        query_keys.extend(sample.exchange.request_query_params.keys().cloned());
-        json_keys.extend(fields.keys().cloned());
-        header_keys.extend(
-            sample
-                .exchange
-                .request_headers
-                .keys()
-                .filter(|k| !NOISY_HEADERS.contains(&k.to_lowercase().as_str()))
-                .cloned(),
-        );
-    }
-
-    path_keys
-        .into_iter()
-        .map(Candidate::PathParam)
-        .chain(query_keys.into_iter().map(Candidate::QueryParam))
-        .chain(json_keys.into_iter().map(Candidate::JsonPointer))
-        .chain(header_keys.into_iter().map(Candidate::Header))
-        .find_map(|candidate| {
-            discriminator_values(&candidate, samples, classes, &json_fields)
-                .map(|values| (candidate, values))
-        })
+/// What the calls say of one field: in how many it appears, and for each value, the response group it led to and how
+/// many times it was seen; `conflict` once a value led to two groups.
+#[derive(Default)]
+struct FieldStats<'a> {
+    present: usize,
+    conflict: bool,
+    values: HashMap<&'a str, (usize, usize)>,
 }
 
-/// Checks one candidate: every sample of a group carries the same value for this field (a missing value disqualifies
-/// it), and no other group shares that value. Returns the value of each group when it holds.
-fn discriminator_values(
-    candidate: &Candidate,
-    samples: &[Sample],
-    classes: &[Vec<usize>],
-    json_fields: &[HashMap<String, String>],
-) -> Option<Vec<String>> {
-    let mut values = Vec::with_capacity(classes.len());
-    for class in classes {
-        let mut class_value: Option<String> = None;
-        for &i in class {
-            let v = candidate.extract(&samples[i], &json_fields[i])?;
-            match &class_value {
-                None => class_value = Some(v),
-                Some(existing) if *existing != v => return None,
-                Some(_) => {}
+// Which field tells the response groups apart. A field of the request (path parameter, query parameter, body field,
+// header) is judged on the calls of one route, after the calls answered with a server error are set aside
+// when that is needed (`suggest_calls`); `n` calls, `k > 1` response groups.
+//
+// | The field                                                          | Verdict                                         |
+// |--------------------------------------------------------------------|-------------------------------------------------|
+// | missing from at least one call                                     | refused: an `Eq` condition never matches a call |
+// |                                                                    | without it                                      |
+// | a noisy header (`NOISY_HEADERS`)                                   | never a candidate                               |
+// | one of its values seen with two responses                          | refused: it does not explain them               |
+// | each value leads to one response, each response reached by one     | explains: one `Eq` rule per response, or one    |
+// | value (k values)                                                   | rule that repeats it (`echo_response`)          |
+// | each value leads to one response, a response reached by several    | explains: that response gets one rule, `any_of` |
+// | values, at least one value seen twice                              | an `Eq` per value                               |
+// | each value leads to one response, a response reached by several    | refused for lack of evidence: a value that      |
+// | values, every value seen once (n values)                           | changes at every call would explain any sample  |
+//
+// Among the fields that explain, the one with the fewest distinct values wins: it cannot have fewer than `k`, and an
+// identifier that changes at every call never wins over the name that decides. On a tie, the order of `Candidate`
+// (path parameter, query parameter, JSON field, header), then the name of the field, in byte order. No field
+// explains: `None`.
+//
+// One pass over the fields of every call, whatever their number: each (field, value) of a call updates its field's
+// statistics once.
+fn find_discriminator<'a>(
+    calls: &[&'a Call],
+    class_of: &[usize],
+    class_count: usize,
+) -> Option<Choice<'a>> {
+    let mut stats: HashMap<Candidate<'a>, FieldStats<'a>> = HashMap::new();
+    for (call, &class) in calls.iter().zip(class_of) {
+        for (candidate, value) in call.fields() {
+            let field = stats.entry(candidate).or_default();
+            if field.conflict {
+                continue;
+            }
+            field.present += 1;
+            match field.values.entry(value) {
+                Entry::Occupied(mut seen) => {
+                    let (seen_class, count) = seen.get_mut();
+                    if *seen_class == class {
+                        *count += 1;
+                    } else {
+                        field.conflict = true;
+                        field.values = HashMap::new();
+                    }
+                }
+                Entry::Vacant(slot) => {
+                    slot.insert((class, 1));
+                }
             }
         }
-        values.push(class_value?);
     }
 
-    let distinct: BTreeSet<&String> = values.iter().collect();
-    (distinct.len() == values.len()).then_some(values)
+    let (candidate, field) = stats
+        .into_iter()
+        .filter(|(_, field)| {
+            let explains = !field.conflict && field.present == calls.len();
+            let several_per_response = field.values.len() > class_count;
+            let seen_once = field.values.values().all(|&(_, count)| count == 1);
+            explains && !(several_per_response && seen_once)
+        })
+        .min_by(|(a, fa), (b, fb)| (fa.values.len(), a).cmp(&(fb.values.len(), b)))?;
+    let mut values: Vec<Vec<&str>> = vec![Vec::new(); class_count];
+    for (value, (class, _)) in field.values {
+        values[class].push(value);
+    }
+    for list in &mut values {
+        list.sort_unstable();
+    }
+    Some(Choice { candidate, values })
 }
 
 #[cfg(any(test, fuzzing))]

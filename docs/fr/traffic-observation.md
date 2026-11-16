@@ -21,8 +21,12 @@ Deux appels au même point d'accès (même méthode, même chemin) peuvent légi
 Mimicway attend donc d'avoir vu **plusieurs appels** à une route (voir la section suivante) avant de proposer quoi que ce soit, puis :
 
 - Quand toutes les réponses observées sont identiques, il propose une règle **sans condition**.
-- Quand les réponses varient et qu'un paramètre de chemin, un paramètre de requête, un champ du corps JSON ou un en-tête **prédit exactement** quelle réponse revient pour quelle valeur, il propose **une règle par valeur**, chacune avec sa condition.
+- Quand les réponses varient et qu'un paramètre de chemin, un paramètre de requête, un champ du corps JSON ou un en-tête **prédit** quelle réponse revient (chacune de ses valeurs reçoit toujours la même réponse), il propose **une règle par réponse**, avec sa condition. Une réponse atteinte par plusieurs valeurs, comme un annuaire qui donne la même adresse pour deux noms, reçoit une seule règle qui accepte chacune d'elles (conditions « au moins une »).
 - Quand les réponses varient **et qu'aucun champ ne l'explique de façon fiable**, il ne propose aucune règle. Un message signale la variation, plutôt qu'une règle qui casserait silencieusement certains appels.
+
+Quand plusieurs champs expliqueraient les réponses, Mimicway garde celui qui a **le moins de valeurs différentes** : le nom qui décide l'emporte sur un identifiant qui change à chaque appel. Un champ dont chaque valeur n'a été vue qu'une fois, et qui demanderait plusieurs valeurs pour une même réponse, n'est jamais choisi : n'importe quel identifiant propre à chaque appel conviendrait, il ne prouve donc rien.
+
+Un appel qui a reçu une **erreur du serveur** (un statut `5xx`) qu'aucun champ n'explique est mis de côté : Mimicway propose les règles des autres appels, s'il en reste assez, et la suggestion dit combien d'appels ont été écartés et avec quel statut. Cinq réponses identiques et un `500` donnent une règle pour les cinq.
 
 ![Suggestions : deux règles conditionnelles déduites du trafic observé](screenshots/observation-suggestions.png)
 
@@ -43,7 +47,7 @@ Un chemin littéral voisin d'un modèle, comme `/users/me` à côté de `/users/
 
 ## Utiliser une suggestion
 
-**« Actualiser les suggestions »** relit le trafic observé depuis l'activation de l'observation et recalcule les suggestions (rien ne s'actualise en arrière-plan). **« Utiliser cette suggestion »** ne crée **pas** la règle : il remplit le formulaire de règle habituel (méthode, sous-chemin, condition, réponse), pour que vous la relisiez, l'ajustiez et l'enregistriez comme n'importe quelle autre règle.
+**« Actualiser les suggestions »** relit le trafic observé depuis l'activation de l'observation et recalcule les suggestions (rien ne s'actualise en arrière-plan). **« Utiliser cette suggestion »** ne crée **pas** la règle : il remplit le formulaire de règle habituel (méthode, sous-chemin, conditions, réponse), pour que vous la relisiez, l'ajustiez et l'enregistriez comme n'importe quelle autre règle.
 
 ![Le formulaire de règle rempli à partir d'une suggestion](screenshots/observation-suggestion-prefilled-form.png)
 

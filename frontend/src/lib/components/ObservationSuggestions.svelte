@@ -10,6 +10,10 @@
   // A suggestion stands for a route: the server groups the observed paths under a pattern (`/orders/{id}`), listed with
   // a few of the paths it covers, so the user sees what the pattern was inferred from.
   //
+  // A rule may carry several conditions (`conditions`, all_of and any_of): the value that leads to its response, or the
+  // values when several lead to it. The summary says them in words; the draft passed to the rule form carries every
+  // condition.
+  //
   // The backends named in the responses (a directory's addresses, links, redirects) come with them: the application
   // calls those directly, past Mimicway. "Create a proxy service in front of it" opens the usual service form filled
   // (onCreateService, App.svelte), never a one-click creation; once that service exists, the server writes the
@@ -131,7 +135,13 @@
     );
   }
 
+  // Every condition of a rule; a server that only sends `condition` still gives its one condition.
+  function ruleConditions(rule) {
+    return rule.conditions ?? { all_of: rule.condition ? [rule.condition] : [], any_of: [] };
+  }
+
   function toRuleDraft(rule) {
+    const conditions = ruleConditions(rule);
     return {
       name: '',
       method: rule.method,
@@ -140,11 +150,30 @@
       script: null,
       response_mode: null,
       conditions: {
-        all_of: rule.condition ? [rule.condition] : [],
-        any_of: [],
+        all_of: conditions.all_of.map((c) => $state.snapshot(c)),
+        any_of: conditions.any_of.map((c) => $state.snapshot(c)),
       },
       response: rule.response,
     };
+  }
+
+  // The values a rule accepts for one field, said as one condition: `"orders" or "ordersV2"`.
+  function anyOfSummary(conditions) {
+    const first = conditions[0];
+    return t(
+      '{0} "{1}" is {2}',
+      sourceLabel(first.source?.type),
+      first.source?.key,
+      conditions.map((c) => `"${c.operator?.value}"`).join(t(' or ')),
+    );
+  }
+
+  function leftOutStatuses(suggestion) {
+    return suggestion.left_out.map((l) => l.status).join(', ');
+  }
+
+  function leftOutCount(suggestion) {
+    return suggestion.left_out.reduce((sum, l) => sum + l.count, 0);
   }
 
   // An echo rule's body alternates literal text and the expression that repeats the request value: both are shown,
@@ -161,7 +190,10 @@
   }
 
   function ruleSummary(suggestion, rule) {
-    if (rule.condition) return t('if {0}', conditionSummary(rule.condition));
+    const { all_of, any_of } = ruleConditions(rule);
+    const parts = all_of.map(conditionSummary);
+    if (any_of.length) parts.push(anyOfSummary(any_of));
+    if (parts.length) return t('if {0}', parts.join(t(' and ')));
     if (suggestion.outcome === 'Echo') {
       return t(
         'no condition: the response repeats {0} "{1}" ({2} calls)',
@@ -227,6 +259,16 @@
               suggestion.method,
               suggestion.sub_path,
               suggestion.paths.slice(0, 3).join(', '),
+            )}
+          </p>
+        {/if}
+        {#if suggestion.left_out?.length}
+          <p class="suggestion-paths" data-testid="observation-suggestion-left-out-{serviceName}-{i}">
+            {tCount(
+              leftOutCount(suggestion),
+              '{0} call was left out: it got a server error ({1}) that nothing in the request explains.',
+              '{0} calls were left out: they got server errors ({1}) that nothing in the request explains.',
+              leftOutStatuses(suggestion),
             )}
           </p>
         {/if}

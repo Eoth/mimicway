@@ -2,7 +2,7 @@
 //! property tests and the fuzz target check on generated traffic.
 use super::{SuggestedRule, Suggestion, suggest_for_service};
 use crate::engine::{MatchEngine, RequestData, TemplateContext, TemplateRenderer};
-use crate::models::{ConditionGroup, Rule, RuleAction};
+use crate::models::{Rule, RuleAction};
 use crate::server::observation::{ObservationKey, ObservedExchange};
 
 pub(crate) fn rules_of(suggestion: &Suggestion) -> Vec<&SuggestedRule> {
@@ -22,10 +22,7 @@ fn as_rule(i: usize, suggested: &SuggestedRule) -> Rule {
         action: RuleAction::Mock,
         script: None,
         response_mode: None,
-        conditions: ConditionGroup {
-            all_of: suggested.condition.iter().cloned().collect(),
-            any_of: vec![],
-        },
+        conditions: suggested.conditions.clone(),
         response: suggested.response.clone(),
     }
 }
@@ -62,7 +59,8 @@ fn answer(
 
 /// Suggests rules for `endpoints`, saves all of them in the order given, and replays every observed call of a route
 /// that got rules: each must get back the status and the body the backend sent, and each route's pattern must match
-/// the paths it lists. A route with more paths than are listed is skipped (its members are not all known).
+/// the paths it lists. A route with more paths than are listed is skipped (its members are not all known). The calls a
+/// suggestion left out must all be server errors, as many as it says, and are not replayed.
 pub(crate) fn check(endpoints: &[(ObservationKey, Vec<ObservedExchange>)]) -> Result<(), String> {
     let suggestions = suggest_for_service(endpoints);
     let rules: Vec<Rule> = suggestions
@@ -84,13 +82,32 @@ pub(crate) fn check(endpoints: &[(ObservationKey, Vec<ObservedExchange>)]) -> Re
         {
             continue;
         }
-        let calls = endpoints
+        let calls: Vec<(&ObservationKey, &ObservedExchange)> = endpoints
             .iter()
             .filter(|(key, _)| {
                 key.method == suggestion.method && suggestion.paths.contains(&key.sub_path)
             })
-            .flat_map(|(key, exchanges)| exchanges.iter().map(move |e| (key, e)));
-        for (key, exchange) in calls {
+            .flat_map(|(key, exchanges)| exchanges.iter().map(move |e| (key, e)))
+            .collect();
+        for left in &suggestion.left_out {
+            let count = calls
+                .iter()
+                .filter(|(_, e)| e.response_status == left.status)
+                .count();
+            if left.status < 500 || count != left.count {
+                return Err(format!(
+                    "{} {}: left out {left:?}, {count} such calls",
+                    suggestion.method, suggestion.sub_path
+                ));
+            }
+        }
+        let replayed = calls.into_iter().filter(|(_, e)| {
+            !suggestion
+                .left_out
+                .iter()
+                .any(|left| left.status == e.response_status)
+        });
+        for (key, exchange) in replayed {
             let expected = Some((exchange.response_status, exchange.response_body.clone()));
             let got = answer(&rules, key, exchange);
             if got != expected {

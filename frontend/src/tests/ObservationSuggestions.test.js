@@ -422,4 +422,67 @@ describe('ObservationSuggestions', () => {
       );
     });
   });
+
+  describe('rules with several values, and calls left out', () => {
+    const eq = (type, key, value) => ({ source: { type, key }, operator: { type: 'Eq', value } });
+    const response = (value) => ({ status: 200, headers: [], body: [{ type: 'Literal', value }], chaos: null });
+
+    async function shown(suggestions) {
+      getObservationStatus.mockResolvedValue([{ service_name: 'svc-a', group_name: null }]);
+      getServiceSuggestions.mockResolvedValue(suggestions);
+      const onUseSuggestion = vi.fn();
+      const view = render(ObservationSuggestions, {
+        props: { serviceName: 'svc-a', isMocked: false, onUseSuggestion },
+      });
+      await waitFor(() => expect(view.getByText('Stop observing')).toBeInTheDocument());
+      await fireEvent.click(view.getByText('Refresh the suggestions'));
+      return { ...view, onUseSuggestion };
+    }
+
+    it('says the values a rule accepts, and passes all of them to the rule form', async () => {
+      const both = [eq('PathParam', 'name', 'orders'), eq('PathParam', 'name', 'ordersV2')];
+      const { getByText, getAllByText, getByTestId, onUseSuggestion } = await shown([
+        {
+          method: 'GET',
+          sub_path: '/directory/{name}',
+          paths: ['/directory/orders', '/directory/ordersV2', '/directory/stock'],
+          path_count: 3,
+          sample_count: 6,
+          operation: null,
+          left_out: [{ status: 500, count: 1 }],
+          truncated_request_bodies: 0,
+          outcome: 'Conditional',
+          rules: [
+            {
+              method: 'GET',
+              sub_path: '/directory/{name}',
+              conditions: { all_of: [], any_of: both },
+              condition: null,
+              sample_count: 4,
+              response: response('<endpoint>/ws/OrderService</endpoint>'),
+            },
+            {
+              method: 'GET',
+              sub_path: '/directory/{name}',
+              conditions: { all_of: [eq('PathParam', 'name', 'stock')], any_of: [] },
+              condition: eq('PathParam', 'name', 'stock'),
+              sample_count: 1,
+              response: response('<endpoint>/ws/StockService</endpoint>'),
+            },
+          ],
+        },
+      ]);
+
+      await waitFor(() => expect(getByText('if Path parameter "name" is "orders" or "ordersV2"')).toBeInTheDocument());
+      expect(getByText('if Path parameter "name" = "stock"')).toBeInTheDocument();
+      expect(getByTestId('observation-suggestion-left-out-svc-a-0')).toHaveTextContent(
+        '1 call was left out: it got a server error (500) that nothing in the request explains.',
+      );
+
+      await fireEvent.click(getAllByText('Use this suggestion')[0]);
+      expect(onUseSuggestion).toHaveBeenCalledWith(
+        expect.objectContaining({ conditions: { all_of: [], any_of: both } }),
+      );
+    });
+  });
 });

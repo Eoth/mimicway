@@ -48,23 +48,13 @@ At the maintainers' request, templates in response headers then server-sent even
 
 ## Asked first: a chain of services, observed end to end
 
-A directory answers with the addresses of the services it knows, each address is a SOAP service, and the application calls them one after the other. Observing such a chain today stops at the first step. Tried on 2026-11-16 against a local directory and a local SOAP backend (version 0.5.0 plus `develop`): ten calls to four names of a directory, two of which give the same address, are answered "no field explains the responses"; nine calls to three operations of one SOAP endpoint, the same; a call whose relay fails leaves a line in the request log and nothing of what was sent. These items make the chain work without a rule written by hand; they ship together, before the releases below.
+A directory answers with the addresses of the services it knows, each address is a SOAP service, and the application calls them one after the other. Observing such a chain today stops at the first step. Tried on 2026-11-16 against a local directory and a local SOAP backend (version 0.5.0 plus `develop`): ten calls to four names of a directory, two of which give the same address, were answered "no field explains the responses" (now three rules, one of them accepting two names); nine calls to three operations of one SOAP endpoint, the same; a call whose relay fails leaves a line in the request log and nothing of what was sent. These items make the chain work without a rule written by hand; they ship together, before the releases below.
 
 | Theme | Items, in order | Taken together because |
 |---|---|---|
 | Screens that fit | U37 | the log screens and their tables, independent of the rest |
-| Suggestions that explain more | U32, U33, U34 | one algorithm (`src/server/suggestion.rs`), one judge: the suggested rules replayed on the calls they come from |
+| Suggestions that explain more | U33, U34 | one algorithm (`src/server/suggestion.rs`), one judge: the suggested rules replayed on the calls they come from |
 | The chain and its calls | U36, U35 | the observation store, its panel and the list of backends |
-
-### U32. One suggested rule per answer, whatever the number of values that lead to it
-
-Size M
-
-**Why.** A field explains the observed responses only when each response has one value of it: a directory that gives the same address for two names (an alias, two versions of one service) has a response reached by two values, so the name is discarded and nothing is suggested, where the answer is plain: one rule per address. And one response that nothing explains hides all the others: a route answered the same way five times and once by a server error gets no suggestion at all.
-
-**What.** A field explains the responses when each of its values leads to one response; a response reached by several values gets one rule, whose condition accepts any of them (`any_of`). Among the fields that explain, the one with the fewest values is kept, so that an identifier that changes at every call never wins over the name that decides; the table of what is chosen, and of what is refused for lack of evidence (a field whose every value was seen once), is written before the code. Responses with a `5xx` status that no field explains are set aside: the suggestion is computed on the others and says how many calls were left out and with which status. The answer of `GET …/suggestions` only gains fields.
-
-**Done when.** The trial above gives three rules for the four names, one of them accepting two names; a route with one unexplained `500` among identical answers still gets its rule, and the panel says one call was left out; the property test that replays suggestions on the calls they come from draws several values per response and unexplained errors, and still passes.
 
 ### U33. Suggestions that read XML and nested JSON bodies
 
