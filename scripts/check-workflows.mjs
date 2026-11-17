@@ -5,7 +5,10 @@
 //   runs in an environment, which the maintainers protect with a required reviewer: otherwise a pushed tag publishes
 //   without anyone's approval;
 // - every `npm audit` fails from a high advisory on and audits every package, development tools included: a high
-//   advisory of the build tooling (vite) once went through a step that only failed on critical ones.
+//   advisory of the build tooling (vite) once went through a step that only failed on critical ones. The audit with
+//   dated exceptions, scripts/npm-audit.mjs, asks npm for both itself: it is the whole of its step, on one line,
+//   with its directory and nothing else, in a job that stops on an error. Not seen: a job whose `if:` never runs
+//   it, and, for a plain `npm audit`, the lines around it in a block.
 // - every artifact the release workflow uploads, and the record of its Docker build, expires within a week: a
 //   rehearsal is read the day it runs and a tag publishes copies of them as release assets, while GitHub keeps an
 //   artifact 90 days by default (56 MB a run). The CI's reports of a failed run keep the default: they may be read
@@ -83,6 +86,9 @@ const numberOf = (step, key) =>
       .trim(),
   );
 
+// The only line of the step that runs the audit with dated exceptions, its `name:` aside.
+const AUDIT_STEP = /^run: node scripts\/npm-audit\.mjs [A-Za-z0-9_][\w./-]*$/;
+
 /** The problems of one workflow (`file` names it in each message), with what was checked. */
 export function checkWorkflow(file, text) {
   const problems = [];
@@ -110,6 +116,24 @@ export function checkWorkflow(file, text) {
             );
           }
         }
+      }
+    }
+    // The audit with dated exceptions is the whole of its step: a `name:` at most, and its `run:` on one line.
+    // Anything else in the step could hide its verdict (a block with another command, `continue-on-error`, `if:`,
+    // `shell:`, `env:`, `working-directory:`), and so could a job that goes on after an error.
+    for (const step of stepsOf(job.lines)) {
+      const lines = step.filter((line) => !line.startsWith('name:'));
+      if (!lines.some((line) => /\bnpm-audit\.mjs\b/.test(line))) continue;
+      audits++;
+      if (lines.length !== 1 || !AUDIT_STEP.test(lines[0])) {
+        problems.push(
+          `${file}, job ${job.name}: scripts/npm-audit.mjs is alone in its step, with its directory and nothing else ` +
+            `(run: node scripts/npm-audit.mjs frontend)`,
+        );
+      }
+      const steps = job.lines.findIndex((line) => /^steps:\s*$/.test(line.trim()));
+      if (job.lines.slice(0, steps).some((line) => /^\s*continue-on-error:/.test(line))) {
+        problems.push(`${file}, job ${job.name}: the job of the audit goes on after an error (continue-on-error)`);
       }
     }
     for (const line of job.lines) {

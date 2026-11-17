@@ -76,6 +76,14 @@ test('a list it cannot read whole is refused, never passed', () => {
   assert.throws(() => denyExceptions('[licenses]\n'), /no \[advisories\]/);
   assert.throws(() => denyExceptions('[advisories]\nignore = [\n    { reason = "x" },\n]\n'), /could not be read/);
   assert.throws(() => osvExceptions('[[IgnoredVulns]]\nreason = "x"\n'), /no id/);
+  // A header osv-scanner would read and this reading would skip, its date with it.
+  const entry = 'id = "RUSTSEC-2000-0001"\nignoreUntil = 2999-01-01\nreason = "x"\n';
+  for (const header of ['[[IgnoredVulns]] # why', '[[ IgnoredVulns ]]', '  [[IgnoredVulns]]', '[[IgnoredVulns ]]']) {
+    assert.throws(() => osvExceptions(`${header}\n${entry}`), /not alone on its line/, header);
+    assert.throws(() => osvExceptions(`[[IgnoredVulns]]\n${entry}${header}\n${entry}`), /not alone/, header);
+  }
+  assert.equal(osvExceptions(`# [[IgnoredVulns]] in a comment\n[[IgnoredVulns]]\n${entry}`).length, 1);
+  assert.equal(osvExceptions(`[[IgnoredVulns]]  \n${entry}`).length, 1);
   assert.deepEqual(denyExceptions('[advisories]\nignore = [\n    "RUSTSEC-2000-0002",\n]\n'), [
     { id: 'RUSTSEC-2000-0002', date: null },
   ]);

@@ -79,7 +79,15 @@ const RULES = {
   miri: [/^alloc\//],
   // Builds the UI too: the Kafka specs of the end-to-end suite run against this job's binary.
   kafka: [...RUST, /^frontend\//],
-  'supply-chain': [...MANIFESTS, /^deny\.toml$/, /^osv-scanner\.toml$/],
+  // The lock files, the exceptions of each tool (an osv-scanner.toml per directory with a lock file), the audit of
+  // the interface's packages, which reads its exceptions with check-exception-dates.mjs, and the settings npm reads.
+  'supply-chain': [
+    ...MANIFESTS,
+    /^deny\.toml$/,
+    /^(.*\/)?osv-scanner\.toml$/,
+    /^scripts\/(npm-audit|check-exception-dates)\.mjs$/,
+    /^(.*\/)?\.npmrc$/,
+  ],
   ui: [/^frontend\/(?!e2e\/)/, ...READ_BY_UI_TESTS.map((file) => new RegExp(`^${escape(file)}$`))],
   // What `npm run format:check` reads: the code of the interface, end-to-end tests included, and of the repository's
   // scripts, and what decides the formatting (its configuration, and its version in the lock file).

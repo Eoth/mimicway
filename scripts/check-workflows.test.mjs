@@ -92,12 +92,72 @@ test('an npm audit passes only when it fails from high on and audits every packa
     ['npm audit', 1],
     ['npm audit --omit=dev --audit-level=high', 1],
     ['npm audit --production --audit-level=critical', 2],
+    // The audit with dated exceptions: its directory, and nothing that weakens it or hides its verdict.
+    ['node scripts/npm-audit.mjs frontend', 0],
+    ['node scripts/npm-audit.mjs frontend/sub-dir_2', 0],
+    ['node scripts/npm-audit.mjs', 1],
+    ['node scripts/npm-audit.mjs --json', 1],
+    ['node scripts/npm-audit.mjs -x frontend', 1],
+    ['node scripts/npm-audit.mjs frontend --audit-level=critical', 1],
+    ['node scripts/npm-audit.mjs frontend || true', 1],
+    ['node scripts/npm-audit.mjs frontend; true', 1],
+    ['node scripts/npm-audit.mjs frontend | cat', 1],
+    ['node scripts/npm-audit.mjs frontend # || true', 1],
+    ['node scripts/npm-audit.mjs frontend other', 1],
+    ['node other/npm-audit.mjs frontend', 1],
+    ['true || node scripts/npm-audit.mjs frontend', 1],
+    ['(node scripts/npm-audit.mjs frontend)', 1],
   ];
   for (const [command, problems] of verdicts) {
     const result = checkWorkflow('t.yml', audit(command));
     assert.equal(result.problems.length, problems, command);
     assert.equal(result.audits, 1, command);
   }
+});
+
+test('the audit with dated exceptions is the whole of its step, in a job that stops on an error', () => {
+  const stepOf = (lines) => workflow({ publish: '' }) + lines.map((line) => `      ${line}\n`).join('');
+  const call = 'node scripts/npm-audit.mjs frontend';
+  const accepted = [
+    [`- run: ${call}`],
+    ['- name: npm audit (every package)', `  run: ${call}`],
+    [`- run: ${call}`, '- run: echo after'],
+  ];
+  for (const lines of accepted) {
+    const result = checkWorkflow('t.yml', stepOf(lines));
+    assert.deepEqual(result.problems, [], lines.join(' / '));
+    assert.equal(result.audits, 1);
+  }
+  // Each of these runs the script and may still pass when it fails, or audits another configuration.
+  const refused = [
+    ['- run: |', '    true ||', `    ${call}`],
+    ['- run: >-', '    true ||', `    ${call}`],
+    ['- run: |', '    set +e', `    ${call}`, '    exit 0'],
+    ['- run: |', '    ! \\', `    ${call}`],
+    ['- run: |', `    ${call}`],
+    [`- run: ${call}`, '  continue-on-error: true'],
+    [`- run: ${call}`, '  if: false'],
+    [`- run: ${call}`, '  shell: true {0}'],
+    [`- run: ${call}`, '  working-directory: docs'],
+    [`- run: ${call}`, '  env:', '    npm_config_offline: true'],
+    [`- run: ${call}`, '  env:', '    NODE_ENV: production'],
+    ['- run: echo skipped', '  env:', '    TEXT: |', `      ${call}`],
+    [`- run:  ${call}`],
+    [`- run: "${call}"`],
+    [`- run: ./${call.slice(5)}`],
+    [`- run: node ./scripts/npm-audit.mjs frontend`],
+  ];
+  for (const lines of refused) {
+    const result = checkWorkflow('t.yml', stepOf(lines));
+    assert.equal(result.problems.length, 1, lines.join(' / '));
+    assert.match(result.problems[0], /alone in its step/);
+    assert.equal(result.audits, 1, lines.join(' / '));
+  }
+  // The job itself going on after an error hides the step's verdict too.
+  const job = workflow({ publish: '' }).replace('    runs-on:', '    continue-on-error: true\n    runs-on:');
+  const result = checkWorkflow('t.yml', job + `      - run: ${call}\n`);
+  assert.equal(result.problems.length, 1);
+  assert.match(result.problems[0], /continue-on-error/);
 });
 
 const release = (uploadWith, buildEnv) => `name: Release

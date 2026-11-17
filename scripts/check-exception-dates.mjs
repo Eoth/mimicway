@@ -43,6 +43,12 @@ export function denyExceptions(text) {
 /** The `[[IgnoredVulns]]` entries of osv-scanner.toml: `{ id, date }`, date null without `ignoreUntil`. */
 export function osvExceptions(text) {
   const blocks = text.split(/^\[\[IgnoredVulns\]\]\s*$/m).slice(1);
+  // osv-scanner also reads a header indented, written with spaces or followed by a comment: all are read here, or
+  // the file is refused.
+  const headers = text.split('\n').filter((line) => /^\s*\[\[\s*IgnoredVulns\s*\]\]/.test(line));
+  if (headers.length !== blocks.length) {
+    throw new Error('osv-scanner.toml: an [[IgnoredVulns]] header is not alone on its line, from its first column');
+  }
   return blocks.map((block) => {
     const own = block.split(/^\[/m)[0];
     const id = own.match(/^id\s*=\s*"([^"]+)"/m)?.[1];

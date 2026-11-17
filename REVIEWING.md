@@ -58,7 +58,8 @@ cargo fmt --check
 cargo clippy --all-targets --features tcp-mock -- -D warnings
 cargo test --features tcp-mock
 cargo deny check                       # advisories, licenses, sources
-(cd frontend && npm ci && npm test && npm audit)
+(cd frontend && npm ci && npm test)
+node scripts/npm-audit.mjs frontend       # npm audit, failing from high on, but for the dated exceptions of frontend/osv-scanner.toml
 
 # Where can the process open an outbound connection?
 grep -rn "reqwest::Client\|Client::builder\|TcpStream::connect\|rdkafka" src --include=*.rs

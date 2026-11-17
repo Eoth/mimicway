@@ -112,10 +112,23 @@ test('a pull request that changes Rust or the fuzz targets is fuzzed; a push is 
 });
 
 test('a lock file or a policy runs the supply chain job', () => {
-  for (const file of ['Cargo.lock', 'frontend/package-lock.json', 'deny.toml', 'osv-scanner.toml']) {
+  const files = [
+    'Cargo.lock',
+    'frontend/package-lock.json',
+    'deny.toml',
+    'osv-scanner.toml',
+    'frontend/osv-scanner.toml',
+    'scripts/npm-audit.mjs',
+    'scripts/check-exception-dates.mjs',
+    '.npmrc',
+    'frontend/.npmrc',
+  ];
+  for (const file of files) {
     assert.ok(jobsOf('push', [file]).includes('supply-chain'), file);
   }
   assert.ok(!jobsOf('push', ['src/main.rs']).includes('supply-chain'));
+  assert.ok(!jobsOf('push', ['scripts/npm-audit.test.mjs']).includes('supply-chain'));
+  assert.ok(!jobsOf('push', ['frontend/osv-scanner.toml.bak']).includes('supply-chain'));
 });
 
 test('the Kubernetes manifests and the workflows run their own checks', () => {

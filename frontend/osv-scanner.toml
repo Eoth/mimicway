@@ -3,4 +3,10 @@
 # frontend/package-lock.json, as ../osv-scanner.toml holds those of Cargo.lock. Each entry expires on its
 # `ignoreUntil`, at most six months ahead (scripts/check-exception-dates.mjs): past it, the advisory fails the scan again.
 #
-# None today: deepmerge, the last one, was replaced by vendor/deepmerge.
+# The audit of the same lock file (scripts/npm-audit.mjs, `npm audit` failing from a high advisory on) reads this list
+# too: an advisory is ignored by both tools or by none, until the same day.
+
+[[IgnoredVulns]]
+id = "GHSA-fc5q-39xc-vjpf"
+ignoreUntil = 2026-12-17
+reason = "picomatch takes exponential time on a pattern such as +(*), and no release fixes it; vite, vitest and tinyglobby bring it to build and test the interface, where the only patterns it reads are the project's own, written in its configuration; the built interface holds none of it. To be taken out with the first fixed release"
