@@ -102,6 +102,8 @@ A variable can be transformed before it is inserted: `lower`, `upper`, `trim`, `
 
 Example: `{{path.siret | first(9)}}` keeps the first 9 characters of the SIRET received.
 
+A value of the request written inside an XML or JSON document is escaped for where it lands, so that any value keeps the document well formed: `xml_text` for the text of an element (`&`, `<`, `>`), `xml_attr` for the value of an attribute (quotes too), `cdata` inside a CDATA section (`]]>` split in two sections), `json_string` inside a JSON string (quotes, backslashes and control characters). Example: `<ref>{{xpath.Envelope/Body/GetStatus/ref | xml_text}}</ref>`. Scripts have the same four functions.
+
 In the visual builders, help comes with every field, so the syntax need not be known by heart:
 
 - the **transformation** field of a value lists every pipe with what it does, and shows its effect on an example (`first(3)`: "abcdef" → "abc"); a fixed value takes a pipe too, written for you as `{{"value" | pipe}}`;

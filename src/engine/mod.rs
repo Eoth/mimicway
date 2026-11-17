@@ -1,3 +1,4 @@
+pub(crate) mod escape;
 pub(crate) mod json_pointer;
 pub(crate) mod matcher;
 mod proxy;

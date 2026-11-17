@@ -52,6 +52,7 @@ Comme les fonctions ci-dessous, ces 4 accès apparaissent dans l'autocomplétion
 | `to_json(value)` | Transforme une structure Rhai (un tableau ou un objet construit dans le script) en texte JSON |
 | `parse_xml_items(text, "chemin/vers/element")` | Extrait chaque élément XML répété à un chemin, sous forme de tableau d'objets Rhai (un niveau de champs enfants) |
 | `xml_element(tag, value)` | Construit un élément XML `<tag>...</tag>` à partir d'une structure Rhai (récursivement) |
+| `xml_text(value)`, `xml_attr(value)`, `cdata(value)`, `json_string(value)` | La valeur échappée pour le texte d'un élément XML, un attribut XML, une section CDATA ou l'intérieur d'une chaîne JSON, comme les pipes de modèle du même nom ; vide pour rien (`()`), une liste ou un objet |
 
 L'éditeur liste ces fonctions dès que vous commencez à taper leur nom (ou avec `Ctrl+Espace` pour la liste complète), avec leur signature et leur description : inutile de retenir ce tableau. Il liste d'abord les mots-clés du langage (`let`, `if`, `else`, `for`, `while`, `switch`, `fn`, `return`, `try`…) : en choisir un insère son squelette avec la partie à remplacer sélectionnée (`if condition { }` sélectionne `condition`), ou le curseur dans son bloc.
 

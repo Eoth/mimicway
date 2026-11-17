@@ -52,6 +52,7 @@ Like the functions below, these 4 accesses appear in the editor's autocompletion
 | `to_json(value)` | Turns a Rhai structure (an array or map built in the script) into JSON text |
 | `parse_xml_items(text, "path/to/item")` | Extracts every XML element repeated at a path as an array of Rhai maps (one level of child fields) |
 | `xml_element(tag, value)` | Builds an XML element `<tag>...</tag>` from a Rhai structure (recursively) |
+| `xml_text(value)`, `xml_attr(value)`, `cdata(value)`, `json_string(value)` | The value escaped for the text of an XML element, an XML attribute, a CDATA section or the inside of a JSON string, as the template pipes of the same names; empty for nothing (`()`), a list or a map |
 
 The editor lists these functions as soon as you start typing their name (or with `Ctrl+Space` for the full list), with their signature and description: no need to memorize this table. It lists the keywords of the language first (`let`, `if`, `else`, `for`, `while`, `switch`, `fn`, `return`, `try`…): picking one inserts its skeleton with the part to replace selected (`if condition { }` selects `condition`), or the caret inside its block.
 

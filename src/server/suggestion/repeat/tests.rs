@@ -1,4 +1,5 @@
 use super::*;
+use crate::engine::escape::Escaping;
 use crate::server::observation::{ObservationKey, ObservedExchange};
 use crate::server::suggestion::{
     EndpointSuggestion, SuggestedRule, Suggestion, suggest_for_service,
@@ -77,9 +78,7 @@ fn echo_rule(suggestions: &[EndpointSuggestion]) -> &SuggestedRule {
 
 /// The expression that repeats an XML field, escaped for the text of an element.
 fn xml_value(path: &str) -> String {
-    format!(
-        r#"{{{{xpath.{path} | replace("&", "&amp;") | replace("<", "&lt;") | replace(">", "&gt;")}}}}"#
-    )
+    format!(r#"{{{{xpath.{path} | xml_text}}}}"#)
 }
 
 fn status_call(reference: &str, date: &str) -> ObservedExchange {
@@ -186,8 +185,8 @@ fn book_call(slots: &[(&str, &str)]) -> ObservedExchange {
         .map(|(date, kind)| {
             format!(
                 "<booked><date>{}</date><type>{}</type><state>OK</state></booked>",
-                Escape::XmlText.apply(&quick_unescape(date)),
-                Escape::XmlText.apply(&quick_unescape(kind))
+                Escaping::XmlText.apply(&quick_unescape(date)),
+                Escaping::XmlText.apply(&quick_unescape(kind))
             )
         })
         .collect();
@@ -336,7 +335,8 @@ fn a_json_array_answered_with_an_object_per_item_gets_a_script_too() {
 #[test]
 fn text_from_the_traffic_never_becomes_code_nor_a_template() {
     // The backend writes, in each block and around the list, what would be code in a script or a template if copied
-    // as it is; the request names a field with quotes and a backslash.
+    // as it is; the request names a field with quotes and a backslash. A text response, where values are written as
+    // they are: the literal text is all the more hostile.
     let hostile = "\"); throw \"x\"; let a = (\"\\ ${x} `y` {{uuid}} }}\n\r\t\u{0}é";
     let call = |items: &[(&str, &str)]| {
         let request = serde_json::json!({
@@ -344,16 +344,13 @@ fn text_from_the_traffic_never_becomes_code_nor_a_template() {
         });
         let blocks: Vec<String> = items
             .iter()
-            .map(|(v, w)| {
-                let quoted = serde_json::Value::from(*v).to_string();
-                format!("{{{{\"{hostile}\":{quoted}, \"w\": \"{w}\"}}}}")
-            })
+            .map(|(v, w)| format!("{{{{\"{hostile}\":{v}, \"w\": \"{w}\"}}}}"))
             .collect();
         let mut e = posted(
             &request.to_string(),
             &format!("[{{{{uuid}}}} {hostile}{}]", blocks.join(hostile)),
         );
-        e.response_content_type = Some("application/json".into());
+        e.response_content_type = Some("text/plain".into());
         e
     };
     let endpoints = endpoints(vec![
@@ -416,7 +413,7 @@ fn a_list_of_a_hundred_items_stays_within_the_script_budget() {
     // two fields. Past that, the observed calls are not rendered back and nothing is suggested, as the docs say.
     let suggestions = suggest_for_service(&endpoints(long_lists(100)));
     assert!(echo_rule(&suggestions).list.is_some());
-    let suggestions = suggest_for_service(&endpoints(long_lists(200)));
+    let suggestions = suggest_for_service(&endpoints(long_lists(300)));
     let rules = crate::server::suggestion::replay::rules_of(&suggestions[0].outcome);
     assert!(
         rules
@@ -425,4 +422,132 @@ fn a_list_of_a_hundred_items_stays_within_the_script_budget() {
         "{:?}",
         suggestions[0].outcome
     );
+}
+
+// --- Each value escaped for the place it lands, whatever value comes
+
+/// Calls whose request sends `values` (a JSON object `{"v": …}` per call) and whose response is `answer(value)`, with
+/// the content type `content_type`.
+fn json_calls(
+    values: &[serde_json::Value],
+    content_type: &str,
+    answer: impl Fn(&serde_json::Value) -> String,
+) -> Vec<ObservedExchange> {
+    values
+        .iter()
+        .map(|v| {
+            let mut e = posted(&serde_json::json!({ "v": v }).to_string(), &answer(v));
+            e.response_content_type = Some(content_type.into());
+            e
+        })
+        .collect()
+}
+
+fn xml_value_calls(answer: impl Fn(&str) -> String) -> Vec<ObservedExchange> {
+    ["R-1", "R-2", "R-3"]
+        .iter()
+        .map(|v| {
+            posted(
+                &envelope("GetStatus", &format!("<o:ref>{v}</o:ref>")),
+                &answer(v),
+            )
+        })
+        .collect()
+}
+
+/// What the one rule of `calls` answers to `request`.
+fn answer_to(calls: Vec<ObservedExchange>, request: &str) -> String {
+    let suggestions = suggest_for_service(&endpoints(calls));
+    rendered(echo_rule(&suggestions), request)
+}
+
+#[test]
+fn a_value_in_an_attribute_has_its_quotes_escaped_whatever_was_observed() {
+    // No observed value held a quote: the attribute still gets `&quot;` and `&apos;`, and no value adds an attribute.
+    let calls = xml_value_calls(|v| answer(&format!("<status id=\"{v}\">OPEN</status>")));
+    for value in ["a\"b", "x\" admin=\"true", "it's", "<&>"] {
+        let request = envelope(
+            "GetStatus",
+            &format!("<o:ref>{}</o:ref>", Escaping::XmlText.apply(value)),
+        );
+        assert_eq!(
+            answer_to(calls.clone(), &request),
+            answer(&format!(
+                "<status id=\"{}\">OPEN</status>",
+                Escaping::XmlAttr.apply(value)
+            ))
+        );
+    }
+}
+
+#[test]
+fn a_value_in_a_cdata_section_keeps_it_whole() {
+    let calls = xml_value_calls(|v| answer(&format!("<note><![CDATA[{v}]]></note>")));
+    for value in ["a]]>b", "x&y<z>", "]]]>"] {
+        let request = envelope(
+            "GetStatus",
+            &format!("<o:ref>{}</o:ref>", Escaping::XmlText.apply(value)),
+        );
+        assert_eq!(
+            answer_to(calls.clone(), &request),
+            answer(&format!(
+                "<note><![CDATA[{}]]></note>",
+                Escaping::Cdata.apply(value)
+            ))
+        );
+    }
+}
+
+#[test]
+fn a_value_in_a_json_string_has_every_control_character_escaped() {
+    let observed = ["a", "b", "c"].map(serde_json::Value::from);
+    let write = |v: &serde_json::Value| serde_json::json!({ "echo": v }).to_string();
+    let calls = json_calls(&observed, "application/json", write);
+    for value in ["\u{1}", "x\"y\\z", "line\nfeed\u{1f}"] {
+        let v = serde_json::Value::from(value);
+        let got = answer_to(calls.clone(), &serde_json::json!({ "v": v }).to_string());
+        assert_eq!(got, write(&v));
+    }
+    // A response that is a JSON string itself is JSON, not text.
+    let calls = json_calls(&observed, "application/json", |v| v.to_string());
+    let got = answer_to(calls, r#"{"v":"q\"uote"}"#);
+    assert_eq!(serde_json::from_str::<String>(&got).unwrap(), "q\"uote");
+}
+
+#[test]
+fn a_value_out_of_a_json_string_is_never_written_by_a_template() {
+    // `{"n":2}` from `{"v":2}`: a template would write `{"n":abc}` for `{"v":"abc"}`. The value is not generalized.
+    let observed = [2, 3, 5].map(serde_json::Value::from);
+    let calls = json_calls(&observed, "application/json", |v| format!("{{\"n\":{v}}}"));
+    let suggestions = suggest_for_service(&endpoints(calls));
+    for rule in crate::server::suggestion::replay::rules_of(&suggestions[0].outcome) {
+        assert!(rule.repeats.is_empty(), "{rule:?}");
+    }
+}
+
+#[test]
+fn a_field_of_an_item_out_of_a_json_string_is_written_as_the_json_value_of_the_request() {
+    let endpoints = endpoints(vec![
+        json_call("O-1", &[("S-1", 2), ("S-2", 5)]),
+        json_call("O-2", &[("S-9", 1)]),
+        json_call("O-3", &[("S-4", 3), ("S-5", 1), ("S-6", 7)]),
+    ]);
+    let suggestions = suggest_for_service(&endpoints);
+    let rule = echo_rule(&suggestions);
+    for (qty, written) in [
+        (r#""abc""#, r#""abc""#),
+        ("null", "null"),
+        (r#"{"a":1}"#, r#"{"a":1}"#),
+        ("1.5", "1.5"),
+    ] {
+        let request = format!(r#"{{"order":{{"ref":"O-9"}},"lines":[{{"sku":"S","qty":{qty}}}]}}"#);
+        let got = rendered(rule, &request);
+        assert!(
+            serde_json::from_str::<serde_json::Value>(&got).is_ok(),
+            "{got}"
+        );
+        assert!(got.contains(&format!("\"qty\":{written}")), "{got}");
+    }
+    let missing = rendered(rule, r#"{"order":{"ref":"O-9"},"lines":[{"sku":"S"}]}"#);
+    assert!(missing.contains("\"qty\":null"), "{missing}");
 }

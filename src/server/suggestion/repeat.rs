@@ -4,13 +4,16 @@
 //! Two shapes, found on the calls of one route or operation whose responses differ:
 //! - values: each response is the same text around values of its own request (path, query, header, JSON or XML field
 //!   of the body). The response becomes that text, in `Literal` fragments, and one template expression per value
-//!   (`{{xpath.Envelope/Body/GetStatus/ref | replace("&", "&amp;") | …}}`), written here from a field name checked
-//!   first, never from the traffic; its pipes escape the value as the format of the response does (templates substitute
-//!   values as they are), so that a value never seen with `&` or a quote keeps the response valid.
+//!   (`{{xpath.Envelope/Body/GetStatus/ref | xml_text}}`), written here from a field name checked first, never from
+//!   the traffic. Its pipe escapes the value for where the hole stands in the document (`Context`: the text of an XML
+//!   element, an attribute, a CDATA section, a JSON string), never for the values observed alone, so that any value to
+//!   come keeps the document well formed; a hole where no escaping can promise it (out of any JSON string, inside a tag)
+//!   is not generalized.
 //! - a list: the request holds a repeated element (`<slot>` items, a JSON array of objects) and the response a block
 //!   per item, each block the same text around values of the item of the same rank. Templates cannot loop: a Rhai
 //!   script is written that reads the items (`parse_xml_items`, `parse_json`) and builds the blocks, each value escaped
-//!   for the format of the response, and the response reads its result (`{{script.items}}`). Every text observed that
+//!   for where it stands (out of a JSON string, written as the JSON value it is, `to_json`), and the response reads its
+//!   result (`{{script.items}}`). Every text observed that
 //!   enters the script is a Rhai string literal written by `rhai_string`, so that no traffic can write code.
 //!
 //! How the shape is found: the responses are read side by side from their start (`align`). Where they stop being equal,
@@ -27,6 +30,7 @@
 //! values, a few lists and starts tried, a gap between blocks of `MAX_GAP` bytes at most), so that its cost stays
 //! proportional to the length of the responses times their number.
 use super::{Call, Candidate};
+use crate::engine::escape::Escaping;
 use crate::engine::script::{ScriptContext, ScriptEngine};
 use crate::engine::{TemplateContext, TemplateRenderer};
 use crate::models::{BodyFragment, ConditionSource, MockResponse};
@@ -202,86 +206,242 @@ fn align(
     }
 }
 
-/// How the values of a list are written in the response, and so escaped by the script.
+/// The format of the responses: what a hole of the template is escaped for depends on it.
 #[derive(Clone, Copy, Debug, PartialEq)]
-enum Escape {
-    /// Text of an XML element: `&`, `<` and `>`.
-    XmlText,
-    /// Every markup character of XML, quotes too, as `xml_element` writes them.
-    XmlAll,
-    /// The inside of a JSON string; numbers and booleans as JSON writes them.
+enum Format {
+    Xml,
     Json,
-    /// As they are, for a response that is neither XML nor JSON.
+    /// Neither: a value is written as it is.
+    Text,
+}
+
+/// The format of the responses of `calls`, by their content type, then by reading them: the format declared when its
+/// reader reads them all whole, else the one whose reader does, failing that text (a body declared JSON that no JSON
+/// reader accepts is no JSON document to keep well formed).
+fn format_of(calls: &[&Call]) -> Option<Format> {
+    let declared = calls[0]
+        .exchange()
+        .response_content_type
+        .as_deref()
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    let all = |reads: fn(&str) -> bool| calls.iter().all(|c| reads(&c.exchange().response_body));
+    if declared.contains("json") && all(reads_json) {
+        return Some(Format::Json);
+    }
+    if declared.contains("xml") && all(reads_xml) {
+        return Some(Format::Xml);
+    }
+    Some(if all(reads_json) {
+        Format::Json
+    } else if all(reads_xml) {
+        Format::Xml
+    } else {
+        Format::Text
+    })
+}
+
+fn reads_json(body: &str) -> bool {
+    serde_json::from_str::<serde::de::IgnoredAny>(body).is_ok()
+}
+
+/// Whether quick-xml reads `body` whole as one element, its attributes and references included.
+fn reads_xml(body: &str) -> bool {
+    use quick_xml::events::Event;
+    let mut reader = quick_xml::reader::Reader::from_str(body);
+    let (mut depth, mut roots) = (0usize, 0usize);
+    loop {
+        match reader.read_event() {
+            Ok(event @ (Event::Start(_) | Event::Empty(_))) => {
+                let (Event::Start(e) | Event::Empty(e)) = &event else {
+                    return false;
+                };
+                let attributes_read = e.attributes().all(|a| {
+                    a.is_ok_and(|a| {
+                        a.normalized_value(quick_xml::XmlVersion::Implicit1_0)
+                            .is_ok()
+                    })
+                });
+                if !attributes_read {
+                    return false;
+                }
+                roots += usize::from(depth == 0);
+                depth += usize::from(matches!(event, Event::Start(_)));
+            }
+            Ok(Event::End(_)) => depth = depth.saturating_sub(1),
+            Ok(event @ (Event::Text(_) | Event::GeneralRef(_) | Event::CData(_))) => {
+                if crate::engine::MatchEngine::xml_text(&event).is_none() {
+                    return false;
+                }
+            }
+            Ok(Event::Eof) => return depth == 0 && roots == 1,
+            Err(_) => return false,
+            Ok(_) => {}
+        }
+    }
+}
+
+/// How request values are looked for in the responses, read side by side: as the format writes them in one of its
+/// contexts. The template or the script then escapes each value for the context its hole is found in (`Context`),
+/// whatever the encoding that found it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Encoding {
+    XmlText,
+    XmlAttr,
+    JsonString,
+    /// As it is: an XML value in a CDATA section, or any value of a text response.
     Raw,
 }
 
-impl Escape {
+impl Encoding {
     fn apply(self, value: &str) -> String {
         match self {
-            Escape::XmlText => value
-                .replace('&', "&amp;")
-                .replace('<', "&lt;")
-                .replace('>', "&gt;"),
-            Escape::XmlAll => value
-                .replace('&', "&amp;")
-                .replace('<', "&lt;")
-                .replace('>', "&gt;")
-                .replace('"', "&quot;")
-                .replace('\'', "&apos;"),
-            Escape::Json | Escape::Raw => value.to_string(),
+            Encoding::XmlText => Escaping::XmlText.apply(value),
+            Encoding::XmlAttr => Escaping::XmlAttr.apply(value),
+            Encoding::JsonString => Escaping::JsonString.apply(value),
+            Encoding::Raw => value.to_string(),
         }
     }
 
-    /// A request value as the response writes it, read by a template: the same escaping as `value_pipes`.
-    fn value(self, value: &str) -> String {
+    fn of(format: Format) -> &'static [Encoding] {
+        match format {
+            Format::Xml => &[Encoding::XmlText, Encoding::XmlAttr, Encoding::Raw],
+            Format::Json => &[Encoding::JsonString],
+            Format::Text => &[Encoding::Raw],
+        }
+    }
+}
+
+/// Where a hole of the template stands in the document, which says how a value is escaped there.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Context {
+    /// The text of an XML element.
+    XmlText,
+    /// The value of an XML attribute.
+    XmlAttr,
+    /// The inside of a CDATA section.
+    Cdata,
+    /// The inside of a JSON string.
+    JsonString,
+    /// A place of a JSON document out of any string: only a JSON value fits, which a script writes (`to_json`) and a
+    /// template cannot.
+    JsonBare,
+    /// A text response.
+    Text,
+}
+
+impl Context {
+    /// The pipes that escape a value read by a template here; `None` where no pipe keeps the document well formed.
+    fn pipe(self) -> Option<&'static str> {
         match self {
-            Escape::XmlText | Escape::XmlAll => self.apply(value),
-            Escape::Json => value
-                .replace('\\', "\\\\")
-                .replace('"', "\\\"")
-                .replace('\n', "\\n")
-                .replace('\r', "\\r")
-                .replace('\t', "\\t"),
-            Escape::Raw => value.to_string(),
+            Context::XmlText => Some(" | xml_text"),
+            Context::XmlAttr => Some(" | xml_attr"),
+            Context::Cdata => Some(" | cdata"),
+            Context::JsonString => Some(" | json_string"),
+            Context::JsonBare => None,
+            Context::Text => Some(""),
         }
     }
 
-    /// The pipes that escape a value read by a template, as `value` does: templates substitute values as they are.
-    fn value_pipes(self) -> &'static str {
+    /// A field of an item written here by the script, as a Rhai expression.
+    fn script(self, field: &str) -> String {
+        let read = format!("item[{}]", rhai_string(field));
         match self {
-            Escape::XmlText => {
-                r#" | replace("&", "&amp;") | replace("<", "&lt;") | replace(">", "&gt;")"#
-            }
-            Escape::XmlAll => {
-                r#" | replace("&", "&amp;") | replace("<", "&lt;") | replace(">", "&gt;") | replace("\"", "&quot;") | replace("'", "&apos;")"#
-            }
-            Escape::Json => {
-                " | replace(\"\\\\\", \"\\\\\\\\\") | replace(\"\\\"\", \"\\\\\\\"\") \
-                 | replace(\"\n\", \"\\\\n\") | replace(\"\r\", \"\\\\r\") | replace(\"\t\", \"\\\\t\")"
-            }
-            Escape::Raw => "",
+            Context::XmlText => format!("xml_text({read})"),
+            Context::XmlAttr => format!("xml_attr({read})"),
+            Context::Cdata => format!("cdata({read})"),
+            Context::JsonString => format!("json_string({read})"),
+            Context::JsonBare => format!("to_json({read})"),
+            Context::Text => format!("(\"\" + {read})"),
         }
     }
+}
 
-    /// The Rhai function `esc(v)` of the script: `v` as this escape writes it, an absent value as an empty text.
-    fn rhai_function(self) -> &'static str {
-        // `"" + v` is the text of `v`, and an empty text for an absent value (`()`).
-        match self {
-            Escape::XmlText => {
-                "fn esc(v) {\n    let s = \"\" + v;\n    s.replace(\"&\", \"&amp;\");\n    s.replace(\"<\", \"&lt;\");\n    \
-                 s.replace(\">\", \"&gt;\");\n    s\n}\n"
-            }
-            Escape::XmlAll => {
-                "fn esc(v) {\n    let s = \"\" + v;\n    s.replace(\"&\", \"&amp;\");\n    s.replace(\"<\", \"&lt;\");\n    \
-                 s.replace(\">\", \"&gt;\");\n    s.replace(\"\\\"\", \"&quot;\");\n    s.replace(\"'\", \"&apos;\");\n    s\n}\n"
-            }
-            Escape::Json => {
-                "fn esc(v) {\n    if type_of(v) == \"()\" { return \"\"; }\n    let s = to_json(v);\n    \
-                 if type_of(v) == \"string\" { s.sub_string(1, s.len() - 2) } else { s }\n}\n"
-            }
-            Escape::Raw => "fn esc(v) {\n    \"\" + v\n}\n",
+/// The context of each hole of `skeleton`, a document whose holes are `\0` bytes (no document of these formats holds
+/// one), in order; `None` when a hole stands where no escaping keeps the document well formed: inside a tag, a
+/// comment, a processing instruction or a declaration, right after a backslash in a JSON string, in text right before
+/// `>` (a value ending in `]]` would write `]]>`), in a CDATA section next to `]`, `>` or another hole (a value would
+/// end the section early).
+fn contexts(format: Format, skeleton: &[u8]) -> Option<Vec<Context>> {
+    match format {
+        Format::Text => Some(vec![
+            Context::Text;
+            skeleton.iter().filter(|&&b| b == 0).count()
+        ]),
+        Format::Json => json_contexts(skeleton),
+        Format::Xml => xml_contexts(skeleton),
+    }
+}
+
+fn json_contexts(skeleton: &[u8]) -> Option<Vec<Context>> {
+    let (mut in_string, mut escaped) = (false, false);
+    let mut found = Vec::new();
+    for &b in skeleton {
+        match (b, in_string, escaped) {
+            (0, true, true) => return None,
+            (0, true, false) => found.push(Context::JsonString),
+            (0, false, _) => found.push(Context::JsonBare),
+            (_, true, true) => escaped = false,
+            (b'\\', true, false) => escaped = true,
+            (b'"', true, false) => in_string = false,
+            (b'"', false, _) => in_string = true,
+            _ => {}
         }
     }
+    Some(found)
+}
+
+fn xml_contexts(skeleton: &[u8]) -> Option<Vec<Context>> {
+    #[derive(Clone, Copy, PartialEq)]
+    enum State {
+        Text,
+        Tag,
+        Attr(u8),
+        Cdata,
+        /// A comment, a processing instruction or a declaration, until its end marker.
+        Other(&'static [u8]),
+    }
+    let mut state = State::Text;
+    let mut found = Vec::new();
+    let mut i = 0;
+    while i < skeleton.len() {
+        let rest = &skeleton[i..];
+        if rest[0] == 0 {
+            let (before, after) = (&skeleton[..i], &skeleton[i + 1..]);
+            found.push(match state {
+                State::Text if !after.starts_with(b">") => Context::XmlText,
+                State::Attr(_) => Context::XmlAttr,
+                State::Cdata
+                    if !before.ends_with(b"]")
+                        && !before.ends_with(b"\0")
+                        && !after.starts_with(b">")
+                        && !after.starts_with(b"]>")
+                        && !after.starts_with(b"\0") =>
+                {
+                    Context::Cdata
+                }
+                _ => return None,
+            });
+            i += 1;
+            continue;
+        }
+        let (next, step) = match state {
+            State::Text if rest.starts_with(b"<![CDATA[") => (State::Cdata, 9),
+            State::Text if rest.starts_with(b"<!--") => (State::Other(b"-->"), 4),
+            State::Text if rest.starts_with(b"<?") => (State::Other(b"?>"), 2),
+            State::Text if rest.starts_with(b"<!") => (State::Other(b">"), 2),
+            State::Text if rest[0] == b'<' => (State::Tag, 1),
+            State::Tag if rest[0] == b'"' || rest[0] == b'\'' => (State::Attr(rest[0]), 1),
+            State::Tag if rest[0] == b'>' => (State::Text, 1),
+            State::Attr(quote) if rest[0] == quote => (State::Tag, 1),
+            State::Cdata if rest.starts_with(b"]]>") => (State::Text, 3),
+            State::Other(end) if rest.starts_with(end) => (State::Text, end.len()),
+            _ => (state, 1),
+        };
+        state = next;
+        i += step;
+    }
+    Some(found)
 }
 
 /// Where the items of a list are in a request body.
@@ -293,8 +453,9 @@ enum ListSource {
     Json(String),
 }
 
-/// The items of `source` in `body`, each a map of its fields to their text as the script reads them; `None` when the
-/// body does not hold them as the script would read them (an item that is no object, a limit of the script reached).
+/// The items of `source` in `body`, each a map of its scalar fields to their text (a JSON number or boolean as JSON
+/// writes it); `None` when the body does not hold them as the script would read them (an item that is no object, a
+/// limit of the script reached). A field that is no scalar is left out: it is never repeated as a text.
 fn read_items(source: &ListSource, body: &str) -> Option<Vec<BTreeMap<String, String>>> {
     match source {
         ListSource::Xml(path) => {
@@ -323,11 +484,7 @@ fn read_items(source: &ListSource, body: &str) -> Option<Vec<BTreeMap<String, St
                     map.into_iter()
                         .filter_map(|(k, v)| {
                             let text = match v {
-                                // Escaped for JSON here, as `to_json` writes a string, without its quotes.
-                                serde_json::Value::String(s) => {
-                                    let quoted = serde_json::to_string(&s).ok()?;
-                                    quoted[1..quoted.len() - 1].to_string()
-                                }
+                                serde_json::Value::String(s) => s,
                                 serde_json::Value::Number(n) => n.to_string(),
                                 serde_json::Value::Bool(b) => b.to_string(),
                                 _ => return None,
@@ -665,19 +822,19 @@ pub(super) fn rhai_string(text: &str) -> String {
 }
 
 /// The script that writes the blocks of `list`: `head` before the first block, `gap` between two, `tail` after the
-/// last, nothing at all for no item; each value of an item escaped as `escape` says.
+/// last, nothing at all for no item; each value of an item escaped for the context of its hole, `contexts` in the
+/// order of the values of `block.inner`.
 fn list_script(
     source: &ListSource,
     fields: &[String],
     block: &Block,
+    contexts: &[Context],
     head: &str,
     tail: &str,
-    escape: Escape,
 ) -> String {
     let mut script = String::from(
         "// One block per item of the request's list, written from the observed calls.\n",
     );
-    script.push_str(escape.rhai_function());
     match source {
         ListSource::Xml(path) => {
             let _ = writeln!(
@@ -714,13 +871,15 @@ fn list_script(
         script.push_str("    if type_of(item) != \"map\" { item = #{}; }\n");
     }
     let mut line = String::from("    out += sep");
+    let mut holes = contexts.iter();
     for piece in &block.inner {
         match piece {
             Piece::Literal(text) => {
                 let _ = write!(line, " + {}", rhai_string(&String::from_utf8_lossy(text)));
             }
             Piece::Value(f) => {
-                let _ = write!(line, " + esc(item[{}])", rhai_string(&fields[*f]));
+                let context = holes.next().copied().unwrap_or(Context::Text);
+                let _ = write!(line, " + {}", context.script(&fields[*f]));
             }
             Piece::List(_) => {}
         }
@@ -749,8 +908,8 @@ fn text(bytes: Vec<u8>) -> Option<String> {
 
 /// The response that repeats its request for `calls` (oldest first), read on `representatives` (one call per distinct
 /// response), and checked on every call; `None` when there is none, and the caller suggests what it did before.
-/// Request values are first looked for as the format of the response escapes them, read by an expression that escapes
-/// them the same way; then as they are (an XML value in a CDATA section), read as they are.
+/// Request values are looked for as the format of the responses writes them in each of its contexts (`Encoding`); each
+/// hole found is then escaped for its own context (`Context`), so that the rule stays right for any value to come.
 pub(super) fn infer(
     representatives: &[&Call],
     calls: &[&Call],
@@ -760,249 +919,250 @@ pub(super) fn infer(
     if calls.iter().any(|c| c.exchange().response_status != status) {
         return None;
     }
-    let format = match representatives[0]
-        .exchange()
-        .response_body
-        .trim_start()
-        .as_bytes()
-        .first()
-    {
-        Some(b'<') => Escape::XmlText,
-        Some(b'{' | b'[') => Escape::Json,
-        _ => Escape::Raw,
-    };
-    // Quotes escaped too only when a value holds one: otherwise both escapes write the same responses.
-    let quoted = candidates(representatives)
+    let format = format_of(representatives)?;
+    Encoding::of(format)
         .iter()
-        .any(|(_, _, values)| values.iter().any(|v| v.contains(['"', '\''])));
-    let attempts: &[Escape] = match format {
-        Escape::Raw => &[Escape::Raw],
-        Escape::XmlText if quoted => &[Escape::XmlText, Escape::XmlAll, Escape::Raw],
-        _ => &[format, Escape::Raw],
-    };
-    attempts
-        .iter()
-        .find_map(|&values| infer_with(representatives, calls, headers, format, values))
+        .find_map(|&encoding| infer_with(representatives, calls, headers, format, encoding))
 }
 
-/// `infer` with the request values written as `values` escapes them, and the lists as `format` does. The lists are
-/// tried first: when every call holds as many items, the values alone would read the blocks as fields of the items at
-/// fixed ranks (`/slots/2/type`), which answers no request with another number of items.
+/// What the attempts of one format and one encoding share.
+struct Attempt<'a, 'c> {
+    representatives: &'a [&'a Call<'c>],
+    calls: &'a [&'a Call<'c>],
+    headers: &'a [crate::models::HeaderEntry],
+    format: Format,
+    encoding: Encoding,
+    /// The candidates, their template expression without pipe, and their value in each representative, encoded.
+    found: Vec<(Candidate<'a>, String, Vec<String>)>,
+}
+
+impl Attempt<'_, '_> {
+    fn status(&self) -> u16 {
+        self.representatives[0].exchange().response_status
+    }
+
+    fn response(&self, body: Vec<BodyFragment>) -> MockResponse {
+        MockResponse {
+            status: self.status(),
+            headers: self.headers.to_vec(),
+            body,
+            chaos: None,
+            events: None,
+        }
+    }
+
+    fn candidate(&self, piece: &Piece) -> Option<&Candidate<'_>> {
+        match piece {
+            Piece::Value(c) => self.found.get(*c).map(|(candidate, _, _)| candidate),
+            _ => None,
+        }
+    }
+
+    fn repeated(&self, pieces: &[Piece]) -> Vec<ConditionSource> {
+        let mut fields: Vec<ConditionSource> = Vec::new();
+        for candidate in pieces.iter().filter_map(|p| self.candidate(p)) {
+            let source = candidate.source();
+            if !fields.contains(&source) {
+                fields.push(source);
+            }
+        }
+        fields
+    }
+
+    /// Whether a value the pieces repeat shows in a header: headers are copied as they are, never generalized.
+    fn in_headers(&self, pieces: &[Piece]) -> bool {
+        pieces
+            .iter()
+            .filter_map(|p| self.candidate(p))
+            .any(|repeated| {
+                self.calls.iter().any(|call| {
+                    call.fields().any(|(candidate, value)| {
+                        candidate == *repeated
+                            && !value.is_empty()
+                            && super::suggested_headers(call.exchange())
+                                .iter()
+                                .chain(self.headers)
+                                .any(|h| h.value.contains(value))
+                    })
+                })
+            })
+    }
+
+    /// The body of the rule: literal pieces as they are, each value read by its expression and escaped for the context
+    /// of its hole (`contexts`, in the order of the holes), the list (any other hole) read from the script.
+    fn fragments(&self, pieces: &[Piece], contexts: &[Context]) -> Option<Vec<BodyFragment>> {
+        let mut holes = contexts.iter();
+        pieces
+            .iter()
+            .map(|piece| {
+                if let Piece::Literal(bytes) = piece {
+                    return Some(BodyFragment::Literal {
+                        value: text(bytes.clone())?,
+                    });
+                }
+                let context = *holes.next()?;
+                Some(BodyFragment::Template {
+                    template: match piece {
+                        Piece::Value(c) if *c < self.found.len() => {
+                            let expression = &self.found[*c].1;
+                            format!(
+                                "{}{}}}}}",
+                                expression.trim_end_matches('}'),
+                                context.pipe()?
+                            )
+                        }
+                        _ => {
+                            let fits = matches!(
+                                context,
+                                Context::XmlText | Context::JsonBare | Context::Text
+                            );
+                            fits.then(|| format!("{{{{script.{LIST_FIELD}}}}}"))?
+                        }
+                    },
+                })
+            })
+            .collect()
+    }
+}
+
+/// The skeleton of `pieces`: their literal text, `\0` for each hole; `None` when a literal holds a `\0` itself.
+fn skeleton(pieces: &[Piece]) -> Option<Vec<u8>> {
+    let mut out = Vec::new();
+    for piece in pieces {
+        match piece {
+            Piece::Literal(bytes) if bytes.contains(&0) => return None,
+            Piece::Literal(bytes) => out.extend_from_slice(bytes),
+            _ => out.push(0),
+        }
+    }
+    Some(out)
+}
+
+/// `infer` with the request values looked for as `encoding` writes them. The lists are tried first: when every call
+/// holds as many items, the values alone would read the blocks as fields of the items at fixed ranks (`/slots/2/type`),
+/// which answers no request with another number of items.
 fn infer_with(
     representatives: &[&Call],
     calls: &[&Call],
     headers: &[crate::models::HeaderEntry],
-    format: Escape,
-    values: Escape,
+    format: Format,
+    encoding: Encoding,
 ) -> Option<Repetition> {
-    let status = representatives[0].exchange().response_status;
-    let found: Vec<(Candidate, String, Vec<String>)> = candidates(representatives)
-        .into_iter()
-        .map(|(candidate, expression, raw)| {
-            let expression = format!(
-                "{}{}}}}}",
-                expression.trim_end_matches('}'),
-                values.value_pipes()
-            );
-            let escaped = raw.iter().map(|v| values.value(v)).collect();
-            (candidate, expression, escaped)
-        })
-        .collect();
+    let attempt = Attempt {
+        representatives,
+        calls,
+        headers,
+        format,
+        encoding,
+        found: candidates(representatives)
+            .into_iter()
+            .map(|(candidate, expression, raw)| {
+                let encoded = raw.iter().map(|v| encoding.apply(v)).collect();
+                (candidate, expression, encoded)
+            })
+            .collect(),
+    };
+    for source in list_sources(representatives) {
+        if let Some(repetition) = try_list(&attempt, &source) {
+            return Some(repetition);
+        }
+    }
     let streams: Vec<Stream> = representatives
         .iter()
         .enumerate()
         .map(|(i, call)| Stream {
             text: call.exchange().response_body.as_bytes(),
-            values: found.iter().map(|(_, _, v)| v[i].as_bytes()).collect(),
+            values: attempt
+                .found
+                .iter()
+                .map(|(_, _, v)| v[i].as_bytes())
+                .collect(),
         })
         .collect();
-    let value_of = |piece: &Piece| match piece {
-        Piece::Value(c) => found.get(*c),
-        _ => None,
-    };
-    let response = |body| MockResponse {
-        status,
-        headers: headers.to_vec(),
-        body,
-        chaos: None,
-        events: None,
-    };
-    let repeated = |pieces: &[Piece]| -> Vec<ConditionSource> {
-        let mut fields: Vec<ConditionSource> = Vec::new();
-        for piece in pieces {
-            if let Some((candidate, _, _)) = value_of(piece) {
-                let source = candidate.source();
-                if !fields.contains(&source) {
-                    fields.push(source);
-                }
-            }
-        }
-        fields
-    };
-    // A value repeated in a header is not generalized: headers are copied as they are.
-    let in_headers = |pieces: &[Piece]| {
-        pieces.iter().any(|piece| match value_of(piece) {
-            Some((repeated, _, _)) => calls.iter().any(|call| {
-                call.fields().any(|(candidate, value)| {
-                    candidate == *repeated
-                        && !value.is_empty()
-                        && super::suggested_headers(call.exchange())
-                            .iter()
-                            .chain(headers)
-                            .any(|h| h.value.contains(value))
-                })
-            }),
-            _ => false,
-        })
-    };
-    let fragments = |pieces: &[Piece]| -> Option<Vec<BodyFragment>> {
-        pieces
-            .iter()
-            .map(|piece| {
-                Some(match (piece, value_of(piece)) {
-                    (Piece::Literal(bytes), _) => BodyFragment::Literal {
-                        value: text(bytes.clone())?,
-                    },
-                    (_, Some((_, expression, _))) => BodyFragment::Template {
-                        template: expression.clone(),
-                    },
-                    // The list: a column after the candidates, or the blocks themselves.
-                    _ => BodyFragment::Template {
-                        template: format!("{{{{script.{LIST_FIELD}}}}}"),
-                    },
-                })
-            })
-            .collect()
-    };
-
-    for source in list_sources(representatives) {
-        // The fields of the first item are body fields already read: a response holding a block per item holds one of
-        // them. Checked before the items are read, which costs a reading of the body.
-        let first_shown = representatives.iter().all(|call| {
-            let mut fields = call
-                .body
-                .fields
-                .iter()
-                .filter(|(field, _)| list_of(field).is_some_and(|(list, _)| list == source))
-                .peekable();
-            let response = &call.exchange().response_body;
-            fields.peek().is_none()
-                || fields.any(|(_, v)| {
-                    // A body field is the value itself; the response writes it escaped.
-                    let written = match source {
-                        ListSource::Json(_) => [Escape::Json.value(v), String::new()],
-                        ListSource::Xml(_) => [format.apply(v), Escape::XmlAll.apply(v)],
-                    };
-                    !v.is_empty()
-                        && written
-                            .iter()
-                            .any(|w| !w.is_empty() && response.contains(w))
-                })
-        });
-        if !first_shown {
-            continue;
-        }
-        let read: Option<Vec<Vec<BTreeMap<String, String>>>> = representatives
-            .iter()
-            .map(|call| read_items(&source, &call.exchange().request_body))
-            .collect();
-        let Some(read) = read else { continue };
-        if read.iter().map(Vec::len).max().unwrap_or(0) < 2 {
-            continue;
-        }
-        let fields: Vec<String> = read
-            .iter()
-            .flatten()
-            .flat_map(|item| item.keys().cloned())
-            .collect::<BTreeSet<_>>()
-            .into_iter()
-            .collect();
-        // Items of one kind have a few fields; and a response holding a block per item holds the values of its first
-        // and last items. Both checked before any reading side by side, which costs the items times their fields.
-        let shown = |i: usize| {
-            let (Some(first), Some(last)) = (read[i].first(), read[i].last()) else {
-                return true;
-            };
-            let response = &representatives[i].exchange().response_body;
-            fields.iter().any(|f| {
-                [first, last].iter().all(|item| {
-                    item.get(f).is_some_and(|v| {
-                        !v.is_empty()
-                            && (response.contains(&format.apply(v))
-                                || response.contains(&Escape::XmlAll.apply(v)))
-                    })
-                })
-            })
-        };
-        if fields.len() > MAX_ITEM_FIELDS || !(0..read.len()).all(shown) {
-            continue;
-        }
-        let quoted = read
-            .iter()
-            .flatten()
-            .flat_map(|item| item.values())
-            .any(|v| v.contains(['"', '\'']));
-        let escapes: &[Escape] = match (format, &source) {
-            (Escape::XmlText, _) if quoted => &[Escape::XmlText, Escape::XmlAll],
-            (Escape::Json, ListSource::Xml(_)) | (Escape::XmlText, ListSource::Json(_)) => {
-                continue;
-            }
-            _ => std::slice::from_ref(&format),
-        };
-        for &escape in escapes {
-            if let Some(repetition) = infer_list(
-                &source,
-                &fields,
-                &read,
-                escape,
-                representatives,
-                &found,
-                calls,
-                &response,
-                &fragments,
-                &in_headers,
-                &repeated,
-            ) {
-                return Some(repetition);
-            }
-        }
-    }
     let starts = vec![0; streams.len()];
-    if let Some((pieces, _)) = align(&streams, &starts, false, None)
-        && pieces.iter().any(|p| matches!(p, Piece::Value(_)))
-        && !in_headers(&pieces)
-    {
-        let body = fragments(&pieces)?;
-        let response = response(body);
-        if renders_back(&response, None, calls) {
-            return Some(Repetition {
-                body: response.body,
-                fields: repeated(&pieces),
-                list: None,
-                script: None,
-            });
-        }
+    let (pieces, _) = align(&streams, &starts, false, None)?;
+    if !pieces.iter().any(|p| matches!(p, Piece::Value(_))) || attempt.in_headers(&pieces) {
+        return None;
     }
-    None
+    let contexts = match format {
+        // Nothing to keep well formed: a text response may hold any byte, `\0` included.
+        Format::Text => vec![Context::Text; pieces.len()],
+        _ => contexts(format, &skeleton(&pieces)?)?,
+    };
+    let response = attempt.response(attempt.fragments(&pieces, &contexts)?);
+    renders_back(&response, None, calls).then(|| Repetition {
+        body: response.body,
+        fields: attempt.repeated(&pieces),
+        list: None,
+        script: None,
+    })
 }
 
-/// `infer` for one list and one escape: the responses of the calls with one item at least read side by side, the list
-/// taken where they differ; the text that the list holds before its first block and after its last moved into the
-/// script, so that a request with no item gets the text around the list alone.
-#[allow(clippy::too_many_arguments)]
+/// The list at `source`, if the responses hold a block per item of it.
+fn try_list(attempt: &Attempt, source: &ListSource) -> Option<Repetition> {
+    let representatives = attempt.representatives;
+    let encoding = attempt.encoding;
+    // The fields of the first item are body fields already read: a response holding a block per item holds one of
+    // them. Checked before the items are read, which costs a reading of the body.
+    let first_shown = representatives.iter().all(|call| {
+        let mut fields = call
+            .body
+            .fields
+            .iter()
+            .filter(|(field, _)| list_of(field).is_some_and(|(list, _)| list == *source))
+            .peekable();
+        let response = &call.exchange().response_body;
+        fields.peek().is_none()
+            || fields.any(|(_, v)| !v.is_empty() && response.contains(&encoding.apply(v)))
+    });
+    if !first_shown {
+        return None;
+    }
+    let read: Vec<Vec<BTreeMap<String, String>>> = representatives
+        .iter()
+        .map(|call| read_items(source, &call.exchange().request_body))
+        .collect::<Option<_>>()?;
+    if read.iter().map(Vec::len).max().unwrap_or(0) < 2 {
+        return None;
+    }
+    let fields: Vec<String> = read
+        .iter()
+        .flatten()
+        .flat_map(|item| item.keys().cloned())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    // Items of one kind have a few fields; and a response holding a block per item holds the values of its first and
+    // last items. Both checked before any reading side by side, which costs the items times their fields.
+    let shown = |i: usize| {
+        let (Some(first), Some(last)) = (read[i].first(), read[i].last()) else {
+            return true;
+        };
+        let response = &representatives[i].exchange().response_body;
+        fields.iter().any(|f| {
+            [first, last].iter().all(|item| {
+                item.get(f)
+                    .is_some_and(|v| !v.is_empty() && response.contains(&encoding.apply(v)))
+            })
+        })
+    };
+    if fields.len() > MAX_ITEM_FIELDS || !(0..read.len()).all(shown) {
+        return None;
+    }
+    infer_list(attempt, source, &fields, &read)
+}
+
+/// `infer` for one list: the responses of the calls with one item at least read side by side, the list taken where
+/// they differ; the text that the list holds before its first block and after its last moved into the script, so that
+/// a request with no item gets the text around the list alone.
 fn infer_list(
+    attempt: &Attempt,
     source: &ListSource,
     fields: &[String],
     read: &[Vec<BTreeMap<String, String>>],
-    escape: Escape,
-    representatives: &[&Call],
-    found: &[(Candidate, String, Vec<String>)],
-    calls: &[&Call],
-    response: &dyn Fn(Vec<BodyFragment>) -> MockResponse,
-    fragments: &dyn Fn(&[Piece]) -> Option<Vec<BodyFragment>>,
-    in_headers: &dyn Fn(&[Piece]) -> bool,
-    repeated: &dyn Fn(&[Piece]) -> Vec<ConditionSource>,
 ) -> Option<Repetition> {
+    let representatives = attempt.representatives;
+    let found = &attempt.found;
     // A field kept by the script is read with `item[name]`: an absent one reads as an empty text, as below.
     let all = ListSearch {
         fields: fields.to_vec(),
@@ -1016,7 +1176,7 @@ fn infer_list(
                             .iter()
                             .map(|f| {
                                 item.get(f)
-                                    .map(|v| escape.apply(v).into_bytes())
+                                    .map(|v| attempt.encoding.apply(v).into_bytes())
                                     .unwrap_or_default()
                             })
                             .collect()
@@ -1054,7 +1214,7 @@ fn infer_list(
         && let Piece::Literal(before) = &pieces[at - 1]
     {
         let mut length = common_suffix(before, &block.gap);
-        if matches!(escape, Escape::XmlText | Escape::XmlAll) {
+        if attempt.format == Format::Xml {
             let suffix = &block.gap[block.gap.len() - length..];
             if let Some(tag) = suffix.iter().position(|&b| b == b'<') {
                 length -= tag;
@@ -1096,10 +1256,12 @@ fn infer_list(
         .collect();
     let starts = vec![0; streams.len()];
     let (pieces, _) = align(&streams, &starts, false, None)?;
-    if in_headers(&pieces) || !pieces.contains(&Piece::Value(found.len())) {
+    let list = Piece::Value(found.len());
+    if attempt.in_headers(&pieces) || !pieces.contains(&list) {
         return None;
     }
 
+    let (outer, inner) = list_contexts(attempt.format, &pieces, &list, head, &block, tail)?;
     let used: Vec<String> = block
         .inner
         .iter()
@@ -1117,17 +1279,17 @@ fn infer_list(
         source,
         fields,
         &block,
+        &inner,
         &text(head.to_vec())?,
         &text(tail.to_vec())?,
-        escape,
     );
-    let response = response(fragments(&pieces)?);
-    if !renders_back(&response, Some(&script), calls) {
+    let response = attempt.response(attempt.fragments(&pieces, &outer)?);
+    if !renders_back(&response, Some(&script), attempt.calls) {
         return None;
     }
     Some(Repetition {
         body: response.body,
-        fields: repeated(&pieces),
+        fields: attempt.repeated(&pieces),
         list: Some(RepeatedList {
             items: match source {
                 ListSource::Xml(path) => ConditionSource::XPath(path.clone()),
@@ -1137,6 +1299,72 @@ fn infer_list(
         }),
         script: Some(script),
     })
+}
+
+/// The contexts of the holes of a response with a list: those of `pieces` (the list among them, at `list`), and those
+/// of the values of a block. The document is read with no block and with two: the holes outside the list must stand
+/// where they stood without it, the values of both blocks in the same contexts, and the list where blocks of markup
+/// may go (the text of an XML element, a JSON document out of strings); `None` otherwise.
+fn list_contexts(
+    format: Format,
+    pieces: &[Piece],
+    list: &Piece,
+    head: &[u8],
+    block: &Block,
+    tail: &[u8],
+) -> Option<(Vec<Context>, Vec<Context>)> {
+    if format == Format::Text {
+        return Some((
+            vec![Context::Text; pieces.len()],
+            vec![Context::Text; block.inner.len()],
+        ));
+    }
+    let inner = skeleton(&block.inner)?;
+    let values = inner.iter().filter(|&&b| b == 0).count();
+    if [head, tail, &block.gap].iter().any(|t| t.contains(&0)) {
+        return None;
+    }
+    let mut none = Vec::new();
+    let mut two = Vec::new();
+    let mut before = 0;
+    for piece in pieces {
+        match piece {
+            Piece::Literal(bytes) if bytes.contains(&0) => return None,
+            Piece::Literal(bytes) => {
+                none.extend_from_slice(bytes);
+                two.extend_from_slice(bytes);
+            }
+            p if p == list => {
+                none.push(0);
+                before = two.iter().filter(|&&b| b == 0).count();
+                two.extend_from_slice(head);
+                two.extend_from_slice(&inner);
+                two.extend_from_slice(&block.gap);
+                two.extend_from_slice(&inner);
+                two.extend_from_slice(tail);
+            }
+            _ => {
+                none.push(0);
+                two.push(0);
+            }
+        }
+    }
+    let outer = contexts(format, &none)?;
+    let all = contexts(format, &two)?;
+    let first = all[before..before + values].to_vec();
+    let second = &all[before + values..before + 2 * values];
+    let around: Vec<Context> = all[..before]
+        .iter()
+        .chain(&all[before + 2 * values..])
+        .copied()
+        .collect();
+    let without_list: Vec<Context> = outer
+        .iter()
+        .enumerate()
+        .filter(|&(i, _)| i != before)
+        .map(|(_, c)| *c)
+        .collect();
+    (first == second && around == without_list).then_some((outer, first))
 }
 
 #[cfg(test)]

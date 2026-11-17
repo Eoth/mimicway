@@ -24,6 +24,10 @@ const PIPE_LABELS = {
   epoch_seconds: () => t('epoch_seconds — ISO date to seconds since 1970'),
   epoch_minutes: () => t('epoch_minutes — ISO date to minutes since 1970'),
   date: () => t('date("yyyy-MM-dd") — ISO date in another format'),
+  xml_text: () => t('xml_text — escaped for the text of an XML element'),
+  xml_attr: () => t('xml_attr — escaped for an XML attribute value'),
+  cdata: () => t('cdata — kept whole inside a CDATA section'),
+  json_string: () => t('json_string — escaped for the inside of a JSON string'),
 };
 
 const VARIABLE_LABELS = {

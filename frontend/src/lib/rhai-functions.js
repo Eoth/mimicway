@@ -206,6 +206,48 @@ export const RHAI_FUNCTIONS = [
     },
   },
   {
+    name: 'xml_text',
+    get signature() {
+      return t('xml_text(value)');
+    },
+    get description() {
+      return t('The value escaped for the text of an XML element (&, <, >); empty for nothing, a list or an object.');
+    },
+    insertText: 'xml_text(value)',
+  },
+  {
+    name: 'xml_attr',
+    get signature() {
+      return t('xml_attr(value)');
+    },
+    get description() {
+      return t('The value escaped for an XML attribute (&, <, >, quotes); empty for nothing, a list or an object.');
+    },
+    insertText: 'xml_attr(value)',
+  },
+  {
+    name: 'cdata',
+    get signature() {
+      return t('cdata(value)');
+    },
+    get description() {
+      return t('The value written whole inside a CDATA section (]]> split in two sections).');
+    },
+    insertText: 'cdata(value)',
+  },
+  {
+    name: 'json_string',
+    get signature() {
+      return t('json_string(value)');
+    },
+    get description() {
+      return t(
+        'The value escaped for the inside of a JSON string, without its quotes; empty for nothing, a list or an object.',
+      );
+    },
+    insertText: 'json_string(value)',
+  },
+  {
     name: 'xml_element',
     get signature() {
       return t('xml_element(tag, value)');

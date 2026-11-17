@@ -189,8 +189,8 @@ test.describe('Observed proxy traffic and suggested rules', () => {
       );
       const card = page.getByTestId('observation-suggestion-directory-0-0');
       await expect(card).toContainText('no condition: the response repeats Path parameter "name" (3 calls)');
-      // The name is escaped for XML by the pipes that follow it.
-      await expect(card).toContainText('<url>http://backend.internal:8080/ws/{{path.name | replace("&", "&amp;")');
+      // The name is escaped for the text of an XML element by the pipe that follows it.
+      await expect(card).toContainText('<url>http://backend.internal:8080/ws/{{path.name | xml_text}}</url>');
       await expect(page.getByTestId('observation-suggestion-directory-0-1')).toHaveCount(0);
       await docsScreenshot(
         page,
@@ -280,7 +280,7 @@ test.describe('Observed proxy traffic and suggested rules', () => {
       await expect(page.getByTestId('observation-create-service-directory-0')).toHaveCount(0);
       const card = page.getByTestId('observation-suggestion-directory-0-0');
       await expect(card).toContainText(
-        '<url>{{header.x-forwarded-proto | default("http")}}://{{header.host}}/localhost/ws/{{path.name |',
+        '<url>{{header.x-forwarded-proto | default("http")}}://{{header.host}}/localhost/ws/{{path.name | xml_text}}',
       );
       await expect(page.getByTestId('observation-suggestion-redirect-directory-0-0')).toHaveText(
         'Sends the application to the service localhost in Mimicway, instead of the backend behind it.',

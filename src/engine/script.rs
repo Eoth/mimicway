@@ -11,6 +11,7 @@
 // parse_json/to_json/parse_xml_items/xml_element exist for one need that neither template variables nor conditions
 // can meet, because they cannot loop: a request that holds a list of objects and a response that must hold as many
 // items, built position by position (JSON and XML/SOAP). docs/en/rhai-scripts.md has checked examples of both.
+use crate::engine::escape::Escaping;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -145,6 +146,19 @@ impl ScriptEngine {
         // parse_xml_items() extracts the elements repeated at a path (what the need is: a list of items), one level of
         // children each, and xml_element() builds an element, recursively, from a Rhai value. Paths use the same syntax as
         // XPath conditions: segments separated by "/", namespace prefixes ignored.
+        // A value written inside a document, escaped for where it lands (escape.rs), as the template pipes of the same
+        // names do: absent (`()`), an array or a map gives an empty text, any other value its text.
+        for escaping in [
+            Escaping::XmlText,
+            Escaping::XmlAttr,
+            Escaping::Cdata,
+            Escaping::JsonString,
+        ] {
+            engine.register_fn(escaping.name(), move |value: rhai::Dynamic| {
+                escape_impl(escaping, &value)
+            });
+        }
+
         engine.register_fn("parse_xml_items", parse_xml_items_impl);
         engine.register_fn("xml_element", |tag: &str, value: rhai::Dynamic| {
             xml_element_impl(tag, &value)
@@ -439,6 +453,27 @@ fn dynamic_field_to_string(value: &rhai::Dynamic) -> Result<String, Box<rhai::Ev
     } else {
         super::script_budget::display(value)
     }
+}
+
+// The functions xml_text, xml_attr, cdata and json_string: `value` escaped, refused before it is built when the result
+// would be longer than a text may be.
+fn escape_impl(
+    escaping: Escaping,
+    value: &rhai::Dynamic,
+) -> Result<String, Box<rhai::EvalAltResult>> {
+    if value.is_unit() || value.is_array() || value.is_map() {
+        return Ok(String::new());
+    }
+    let text = match value.read_lock::<rhai::ImmutableString>() {
+        Some(text) => text.to_string(),
+        None => value.to_string(),
+    };
+    if escaping.escaped_len(&text) > super::script_budget::MAX_STRING_SIZE {
+        return Err(super::script_budget::too_large(
+            super::script_budget::TEXT_TOO_LARGE,
+        ));
+    }
+    Ok(escaping.apply(&text))
 }
 
 // --- XML: extracting repeated elements, building elements (parse_xml_items, xml_element) ---
@@ -1268,6 +1303,45 @@ mod tests {
     }
 
     // --- parse_json / to_json ---
+
+    #[test]
+    fn the_escaping_functions_write_a_value_for_where_it_lands() {
+        let engine = ScriptEngine::new();
+        let ctx = ScriptContext {
+            body: "{\"v\":\"a<\\\"&'\",\"n\":2}".into(),
+            ..empty_ctx()
+        };
+        let result = engine
+            .execute(
+                "let d = parse_json(request.body); \
+                 #{ t: xml_text(d.v), a: xml_attr(d.v), j: json_string(d.v), c: cdata(\"]]>\"), \
+                    n: json_string(d.n), u: xml_text(()), m: json_string(d), l: xml_attr([1]) }",
+                &ctx,
+            )
+            .unwrap();
+        let field = |k: &str| result.fields[k].as_str();
+        assert_eq!(field("t"), "a&lt;\"&amp;'");
+        assert_eq!(field("a"), "a&lt;&quot;&amp;&apos;");
+        assert_eq!(field("j"), "a<\\\"&'");
+        assert_eq!(field("c"), "]]]]><![CDATA[>");
+        assert_eq!(field("n"), "2");
+        assert_eq!((field("u"), field("m"), field("l")), ("", "", ""));
+    }
+
+    #[test]
+    fn an_escaped_text_longer_than_a_text_may_be_is_refused_before_it_is_built() {
+        use super::super::script_budget::MAX_STRING_SIZE;
+        // `\u{1}` takes 6 bytes once escaped for JSON.
+        let fits = rhai::Dynamic::from("\u{1}".repeat(MAX_STRING_SIZE / 6));
+        assert_eq!(
+            escape_impl(Escaping::JsonString, &fits)
+                .map(|s| s.len())
+                .ok(),
+            Some(MAX_STRING_SIZE / 6 * 6)
+        );
+        let over = rhai::Dynamic::from("\u{1}".repeat(MAX_STRING_SIZE / 6 + 1));
+        assert!(escape_impl(Escaping::JsonString, &over).is_err());
+    }
 
     #[test]
     fn parse_json_array_len_and_index_access() {

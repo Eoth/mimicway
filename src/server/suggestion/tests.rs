@@ -378,8 +378,7 @@ fn a_response_that_repeats_the_value_that_varies_becomes_one_rule() {
     let template = |t: &str| BodyFragment::Template { template: t.into() };
     let literal = |v: &str| BodyFragment::Literal { value: v.into() };
     // Escaped as the text of an XML element: a name with `&` must not break the response.
-    let name =
-        r#"{{path.name | replace("&", "&amp;") | replace("<", "&lt;") | replace(">", "&gt;")}}"#;
+    let name = "{{path.name | xml_text}}";
     assert_eq!(
         rule.response.body,
         vec![

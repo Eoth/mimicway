@@ -4,7 +4,9 @@
 //   now_ms, now_iso, now_epoch, seq, script.*, and a text in double quotes ("2026-12-31"),
 //   for a value written in the template but transformed by pipes
 // Pipes: lower, upper, trim, capitalize, length, first(N), last(N), substr(s,l), default("v"), replace("a","b"),
-//   prepend("p"), append("s"), and for dates (template_dates.rs) epoch_ms, epoch_seconds, epoch_minutes, date("p")
+//   prepend("p"), append("s"), for dates (template_dates.rs) epoch_ms, epoch_seconds, epoch_minutes, date("p"), and to
+//   write a value inside a document (escape.rs) xml_text, xml_attr, cdata, json_string
+use crate::engine::escape::Escaping;
 use crate::engine::renderer::TemplateRenderer;
 use std::collections::HashMap;
 
@@ -223,6 +225,9 @@ fn split_pipes(s: &str) -> Vec<&str> {
 }
 
 fn apply_single_pipe(value: &str, pipe: &str, _ctx: &TemplateContext) -> String {
+    if let Some(escaping) = Escaping::from_name(pipe) {
+        return escaping.apply(value);
+    }
     match pipe {
         "lower" => value.to_ascii_lowercase(),
         "upper" => value.to_ascii_uppercase(),
@@ -690,6 +695,28 @@ mod tests {
         assert_eq!(
             render_template("{{xpath.Envelope/Body/recherche}}", &ctx),
             ""
+        );
+    }
+
+    #[test]
+    fn the_escaping_pipes_write_a_value_for_where_it_lands() {
+        let (p, q, h) = empty_ctx();
+        let ctx = make_ctx(&p, &q, &h, b"{\"v\":\"a<\\\"&'\\u0001\"}", 0);
+        assert_eq!(
+            render_template("{{body./v | xml_text}}", &ctx),
+            "a&lt;\"&amp;'\u{1}"
+        );
+        assert_eq!(
+            render_template("{{body./v | xml_attr}}", &ctx),
+            "a&lt;&quot;&amp;&apos;\u{1}"
+        );
+        assert_eq!(
+            render_template("{{body./v | json_string}}", &ctx),
+            "a<\\\"&'\\u0001"
+        );
+        assert_eq!(
+            render_template(r#"{{"x]]>y" | cdata}}"#, &ctx),
+            "x]]]]><![CDATA[>y"
         );
     }
 

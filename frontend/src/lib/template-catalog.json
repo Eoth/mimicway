@@ -50,7 +50,11 @@
     { "name": "epoch_ms", "insert": "epoch_ms", "input": "2026-01-01T00:00:00Z", "output": "1767225600000" },
     { "name": "epoch_seconds", "insert": "epoch_seconds", "input": "2026-01-01T00:00:00Z", "output": "1767225600" },
     { "name": "epoch_minutes", "insert": "epoch_minutes", "input": "2026-01-01T00:00:00Z", "output": "29453760" },
-    { "name": "date", "insert": "date(\"dd/MM/yyyy\")", "input": "2026-10-30T12:00:00Z", "output": "30/10/2026" }
+    { "name": "date", "insert": "date(\"dd/MM/yyyy\")", "input": "2026-10-30T12:00:00Z", "output": "30/10/2026" },
+    { "name": "xml_text", "insert": "xml_text", "input": "a>b", "output": "a&gt;b" },
+    { "name": "xml_attr", "insert": "xml_attr", "input": "it's", "output": "it&apos;s" },
+    { "name": "cdata", "insert": "cdata", "input": "a]]>b", "output": "a]]]]><![CDATA[>b" },
+    { "name": "json_string", "insert": "json_string", "input": "a\tb", "output": "a\\tb" }
   ],
   "traps": [
     { "pipe": "uper", "problem": "unknown", "input": "ab", "output": "ab" },

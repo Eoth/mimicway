@@ -102,6 +102,8 @@ Une variable peut être transformée avant d'être insérée : `lower`, `upper`,
 
 Exemple : `{{path.siret | first(9)}}` garde les 9 premiers caractères du SIRET reçu.
 
+Une valeur de la requête écrite dans un document XML ou JSON s'échappe pour l'endroit où elle tombe, si bien que toute valeur garde le document bien formé : `xml_text` pour le texte d'un élément (`&`, `<`, `>`), `xml_attr` pour la valeur d'un attribut (guillemets compris), `cdata` dans une section CDATA (`]]>` coupé en deux sections), `json_string` dans une chaîne JSON (guillemets, barres obliques inverses et caractères de contrôle). Exemple : `<ref>{{xpath.Envelope/Body/GetStatus/ref | xml_text}}</ref>`. Les scripts ont les quatre mêmes fonctions.
+
 Dans les constructeurs visuels, une aide accompagne chaque champ, sans avoir à connaître la syntaxe par cœur :
 
 - le champ **transformation** d'une valeur liste chaque pipe avec ce qu'il fait, et montre son effet sur un exemple (`first(3)` : « abcdef » → « abc ») ; une valeur fixe accepte aussi un pipe, écrit pour vous sous la forme `{{"valeur" | pipe}}` ;
