@@ -627,7 +627,7 @@ impl ListSearch {
         d: usize,
     ) -> Option<(usize, Block, Vec<usize>, usize)> {
         let mut starts = Vec::new();
-        for f in 0..self.fields.len() {
+        for (f, _) in self.fields.iter().enumerate() {
             let value = |i: usize| self.items[i][0][f].as_slice();
             let longest = (0..streams.len()).map(|i| value(i).len()).max()?;
             for t in (d + 1).saturating_sub(longest)..=d {
