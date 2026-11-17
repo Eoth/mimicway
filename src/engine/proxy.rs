@@ -130,6 +130,13 @@ impl RelayFailure {
     }
 }
 
+/// A relayed URL as the server log may show it: without its `user:password@` and without its query nor its fragment,
+/// where a caller puts credentials too (`?api_key=…`). The path stays, to tell which call failed.
+fn loggable_url(url: &str) -> String {
+    let end = url.find(['?', '#']).unwrap_or(url.len());
+    crate::server::redaction::redact_url_credentials(&url[..end])
+}
+
 /// The last error of a chain of sources, as its own `Display` gives it: what the system said
 /// (`Connection refused (os error 111)`) rather than what the HTTP client was doing.
 fn innermost_error(error: &(dyn std::error::Error + 'static)) -> String {
@@ -229,7 +236,7 @@ impl ProxyClient {
         if targets.admits(address, false) {
             Ok(())
         } else {
-            tracing::warn!(url = %crate::server::redaction::redact_url_credentials(url), "proxy target refused");
+            tracing::warn!(url = %loggable_url(url), "proxy target refused");
             Err(ProxyError::Refused)
         }
     }
@@ -237,7 +244,7 @@ impl ProxyClient {
     /// The error of a request the HTTP client could not send: `Refused` when the resolver found no address the list
     /// admits.
     fn send_error(e: reqwest::Error, url: &str, what: &str) -> ProxyError {
-        let url = crate::server::redaction::redact_url_credentials(url);
+        let url = loggable_url(url);
         if targets::refused_in(&e) {
             tracing::warn!(url = %url, "proxy target refused");
             return ProxyError::Refused;
@@ -1223,5 +1230,29 @@ mod tests {
         let chain = Wrapper(std::io::Error::other("connection reset"));
         assert_eq!(innermost_error(&chain), "connection reset");
         assert_eq!(innermost_error(&std::io::Error::other("alone")), "alone");
+    }
+
+    #[test]
+    fn the_log_shows_a_relayed_url_without_credentials_query_or_fragment() {
+        for (url, logged) in [
+            ("http://backend.test/a/b", "http://backend.test/a/b"),
+            (
+                "http://backend.test/a?api_key=secret",
+                "http://backend.test/a",
+            ),
+            (
+                "http://backend.test/a#token=secret",
+                "http://backend.test/a",
+            ),
+            ("http://backend.test/a?x=1#y", "http://backend.test/a"),
+            (
+                "http://user:secret@backend.test/a?k=secret",
+                "http://backend.test/a",
+            ),
+            ("http://backend.test/?", "http://backend.test/"),
+            ("not a url?secret", "not a url"),
+        ] {
+            assert_eq!(loggable_url(url), logged, "{url}");
+        }
     }
 }
