@@ -232,14 +232,27 @@ struct Bucket {
     exchanges: VecDeque<ObservedExchange>,
 }
 
+impl ObservationInner {
+    fn next_id(&mut self, group: Option<&str>, name: &str) -> u64 {
+        let next = self
+            .next_ids
+            .entry((group.map(str::to_string), name.to_string()))
+            .or_insert(0);
+        *next += 1;
+        *next - 1
+    }
+}
+
 #[derive(Default)]
 struct ObservationInner {
     buckets: HashMap<ObservationKey, Bucket>,
     // Endpoints by last update (first = least recent), to evict when `max_keys()` is reached. Recording an exchange
     // moves its endpoint to a new, larger sequence number, found through its bucket: no scan of the order.
     key_order: BTreeMap<u64, ObservationKey>,
-    /// Also the identifier of each call recorded, exchange or failure: unique, and in the order they came.
     next_seq: u64,
+    /// The next identifier of a call of each service, exchange or failure: in the order its calls came, and telling
+    /// nothing of the other services (how many calls they had). Forgotten with the service's calls.
+    next_ids: HashMap<ServiceKey, u64>,
     /// Oldest first, `max_failed_calls()` at most, `MAX_FAILED_CALLS_PER_SERVICE` of one service at most.
     failures: VecDeque<FailedCall>,
 }
@@ -290,7 +303,7 @@ impl ObservationStore {
         let inner = &mut *guard;
         let seq = inner.next_seq;
         inner.next_seq += 1;
-        exchange.id = seq;
+        exchange.id = inner.next_id(key.group_name.as_deref(), &key.service_name);
 
         // A new operation of a path that already has `MAX_OPERATIONS_PER_PATH`: the operation of that path updated least
         // recently leaves its place. Counted over the endpoints followed, `max_keys` at most, and only when the endpoint
@@ -365,8 +378,7 @@ impl ObservationStore {
             return;
         }
         let inner = &mut *guard;
-        call.request.id = inner.next_seq;
-        inner.next_seq += 1;
+        call.request.id = inner.next_id(call.group_name.as_deref(), &call.service_name);
         let same_service =
             |f: &FailedCall| f.group_name == call.group_name && f.service_name == call.service_name;
         let of_service = inner.failures.iter().filter(|f| same_service(f)).count();
@@ -456,6 +468,9 @@ impl ObservationStore {
         inner
             .failures
             .retain(|f| !(f.group_name.as_deref() == group && f.service_name == service_name));
+        inner
+            .next_ids
+            .retain(|(g, n), _| !(g.as_deref() == group && n == service_name));
     }
 
     pub fn clear(&self) {
@@ -475,6 +490,7 @@ impl ObservationStore {
         inner
             .failures
             .retain(|f| kept(f.group_name.as_deref(), &f.service_name));
+        inner.next_ids.retain(|(g, n), _| kept(g.as_deref(), n));
     }
 
     /// Every endpoint followed for a service, so that suggestions (`server::suggestion`) know which method and path to
@@ -1145,10 +1161,13 @@ mod tests {
         assert_eq!(calls[0].status, Some(200));
         assert_eq!(calls[0].failure, None);
         assert_eq!(store.calls(Some("g"), "svc").len(), 2);
-        // An identifier of another service reads nothing, through either list.
+        // An identifier reads a call of the service it is asked for, never one of another service.
         for other in store.calls(Some("g"), "svc") {
-            assert!(store.call(None, "svc", other.id).is_none());
-            assert!(store.call(Some("g"), "svc", other.id).is_some());
+            let own = store.call(Some("g"), "svc", other.id).unwrap();
+            assert_eq!(own.request.body.text, "other service");
+            if let Some(mine) = store.call(None, "svc", other.id) {
+                assert_ne!(mine.request.body.text, "other service");
+            }
         }
         assert!(store.call(None, "svc", u64::MAX).is_none());
     }
@@ -1269,5 +1288,36 @@ mod tests {
             small.record_failure_within(failed_call(None, "busy", i.to_string().as_bytes()), 4);
         }
         assert_eq!(small.calls(None, "busy").len(), 4);
+    }
+
+    // Reading the calls of one service tells nothing of how many calls another one had.
+    #[test]
+    fn the_identifiers_of_a_service_tell_nothing_of_the_others() {
+        let store = ObservationStore::new();
+        let other = |path: &str| ObservationKey {
+            service_name: "other".into(),
+            ..sample_key(path)
+        };
+        for round in 0..3 {
+            for i in 0..10 {
+                store.record(other(&format!("/{i}")), sample_exchange(b"x"));
+                store.record_failure(failed_call(None, "other", b"x"));
+            }
+            store.record(sample_key("/a"), sample_exchange(b"x"));
+            if round == 1 {
+                store.record_failure(failed_call(None, "svc", b"x"));
+            }
+        }
+        let mut ids: Vec<u64> = store.calls(None, "svc").iter().map(|c| c.id).collect();
+        ids.reverse();
+        assert_eq!(
+            ids,
+            [0, 1, 2, 3],
+            "one count per service, in the order its calls came"
+        );
+        // Forgotten with the service: observed again, it starts over.
+        store.forget_service(None, "svc");
+        store.record(sample_key("/a"), sample_exchange(b"x"));
+        assert_eq!(store.calls(None, "svc")[0].id, 0);
     }
 }
