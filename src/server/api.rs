@@ -625,11 +625,14 @@ async fn observed_endpoints(
     name: &str,
 ) -> Result<(Arc<MockConfig>, ObservedTraffic), AppError> {
     let config = observed_service_config(state, user, group, name).await?;
+    // A service no longer observed reads nothing, whatever a relay still running may have left.
+    let observed = state.observation.toggle.is_enabled(group, name);
     let endpoints = state
         .observation
         .store
         .keys_for_service(group, name)
         .into_iter()
+        .filter(|_| observed)
         .map(|key| {
             let observations = state.observation.store.observations(&key);
             (key, observations)
@@ -731,6 +734,9 @@ async fn get_observed_calls_impl(
     name: String,
 ) -> Result<Json<Vec<crate::server::observation::calls::CallSummary>>, AppError> {
     observed_service_config(&state, &user, group.as_deref(), &name).await?;
+    if !state.observation.toggle.is_enabled(group.as_deref(), &name) {
+        return Ok(Json(Vec::new()));
+    }
     Ok(Json(state.observation.store.calls(group.as_deref(), &name)))
 }
 
@@ -759,6 +765,9 @@ async fn get_observed_call_impl(
     id: u64,
 ) -> Result<Json<crate::server::observation::calls::CallDetail>, AppError> {
     observed_service_config(&state, &user, group.as_deref(), &name).await?;
+    if !state.observation.toggle.is_enabled(group.as_deref(), &name) {
+        return Err(AppError::NotFound);
+    }
     state
         .observation
         .store
@@ -3392,6 +3401,69 @@ mod tests {
             .unwrap();
         let (_, calls) = get(format!("{base}/services/proxy-svc/observed-calls")).await;
         assert_eq!(calls, serde_json::json!([]));
+    }
+
+    // A relay still running when observation stops, or stops and starts again, keeps nothing when it ends: neither the
+    // answer that comes late nor a response cut short.
+    #[tokio::test]
+    async fn a_relay_that_ends_after_observation_stopped_keeps_nothing() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        for answers in [true, false] {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let port = listener.local_addr().unwrap().port();
+            let (arrived_tx, arrived_rx) = tokio::sync::oneshot::channel();
+            let (release_tx, release_rx) = tokio::sync::oneshot::channel::<()>();
+            tokio::spawn(async move {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let mut seen = Vec::new();
+                let mut chunk = [0u8; 1024];
+                while !seen.ends_with(b"<call/>") {
+                    let n = socket.read(&mut chunk).await.unwrap();
+                    seen.extend_from_slice(&chunk[..n]);
+                }
+                arrived_tx.send(()).unwrap();
+                let _ = release_rx.await;
+                let reply: &[u8] = if answers {
+                    b"HTTP/1.1 200 OK\r\ncontent-length: 4\r\n\r\nlate"
+                } else {
+                    b"HTTP/1.1 200 OK\r\ncontent-length: 100\r\n\r\ncut"
+                };
+                socket.write_all(reply).await.unwrap();
+            });
+            let svc = Service {
+                is_mocked: false,
+                real_target_url: format!("http://127.0.0.1:{port}"),
+                ..svc_named("slow", None)
+            };
+            let base = spawn_test_app(MockConfig {
+                services: vec![svc],
+                groups: vec![],
+            })
+            .await;
+            let client = reqwest::Client::new();
+            let observe = format!("{base}/services/slow/observe");
+            client.post(&observe).send().await.unwrap();
+            let relay = tokio::spawn({
+                let client = client.clone();
+                let url = format!("{}/slow/ws", base.trim_end_matches("/api"));
+                async move { client.post(url).body("<call/>").send().await }
+            });
+            arrived_rx.await.unwrap();
+            client.delete(&observe).send().await.unwrap();
+            client.post(&observe).send().await.unwrap();
+            release_tx.send(()).unwrap();
+            let _ = relay.await.unwrap();
+
+            let calls: serde_json::Value = client
+                .get(format!("{base}/services/slow/observed-calls"))
+                .send()
+                .await
+                .unwrap()
+                .json()
+                .await
+                .unwrap();
+            assert_eq!(calls, serde_json::json!([]), "answers {answers}");
+        }
     }
 
     #[tokio::test]

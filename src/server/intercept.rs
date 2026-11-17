@@ -122,6 +122,8 @@ pub(crate) fn build_effective_pattern(
 /// (what a rule's sub-path is matched against, so a suggested rule matches the calls it was built from) and the
 /// parameters the listen path itself captured.
 struct ObservedRoute {
+    /// The generation of the observation when the relay started (`ObservationToggle::generation`).
+    generation: u64,
     sub_path: String,
     path_params: HashMap<String, String>,
 }
@@ -255,7 +257,7 @@ async fn do_proxy_observed(
                     sub_path: route.sub_path,
                     operation: crate::server::suggestion::request_operation(&exchange),
                 };
-                state.observation.store.record(key, exchange);
+                state.observation.record(key, exchange, route.generation);
             }
             resp
         }
@@ -275,10 +277,8 @@ async fn do_proxy_observed(
                     b"",
                     None,
                 );
-                state
-                    .observation
-                    .store
-                    .record_failure(crate::server::observation::FailedCall {
+                state.observation.record_failure(
+                    crate::server::observation::FailedCall {
                         group_name: service.group_name.clone(),
                         service_name: service.name.clone(),
                         method: method_str.to_string(),
@@ -288,7 +288,9 @@ async fn do_proxy_observed(
                         detail: failure.detail,
                         status,
                         target: crate::server::redaction::redact_url_credentials(target),
-                    });
+                    },
+                    route.generation,
+                );
             }
             failure.error.into_response()
         }
@@ -342,8 +344,9 @@ async fn handle_service(
         let observe = state
             .observation
             .toggle
-            .is_enabled(service.group_name.as_deref(), &service.name)
-            .then_some(ObservedRoute {
+            .generation(service.group_name.as_deref(), &service.name)
+            .map(|generation| ObservedRoute {
+                generation,
                 sub_path: remaining,
                 path_params,
             });

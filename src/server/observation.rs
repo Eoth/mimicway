@@ -10,7 +10,7 @@
 //   pushes an exchange out, and suggestions never read one (a 502 written by Mimicway is not an answer of the backend).
 //   Both are read back call by call through `calls` (the panel's list and the details of one call).
 use serde::Serialize;
-use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::sync::{Arc, RwLock};
 
 pub mod calls;
@@ -263,11 +263,27 @@ impl ObservationStore {
     pub(crate) fn record_within(
         &self,
         key: ObservationKey,
-        mut exchange: ObservedExchange,
+        exchange: ObservedExchange,
         max_keys: usize,
         samples_per_key: usize,
     ) {
+        self.record_within_if(key, exchange, max_keys, samples_per_key, || true);
+    }
+
+    /// `record_within`, only if `accept` holds once the store is locked: nothing that forgets a service can come
+    /// between the check and the recording (`ObservationState::record`).
+    fn record_within_if(
+        &self,
+        key: ObservationKey,
+        mut exchange: ObservedExchange,
+        max_keys: usize,
+        samples_per_key: usize,
+        accept: impl FnOnce() -> bool,
+    ) {
         let mut guard = self.inner.write().unwrap();
+        if !accept() {
+            return;
+        }
         let inner = &mut *guard;
         let seq = inner.next_seq;
         inner.next_seq += 1;
@@ -328,11 +344,23 @@ impl ObservationStore {
     }
 
     /// `record_failure` with its bound given, like `record_within`. The exchanges are never touched.
-    pub(crate) fn record_failure_within(&self, mut call: FailedCall, max_failed_calls: usize) {
+    pub(crate) fn record_failure_within(&self, call: FailedCall, max_failed_calls: usize) {
+        self.record_failure_within_if(call, max_failed_calls, || true);
+    }
+
+    fn record_failure_within_if(
+        &self,
+        mut call: FailedCall,
+        max_failed_calls: usize,
+        accept: impl FnOnce() -> bool,
+    ) {
         if max_failed_calls == 0 {
             return;
         }
         let mut guard = self.inner.write().unwrap();
+        if !accept() {
+            return;
+        }
         let inner = &mut *guard;
         call.request.id = inner.next_seq;
         inner.next_seq += 1;
@@ -461,16 +489,21 @@ impl Default for ObservationStore {
 /// A service's identity (group name, name), as `service_matches` in api.rs defines it.
 type ServiceKey = (Option<String>, String);
 
-/// The services under observation, turned on and off by a user, never automatically.
+/// The services under observation, turned on and off by a user, never automatically. Each time observation is turned
+/// on for a service it gets a generation of its own, drawn from one counter: a relay reads it when it starts, and what
+/// it captured is kept only if the generation is still the same when it ends (`ObservationState::record`), so that a
+/// relay still running when observation stopped, or started again, keeps nothing.
 #[derive(Clone)]
 pub struct ObservationToggle {
-    active: Arc<RwLock<HashSet<ServiceKey>>>,
+    active: Arc<RwLock<HashMap<ServiceKey, u64>>>,
+    next_generation: Arc<std::sync::atomic::AtomicU64>,
 }
 
 impl ObservationToggle {
     pub fn new() -> Self {
         Self {
-            active: Arc::new(RwLock::new(HashSet::new())),
+            active: Arc::new(RwLock::new(HashMap::new())),
+            next_generation: Arc::default(),
         }
     }
 
@@ -478,28 +511,41 @@ impl ObservationToggle {
         (group.map(|g| g.to_string()), name.to_string())
     }
 
+    /// Turns observation on; a service already observed keeps its generation.
     pub fn enable(&self, group: Option<&str>, name: &str) {
-        self.active.write().unwrap().insert(Self::key(group, name));
+        let generation = self
+            .next_generation
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.active
+            .write()
+            .unwrap()
+            .entry(Self::key(group, name))
+            .or_insert(generation);
     }
 
     pub fn disable(&self, group: Option<&str>, name: &str) {
         self.active.write().unwrap().remove(&Self::key(group, name));
     }
 
-    /// Whether a service is observed, without allocating: called on every request of a service-level proxy, observed or
-    /// not. A linear scan rather than `HashSet::contains`, which would need a `(Option<String>, String)` key built per
-    /// call; users observe a handful of services at most.
-    pub fn is_enabled(&self, group: Option<&str>, name: &str) -> bool {
+    /// The generation of a service's observation, `None` when it is not observed, without allocating: called on every
+    /// request of a service-level proxy, observed or not. A linear scan rather than a lookup, which would need a
+    /// `(Option<String>, String)` key built per call; users observe a handful of services at most.
+    pub fn generation(&self, group: Option<&str>, name: &str) -> Option<u64> {
         self.active
             .read()
             .unwrap()
             .iter()
-            .any(|(g, n)| g.as_deref() == group && n == name)
+            .find(|((g, n), _)| g.as_deref() == group && n == name)
+            .map(|(_, generation)| *generation)
+    }
+
+    pub fn is_enabled(&self, group: Option<&str>, name: &str) -> bool {
+        self.generation(group, name).is_some()
     }
 
     /// The services under observation (status API, diagnosis).
     pub fn active_services(&self) -> Vec<ServiceKey> {
-        self.active.read().unwrap().iter().cloned().collect()
+        self.active.read().unwrap().keys().cloned().collect()
     }
 
     /// When the whole configuration is replaced: otherwise a service created again afterwards would start out observed.
@@ -512,7 +558,7 @@ impl ObservationToggle {
         self.active
             .write()
             .unwrap()
-            .retain(|(g, n)| kept(g.as_deref(), n));
+            .retain(|(g, n), _| kept(g.as_deref(), n));
     }
 }
 
@@ -549,6 +595,27 @@ impl ObservationState {
     pub fn stop_all(&self) {
         self.toggle.clear_all();
         self.store.clear();
+    }
+
+    /// Keeps an exchange of a relay that started while observation had `generation`, only if it still has: the store is
+    /// locked while the switch is read, and turning observation off forgets the store after the switch, so a relay
+    /// that ends after observation stopped, or started again, keeps nothing. Lock order: store, then switch; nothing
+    /// holds the switch while it waits for the store.
+    pub fn record(&self, key: ObservationKey, exchange: ObservedExchange, generation: u64) {
+        let (group, name) = (key.group_name.clone(), key.service_name.clone());
+        self.store
+            .record_within_if(key, exchange, max_keys(), samples_per_key(), || {
+                self.toggle.generation(group.as_deref(), &name) == Some(generation)
+            });
+    }
+
+    /// `record` for a relay that failed.
+    pub fn record_failure(&self, call: FailedCall, generation: u64) {
+        let (group, name) = (call.group_name.clone(), call.service_name.clone());
+        self.store
+            .record_failure_within_if(call, max_failed_calls(), || {
+                self.toggle.generation(group.as_deref(), &name) == Some(generation)
+            });
     }
 
     /// Follows a change of the configuration, whatever made it (`MockStore::on_change`): a service whose identity
@@ -1128,5 +1195,42 @@ mod tests {
         assert!(plain.request_body_utf8 && plain.response_body_utf8);
         assert_eq!(plain.request_body_size, 5);
         assert_eq!(plain.response_body_size, 5);
+    }
+
+    #[test]
+    fn a_relay_keeps_its_capture_only_while_its_generation_of_observation_lasts() {
+        let state = ObservationState::new();
+        state.toggle.enable(None, "svc");
+        let first = state.toggle.generation(None, "svc").unwrap();
+        state.toggle.enable(None, "svc");
+        assert_eq!(
+            state.toggle.generation(None, "svc"),
+            Some(first),
+            "turned on again: the same"
+        );
+        state.record(sample_key("/a"), sample_exchange(b"kept"), first);
+        state.record_failure(failed_call(None, "svc", b"kept"), first);
+        assert_eq!(state.store.calls(None, "svc").len(), 2);
+
+        state.stop(None, "svc");
+        state.record(sample_key("/a"), sample_exchange(b"late"), first);
+        state.record_failure(failed_call(None, "svc", b"late"), first);
+        assert!(
+            state.store.calls(None, "svc").is_empty(),
+            "stopped: nothing kept"
+        );
+
+        state.toggle.enable(None, "svc");
+        let second = state.toggle.generation(None, "svc").unwrap();
+        assert_ne!(second, first);
+        state.record(sample_key("/a"), sample_exchange(b"late"), first);
+        state.record_failure(failed_call(None, "svc", b"late"), first);
+        assert!(
+            state.store.calls(None, "svc").is_empty(),
+            "started again: the old relay keeps nothing"
+        );
+        state.record(sample_key("/a"), sample_exchange(b"new"), second);
+        assert_eq!(state.store.calls(None, "svc").len(), 1);
+        assert_eq!(state.toggle.generation(Some("g"), "svc"), None);
     }
 }
