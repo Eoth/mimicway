@@ -10,8 +10,8 @@
 // - `json_string`: the inside of a JSON string, as serde_json writes one: `"` and `\` escaped, the control characters
 //   U+0000 to U+001F as `\b`, `\f`, `\n`, `\r`, `\t` or `\u00XX`.
 // - `json_value` (template pipe only): a JSON value, out of any string. A text that is exactly a JSON number (RFC 8259:
-//   no `+1`, `01`, `.5`, `1.`, `NaN` nor `Infinity`) as it is, any other text as a JSON string, quotes included; `true`,
-//   `false` and `null` too, as the texts they are.
+//   no `+1`, `01`, `.5`, `1.`, `NaN` nor `Infinity`) or exactly `true`, `false` or `null` as it is, any other text as
+//   a JSON string, quotes included.
 //
 // Each function says the length of its result before building it (`escaped_len`), so that a script can refuse a result
 // past the size of a text before it exists (script_budget.rs).
@@ -53,7 +53,7 @@ impl Escaping {
     pub(crate) fn apply(self, text: &str) -> String {
         let mut out = String::with_capacity(self.escaped_len(text));
         match self {
-            Escaping::JsonValue if is_json_number(text) => out.push_str(text),
+            Escaping::JsonValue if is_json_scalar(text) => out.push_str(text),
             Escaping::JsonValue => {
                 out.push('"');
                 out.push_str(&Escaping::JsonString.apply(text));
@@ -88,7 +88,7 @@ impl Escaping {
     /// The length in bytes of `apply(text)`, without building it.
     pub(crate) fn escaped_len(self, text: &str) -> usize {
         match self {
-            Escaping::JsonValue if is_json_number(text) => text.len(),
+            Escaping::JsonValue if is_json_scalar(text) => text.len(),
             Escaping::JsonValue => Escaping::JsonString.escaped_len(text) + 2,
             Escaping::Cdata => text.len() + text.matches("]]>").count() * (CDATA_END.len() - 3),
             _ => text
@@ -120,6 +120,12 @@ impl Escaping {
             _ => None,
         }
     }
+}
+
+/// Whether `text` is exactly a JSON number or one of the literals `true`, `false`, `null`: what `json_value` writes as
+/// it is.
+pub(crate) fn is_json_scalar(text: &str) -> bool {
+    matches!(text, "true" | "false" | "null") || is_json_number(text)
 }
 
 /// Whether `text` is exactly a JSON number (RFC 8259, section 6): `-`? then `0` or a digit 1-9 and digits, then

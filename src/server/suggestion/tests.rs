@@ -1328,3 +1328,21 @@ fn an_identifier_repeated_as_a_json_number_gives_one_rule() {
         }
     );
 }
+
+#[test]
+fn a_boolean_of_the_query_repeated_out_of_a_json_string_gives_one_rule() {
+    // `"active":true` for `?active=true`: one rule, as in 0.5.0.
+    let calls: Vec<ObservedExchange> = ["true", "false", "true", "false"]
+        .iter()
+        .map(|v| exchange_with_query(200, &format!("{{\"active\":{v}}}"), &[("active", v)]))
+        .collect();
+    let Suggestion::Echo { rule } = suggest("GET", "/accounts", &calls).unwrap() else {
+        panic!("expected one rule");
+    };
+    assert_eq!(
+        rule.response.body[1],
+        BodyFragment::Template {
+            template: "{{query.active | json_value}}".into()
+        }
+    );
+}

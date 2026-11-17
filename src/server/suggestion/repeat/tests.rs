@@ -552,7 +552,7 @@ fn a_value_in_a_json_string_has_every_control_character_escaped() {
 }
 
 #[test]
-fn a_value_out_of_a_json_string_is_written_as_a_json_value_where_numbers_were_seen() {
+fn a_value_out_of_a_json_string_is_written_as_a_json_value_where_numbers_or_literals_were_seen() {
     // `{"n":2}` from `{"v":2}`: written as a JSON value, `abc` gives `{"n":"abc"}`, a document still.
     let observed = [2, 3, 5].map(serde_json::Value::from);
     let calls = json_calls(&observed, "application/json", |v| format!("{{\"n\":{v}}}"));
@@ -560,13 +560,11 @@ fn a_value_out_of_a_json_string_is_written_as_a_json_value_where_numbers_were_se
         let got = answer_to(calls.clone(), &format!("{{\"v\":{sent}}}"));
         assert_eq!(got, format!("{{\"n\":{written}}}"));
     }
-    // Values that were no numbers are not written out of a string by a template.
+    // `true`, `false` and `null` are JSON values as they are too.
     let observed = [true, false, true].map(serde_json::Value::from);
     let calls = json_calls(&observed, "application/json", |v| format!("{{\"n\":{v}}}"));
-    let suggestions = suggest_for_service(&endpoints(calls));
-    for rule in crate::server::suggestion::replay::rules_of(&suggestions[0].outcome) {
-        assert!(rule.repeats.is_empty(), "{rule:?}");
-    }
+    assert_eq!(answer_to(calls.clone(), r#"{"v":null}"#), r#"{"n":null}"#);
+    assert_eq!(answer_to(calls, r#"{"v":"yes"}"#), r#"{"n":"yes"}"#);
 }
 
 #[test]

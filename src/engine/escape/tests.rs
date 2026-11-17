@@ -87,12 +87,15 @@ fn json_value_writes_a_json_number_as_it_is_and_any_other_text_as_a_string() {
         "2e-3",
         "-0.0e0",
         "123456789012345678901234567890",
+        "true",
+        "false",
+        "null",
     ] {
         assert_eq!(Escaping::JsonValue.apply(number), number);
     }
     for text in [
         "+1", "01", "-01", ".5", "1.", "1.e2", "NaN", "Infinity", "-", "1e", "1e+", "0x1", " 1",
-        "1 ", "", "true", "null", "a\"b",
+        "1 ", "", "True", "nul", " null", "a\"b",
     ] {
         let written = Escaping::JsonValue.apply(text);
         assert_eq!(
@@ -137,6 +140,7 @@ proptest! {
             arb_text(),
             "-?(0|[1-9][0-9]{0,3})(\\.[0-9]{1,3})?([eE][+-]?[0-9]{1,3})?",
             "[-+.eE0-9]{0,6}",
+            "(true|false|null|True|nul)",
         ]
     ) {
         let written = Escaping::JsonValue.apply(&text);
@@ -144,7 +148,9 @@ proptest! {
             // A number out of the range of a float (`1e999`) is still a JSON number: serde_json refuses to build it.
             Err(_) => prop_assert!(written == text && is_json_number(&text), "{}", written),
             Ok(serde_json::Value::String(read)) => prop_assert_eq!(read, text),
-            Ok(serde_json::Value::Number(_)) => prop_assert_eq!(&written, &text),
+            Ok(serde_json::Value::Number(_) | serde_json::Value::Bool(_) | serde_json::Value::Null) => {
+                prop_assert_eq!(&written, &text)
+            }
             Ok(other) => prop_assert!(false, "{} read as {:?}", written, other),
         }
     }

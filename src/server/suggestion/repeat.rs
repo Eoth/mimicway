@@ -32,7 +32,7 @@
 //! (the offsets a value may start at); the checks cost one rendering per call and per shape tried, within
 //! `MAX_RENDERS` renderings for all the suggestions of a service.
 use super::{Call, Candidate, Renders};
-use crate::engine::escape::{Escaping, is_json_number};
+use crate::engine::escape::{Escaping, is_json_scalar};
 use crate::engine::script::{ScriptContext, ScriptEngine};
 use crate::engine::{TemplateContext, TemplateRenderer};
 use crate::models::{BodyFragment, ConditionSource, MockResponse};
@@ -332,7 +332,7 @@ enum Context {
     /// The inside of a JSON string.
     JsonString,
     /// A place of a JSON document out of any string: only a JSON value fits, which a script writes (`to_json`), and a
-    /// template (`json_value`) where every value observed there was a JSON number.
+    /// template (`json_value`) where every value observed there was a JSON number, `true`, `false` or `null`.
     JsonBare,
     /// A text response.
     Text,
@@ -1054,10 +1054,10 @@ impl Attempt<'_, '_> {
                     template: match piece {
                         Piece::Value(c) if *c < self.found.len() => {
                             let (_, expression, values) = &self.found[*c];
-                            // Out of any JSON string, a value written as a JSON value: a number as it is, any
-                            // other text as a string. Only where every value observed was a number, which it gives
-                            // back as it was.
-                            let numbers = values.iter().all(|v| is_json_number(v));
+                            // Out of any JSON string, a value written as a JSON value: a number, `true`, `false` or
+                            // `null` as it is, any other text as a string. Only where every value observed was one of
+                            // those, which it gives back as it was.
+                            let numbers = values.iter().all(|v| is_json_scalar(v));
                             let pipe = match context {
                                 Context::JsonBare if numbers => " | json_value",
                                 _ => context.pipe()?,
