@@ -168,9 +168,17 @@ pub const FAMILIES: &[Family] = &[
         name: "observed-calls",
         n: 200,
         growth: Growth::Linear,
-        about: "n exchanges and n failed relays of one service recorded, then its 2n calls listed and the oldest read",
+        about: "n exchanges and n failed relays of one service recorded (20 failures kept), its calls listed, the oldest read",
         env: &[],
         run: observed_calls_listed,
+    },
+    Family {
+        name: "failed-relays",
+        n: 200,
+        growth: Growth::Linear,
+        about: "n failed relays of n services recorded, under a global bound above n",
+        env: &[],
+        run: failed_relays,
     },
 ];
 
@@ -728,6 +736,31 @@ fn evictions(n: usize) {
     });
 }
 
+/// n failed relays, one per service, under a global bound above n: recording one never scans the failures of the
+/// others, whatever their number (`TRAFFIC_OBSERVATION_MAX_FAILED_CALLS` may be raised that high).
+fn failed_relays(n: usize) {
+    let failure = |i: usize| crate::server::observation::FailedCall {
+        group_name: None,
+        service_name: format!("svc{i}"),
+        method: "POST".into(),
+        operation: None,
+        request: observed_calls(&[0]).remove(0).1,
+        cause: crate::engine::FailureCause::Unreachable,
+        detail: None,
+        status: 502,
+        target: "http://backend.test/".into(),
+    };
+    let mut batches: Vec<Vec<_>> = (0..2).map(|_| (0..n).map(failure).collect()).collect();
+    warm_then_measure(&mut || {
+        let store = crate::server::observation::ObservationStore::new();
+        for call in batches.pop().expect("a batch per run") {
+            store.record_failure_within(call, usize::MAX);
+        }
+        assert_eq!(store.calls(None, "svc0").len(), 1, "every failure kept");
+        black_box(store);
+    });
+}
+
 /// The bounds are given to the store directly, above 2n, so that every call is kept and listed.
 fn observed_calls_listed(n: usize) {
     let order: Vec<usize> = (0..n).collect();
@@ -753,7 +786,12 @@ fn observed_calls_listed(n: usize) {
             store.record_failure_within(failure, usize::MAX);
         }
         let calls = store.calls(None, "svc");
-        assert_eq!(calls.len(), 2 * n, "every call kept and listed");
+        let failures = crate::server::observation::MAX_FAILED_CALLS_PER_SERVICE.min(n);
+        assert_eq!(
+            calls.len(),
+            n + failures,
+            "every exchange and the failures of the service's share listed"
+        );
         let oldest = calls.last().expect("calls").id;
         black_box(store.call(None, "svc", oldest).expect("the oldest call"));
         black_box(calls);

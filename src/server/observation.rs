@@ -337,8 +337,11 @@ struct ObservationInner {
     /// The next identifier of a call of each service, exchange or failure: in the order its calls came, and telling
     /// nothing of the other services (how many calls they had). Forgotten with the service's calls.
     next_ids: HashMap<ServiceKey, u64>,
-    /// Oldest first, `max_failed_calls()` at most, `MAX_FAILED_CALLS_PER_SERVICE` of one service at most.
-    failures: VecDeque<FailedCall>,
+    /// Failed relays by service, oldest first, each with its sequence number: `MAX_FAILED_CALLS_PER_SERVICE` of one
+    /// service at most, so that neither counting a service's nor dropping its oldest scans the others.
+    failures: HashMap<ServiceKey, VecDeque<(u64, FailedCall)>>,
+    /// Every failed relay by sequence number (first = oldest), `max_failed_calls()` at most, to drop the oldest of all.
+    failure_order: BTreeMap<u64, ServiceKey>,
 }
 
 /// The bounded store of observed exchanges, by service, method and path (see the top of this file for both bounds).
@@ -475,17 +478,33 @@ impl ObservationStore {
         }
         let inner = &mut *guard;
         call.request.id = inner.next_id(call.group_name.as_deref(), &call.service_name);
-        let same_service =
-            |f: &FailedCall| f.group_name == call.group_name && f.service_name == call.service_name;
-        let of_service = inner.failures.iter().filter(|f| same_service(f)).count();
-        if of_service >= MAX_FAILED_CALLS_PER_SERVICE.min(max_failed_calls) {
-            if let Some(oldest) = inner.failures.iter().position(same_service) {
-                inner.failures.remove(oldest);
+        let seq = inner.next_seq;
+        inner.next_seq += 1;
+        let service: ServiceKey = (call.group_name.clone(), call.service_name.clone());
+        let own = inner.failures.get(&service).map_or(0, VecDeque::len);
+        if own >= MAX_FAILED_CALLS_PER_SERVICE.min(max_failed_calls) {
+            if let Some((oldest, _)) = inner
+                .failures
+                .get_mut(&service)
+                .and_then(VecDeque::pop_front)
+            {
+                inner.failure_order.remove(&oldest);
             }
-        } else if inner.failures.len() >= max_failed_calls {
-            inner.failures.pop_front();
+        } else if inner.failure_order.len() >= max_failed_calls
+            && let Some((_, owner)) = inner.failure_order.pop_first()
+            && let Some(theirs) = inner.failures.get_mut(&owner)
+        {
+            theirs.pop_front();
+            if theirs.is_empty() {
+                inner.failures.remove(&owner);
+            }
         }
-        inner.failures.push_back(call);
+        inner.failure_order.insert(seq, service.clone());
+        inner
+            .failures
+            .entry(service)
+            .or_default()
+            .push_back((seq, call));
     }
 
     /// The calls kept for a service, exchanges and failed relays together, the most recent first.
@@ -501,11 +520,13 @@ impl ObservationStore {
                     .iter()
                     .map(move |e| calls::CallSummary::of_exchange(key, e))
             });
+        let service: ServiceKey = (group.map(str::to_string), service_name.to_string());
         let failures = inner
             .failures
-            .iter()
-            .filter(|f| f.group_name.as_deref() == group && f.service_name == service_name)
-            .map(calls::CallSummary::of_failure);
+            .get(&service)
+            .into_iter()
+            .flatten()
+            .map(|(_, f)| calls::CallSummary::of_failure(f));
         let mut list: Vec<calls::CallSummary> = exchanges.chain(failures).collect();
         list.sort_unstable_by_key(|call| std::cmp::Reverse(call.id));
         list
@@ -529,12 +550,13 @@ impl ObservationStore {
                 Some(calls::CallDetail::of_exchange(key, exchange))
             });
         exchange.or_else(|| {
+            let service: ServiceKey = (group.map(str::to_string), service_name.to_string());
             inner
                 .failures
+                .get(&service)?
                 .iter()
-                .filter(|f| f.group_name.as_deref() == group && f.service_name == service_name)
-                .find(|f| f.request.id == id)
-                .map(calls::CallDetail::of_failure)
+                .find(|(_, f)| f.request.id == id)
+                .map(|(_, f)| calls::CallDetail::of_failure(f))
         })
     }
 
@@ -561,9 +583,9 @@ impl ObservationStore {
             |k: &ObservationKey| k.group_name.as_deref() == group && k.service_name == service_name;
         inner.buckets.retain(|k, _| !belongs(k));
         inner.key_order.retain(|_, k| !belongs(k));
-        inner
-            .failures
-            .retain(|f| !(f.group_name.as_deref() == group && f.service_name == service_name));
+        let theirs = |(g, n): &ServiceKey| g.as_deref() == group && n == service_name;
+        inner.failures.retain(|k, _| !theirs(k));
+        inner.failure_order.retain(|_, k| !theirs(k));
         inner
             .next_ids
             .retain(|(g, n), _| !(g.as_deref() == group && n == service_name));
@@ -583,9 +605,10 @@ impl ObservationStore {
         inner
             .key_order
             .retain(|_, k| kept(k.group_name.as_deref(), &k.service_name));
+        inner.failures.retain(|(g, n), _| kept(g.as_deref(), n));
         inner
-            .failures
-            .retain(|f| kept(f.group_name.as_deref(), &f.service_name));
+            .failure_order
+            .retain(|_, (g, n)| kept(g.as_deref(), n));
         inner.next_ids.retain(|(g, n), _| kept(g.as_deref(), n));
     }
 
