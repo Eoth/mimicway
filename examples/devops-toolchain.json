@@ -30,7 +30,7 @@
             "body": [
               {
                 "type": "Template",
-                "template": "{\"id\":42,\"username\":\"ci-bot\",\"name\":\"Regate CI\",\"state\":\"active\",\"web_url\":\"https://gitlab.internal.company.com/ci-bot\"}"
+                "template": "{\"id\":42,\"username\":\"ci-bot\",\"name\":\"CI bot\",\"state\":\"active\",\"web_url\":\"https://gitlab.internal.company.com/ci-bot\"}"
               }
             ],
             "chaos": {
