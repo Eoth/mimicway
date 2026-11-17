@@ -335,12 +335,13 @@ fn arb_body_calls() -> impl Strategy<Value = Vec<(String, ObservedExchange, Vec<
         prop::bool::weighted(0.7),
         any::<bool>(),
         0..BODY_OPERATIONS.len(),
-        0..VALUES.len(),
+        // The first values more often, so that values are seen again: repetition is what a condition needs.
+        prop::sample::select(vec![0usize, 0, 1, 1, 2, 2, 3, 4, 5]),
         0usize..3,
         0usize..3,
         prop::option::weighted(0.1, prop::sample::select(vec![500u16, 503, 404])),
-        prop::bool::weighted(0.1),
-        prop::option::weighted(0.08, any::<bool>()),
+        prop::bool::weighted(0.15),
+        prop::option::weighted(0.15, any::<bool>()),
     )
         .prop_map(
             |(soap, prefix, operation, value, writing, items, odd, latin1, broken)| BodyCall {
@@ -359,15 +360,25 @@ fn arb_body_calls() -> impl Strategy<Value = Vec<(String, ObservedExchange, Vec<
         prop::collection::vec(0usize..3, BODY_OPERATIONS.len() * VALUES.len()),
         // Every body SOAP, every body JSON, or both.
         0usize..3,
-        prop::collection::vec((call, prop::bool::weighted(0.2)), 0..24),
+        prop::collection::vec((call, prop::bool::weighted(0.2)), 0..48),
+        // Some cases hold bodies that are not UTF-8 or broken XML, among well-formed ones.
+        prop::bool::weighted(0.3),
     )
-        .prop_map(|(table, kinds, calls)| {
+        .prop_map(|(table, kinds, calls, disturbed)| {
             calls
                 .into_iter()
                 .enumerate()
                 .map(|(seq, (mut call, second_path))| {
                     if kinds < 2 {
                         call.soap = kinds == 0;
+                    }
+                    if !disturbed {
+                        call.latin1 = false;
+                        call.broken = None;
+                    }
+                    // A JSON body names no operation: its answer depends on its value alone.
+                    if !call.soap {
+                        call.operation = 0;
                     }
                     let answer = table[call.operation * VALUES.len() + call.value];
                     let (status, body) = match call.odd {
@@ -708,4 +719,94 @@ fn rules_that_repeat_their_request_answer_every_call_they_come_from_as_observed(
         values.get() >= 35 && lists.get() >= 80 && refused.get() >= 50,
         "values {values:?}, lists {lists:?}, others {refused:?}"
     );
+}
+
+/// Where a call carries the identifier unique to it.
+#[derive(Debug, Clone, Copy)]
+enum IdentifierAt {
+    Path,
+    Header,
+    Xml,
+    NestedJson,
+    TopJson,
+}
+
+#[test]
+fn an_identifier_unique_to_each_call_never_becomes_a_condition() {
+    // The answer depends on a variable the request does not hold, with fewer values than there are calls; each call
+    // carries an identifier of its own. The identifier fits any sample, value for answer, and proves nothing.
+    use proptest::test_runner::TestRunner;
+    let config = crate::test_seed::config(256, 0x6869_6464_656e_2169);
+    let strategy = (
+        prop::sample::select(vec![
+            IdentifierAt::Path,
+            IdentifierAt::Header,
+            IdentifierAt::Xml,
+            IdentifierAt::NestedJson,
+            IdentifierAt::TopJson,
+        ]),
+        prop::collection::vec(0usize..2, 3..12),
+        any::<u32>(),
+    );
+    let result = TestRunner::new(config).run(&strategy, |(at, hidden, salt)| {
+        let calls: Vec<(String, ObservedExchange)> = hidden
+            .iter()
+            .enumerate()
+            .map(|(i, &h)| {
+                let id = format!("{}", 100_000 + (salt as usize % 50_000) * 16 + i);
+                let (path, body) = match at {
+                    IdentifierAt::Path => (format!("/orders/{id}"), String::new()),
+                    IdentifierAt::Header => ("/orders".to_string(), String::new()),
+                    IdentifierAt::Xml => (
+                        "/ws".to_string(),
+                        format!(
+                            "<Envelope><Header><MessageID>{id}</MessageID></Header><Body><Ping/></Body></Envelope>"
+                        ),
+                    ),
+                    IdentifierAt::NestedJson => {
+                        ("/orders".to_string(), format!(r#"{{"meta":{{"id":"{id}"}}}}"#))
+                    }
+                    IdentifierAt::TopJson => ("/orders".to_string(), format!(r#"{{"id":"{id}"}}"#)),
+                };
+                let headers: HashMap<String, String> = match at {
+                    IdentifierAt::Header => HashMap::from([("x-message-tag".to_string(), id)]),
+                    _ => HashMap::new(),
+                };
+                let answer = ["<r>accepted</r>", "<r>refused</r>"][h];
+                let exchange = ObservedExchange::new(
+                    HashMap::new(),
+                    headers,
+                    body.as_bytes(),
+                    None,
+                    200,
+                    HashMap::new(),
+                    answer.as_bytes(),
+                    Some("text/xml".into()),
+                );
+                (path, exchange)
+            })
+            .collect();
+        let endpoints = posted_endpoints(&calls);
+        let replayed = super::replay::check(&endpoints);
+        prop_assert!(replayed.is_ok(), "{}", replayed.unwrap_err());
+        for suggestion in suggest_for_service(&endpoints) {
+            for rule in suggestion_rules(&suggestion.outcome) {
+                for condition in rule.conditions.all_of.iter().chain(&rule.conditions.any_of) {
+                    let on_identifier = match (&condition.source, at) {
+                        (ConditionSource::PathParam(_), IdentifierAt::Path) => true,
+                        (ConditionSource::Header(k), IdentifierAt::Header) => k == "x-message-tag",
+                        (ConditionSource::XPath(k), IdentifierAt::Xml) => k == "Envelope/Header/MessageID",
+                        (ConditionSource::JsonPointer(k), IdentifierAt::NestedJson) => k == "/meta/id",
+                        (ConditionSource::JsonPointer(k), IdentifierAt::TopJson) => k == "/id",
+                        _ => false,
+                    };
+                    prop_assert!(!on_identifier, "a condition on the identifier: {rule:?}");
+                }
+            }
+        }
+        Ok(())
+    });
+    if let Err(failure) = result {
+        panic!("{failure}");
+    }
 }

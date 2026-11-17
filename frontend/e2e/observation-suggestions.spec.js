@@ -310,8 +310,8 @@ test.describe('Observed proxy traffic and suggested rules', () => {
     request,
   }) => {
     test.setTimeout(30000);
-    // One SOAP address, two operations. GetStatus answers by reference, R1 and R2 the same way, and once fails with a
-    // server error for a reference that otherwise succeeds.
+    // One SOAP address, two operations. GetStatus answers by reference, R1 and R2 the same way, each seen twice (repetition
+    // is what a condition needs), and once fails with a server error for a reference that otherwise succeeds.
     let r1Calls = 0;
     const target = await new Promise((resolve) => {
       const server = http.createServer((req, res) => {
@@ -349,7 +349,7 @@ test.describe('Observed proxy traffic and suggested rules', () => {
         ['Ping', ''],
         ['Ping', ''],
         ['Ping', ''],
-        ...['R1', 'R1', 'R2', 'R3', 'R3', 'R1'].map((ref) => ['GetStatus', `<o:ref>${ref}</o:ref>`]),
+        ...['R1', 'R1', 'R2', 'R3', 'R3', 'R1', 'R2'].map((ref) => ['GetStatus', `<o:ref>${ref}</o:ref>`]),
       ];
       for (const [operation, inner] of calls) {
         await request.post('http://localhost:7342/orders-soap/ws/OrderService', {

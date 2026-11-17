@@ -146,7 +146,7 @@ fn a_response_that_differs_elsewhere_keeps_one_rule_per_value() {
     calls[1].response_body = calls[1].response_body.replace("OPEN", "CLOSED");
     let suggestions = suggest_for_service(&endpoints(calls));
     assert!(
-        matches!(suggestions[0].outcome, Suggestion::Conditional { .. }),
+        !matches!(suggestions[0].outcome, Suggestion::Echo { .. }),
         "{suggestions:?}"
     );
 }

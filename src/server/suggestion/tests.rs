@@ -566,84 +566,179 @@ fn accepted_values(suggestion: &Suggestion) -> Option<(ConditionSource, Vec<Vec<
 
 #[test]
 fn the_choice_of_a_field_follows_its_table() {
-    // One row per line of the table above `find_discriminator`: the calls, then the field chosen and the values each
-    // response accepts, or `None` when nothing is suggested.
+    // One row per line of the table above `find_discriminator`, in its order: the calls, then the field chosen and the
+    // values each response accepts, or `None` when nothing is suggested.
     let q = |k| ConditionSource::QueryParam(String::from(k));
+    let h = |k| ConditionSource::Header(String::from(k));
+    let x = |k| ConditionSource::XPath(String::from(k));
+    let query = |calls: &[Call]| query_calls(calls);
+    let header = |calls: &[(&str, u16, &str)]| -> Vec<ObservedExchange> {
+        calls
+            .iter()
+            .map(|(v, status, body)| exchange_with_header(*status, body, ("x-tenant", v)))
+            .collect()
+    };
+    let xml_field = |calls: &[(&str, u16, &str)]| -> Vec<ObservedExchange> {
+        calls
+            .iter()
+            .map(|(v, status, body)| {
+                let mut e = exchange(*status, body);
+                e.request_body = format!("<r><id>{v}</id></r>");
+                e
+            })
+            .collect()
+    };
+    let nested_json = |calls: &[(&str, u16, &str)]| -> Vec<ObservedExchange> {
+        calls
+            .iter()
+            .map(|(v, status, body)| {
+                let mut e = exchange(*status, body);
+                e.request_body = format!(r#"{{"meta":{{"id":"{v}"}}}}"#);
+                e
+            })
+            .collect()
+    };
+    let top_json = |calls: &[(&str, u16, &str)]| -> Vec<ObservedExchange> {
+        calls
+            .iter()
+            .map(|(v, status, body)| {
+                let mut e = exchange(*status, body);
+                e.request_body = format!(r#"{{"id":"{v}"}}"#);
+                e
+            })
+            .collect()
+    };
     type Row<'a> = (
         &'a str,
-        Vec<Call<'a>>,
+        Vec<ObservedExchange>,
         Option<(ConditionSource, Vec<Vec<&'a str>>)>,
     );
     let rows: Vec<Row> = vec![
         (
             "missing from one call",
-            vec![
+            query(&[
                 (&[("a", "1")], 200, "x"),
                 (&[("a", "1")], 200, "x"),
                 (&[], 404, "y"),
-            ],
+            ]),
             None,
         ),
         (
             "one value seen with two responses",
-            vec![
+            query(&[
                 (&[("a", "1")], 200, "x"),
                 (&[("a", "1")], 404, "y"),
                 (&[("a", "2")], 404, "y"),
-            ],
+            ]),
             None,
         ),
         (
-            "one value per response",
-            vec![
-                (&[("a", "1")], 200, "x"),
-                (&[("a", "1")], 200, "x"),
-                (&[("a", "2")], 404, "y"),
-            ],
-            Some((q("a"), vec![vec!["1"], vec!["2"]])),
+            "every value seen twice, a header",
+            header(&[
+                ("t1", 200, "x"),
+                ("t2", 404, "y"),
+                ("t1", 200, "x"),
+                ("t2", 404, "y"),
+            ]),
+            Some((h("x-tenant"), vec![vec!["t1"], vec!["t2"]])),
         ),
         (
-            "two values for one response, one of them seen twice",
-            vec![
+            "every value seen twice, two values for one response",
+            query(&[
                 (&[("a", "1")], 200, "x"),
                 (&[("a", "1")], 200, "x"),
                 (&[("a", "3")], 200, "x"),
+                (&[("a", "3")], 200, "x"),
                 (&[("a", "2")], 404, "y"),
-            ],
+                (&[("a", "2")], 404, "y"),
+            ]),
             Some((q("a"), vec![vec!["1", "3"], vec!["2"]])),
         ),
         (
+            "every value seen twice, an XML field",
+            xml_field(&[
+                ("A", 200, "x"),
+                ("B", 404, "y"),
+                ("A", 200, "x"),
+                ("B", 404, "y"),
+            ]),
+            Some((x("r/id"), vec![vec!["A"], vec!["B"]])),
+        ),
+        (
+            "one value per response, some seen once, a query parameter",
+            query(&[
+                (&[("a", "1")], 200, "x"),
+                (&[("a", "1")], 200, "x"),
+                (&[("a", "2")], 404, "y"),
+            ]),
+            Some((q("a"), vec![vec!["1"], vec!["2"]])),
+        ),
+        (
+            "one value per response, some seen once, a scalar at the top of a JSON object",
+            top_json(&[("A", 200, "x"), ("B", 404, "y"), ("C", 500, "z")]),
+            Some((
+                ConditionSource::JsonPointer("/id".into()),
+                vec![vec!["A"], vec!["B"], vec!["C"]],
+            )),
+        ),
+        (
+            "one value per response, some seen once, a header",
+            header(&[("t1", 200, "x"), ("t2", 404, "y"), ("t1", 200, "x")]),
+            None,
+        ),
+        (
+            "one value per response, each seen once, an XML field",
+            xml_field(&[("A", 200, "x"), ("B", 404, "y"), ("C", 409, "z")]),
+            None,
+        ),
+        (
+            "one value per response, each seen once, a nested JSON field",
+            nested_json(&[("A", 200, "x"), ("B", 404, "y"), ("C", 409, "z")]),
+            None,
+        ),
+        (
+            "two values for one response, one of them seen once",
+            query(&[
+                (&[("a", "600")], 200, "x"),
+                (&[("a", "601")], 404, "y"),
+                (&[("a", "602")], 200, "x"),
+                (&[("a", "602")], 200, "x"),
+            ]),
+            None,
+        ),
+        (
             "two values for one response, every value seen once",
-            vec![
+            query(&[
                 (&[("a", "1")], 200, "x"),
                 (&[("a", "3")], 200, "x"),
                 (&[("a", "2")], 404, "y"),
-            ],
+            ]),
             None,
         ),
         (
             "the field with the fewest values wins",
-            vec![
+            query(&[
                 (&[("a", "1"), ("b", "p")], 200, "x"),
                 (&[("a", "2"), ("b", "p")], 200, "x"),
                 (&[("a", "1"), ("b", "p")], 200, "x"),
+                (&[("a", "2"), ("b", "p")], 200, "x"),
                 (&[("a", "3"), ("b", "q")], 404, "y"),
                 (&[("a", "3"), ("b", "q")], 404, "y"),
-            ],
+            ]),
             Some((q("b"), vec![vec!["p"], vec!["q"]])),
         ),
         (
             "on a tie, the name in byte order",
-            vec![
+            query(&[
                 (&[("b", "1"), ("a", "p")], 200, "x"),
                 (&[("b", "1"), ("a", "p")], 200, "x"),
                 (&[("b", "2"), ("a", "q")], 404, "y"),
-            ],
+            ]),
             Some((q("a"), vec![vec!["p"], vec!["q"]])),
         ),
     ];
     for (row, calls, expected) in rows {
-        let suggestion = suggest("GET", "/x", &query_calls(&calls)).unwrap();
+        let suggestion = suggest("GET", "/x", &calls).unwrap();
         let expected = expected.map(|(source, values)| {
             let values = values
                 .into_iter()
@@ -663,6 +758,33 @@ fn the_choice_of_a_field_follows_its_table() {
             );
         }
     }
+}
+
+#[test]
+fn a_message_identifier_never_tells_the_answers_apart() {
+    // Each call has its own message identifier in its SOAP header, and three calls got three answers: the identifier
+    // fits the sample, value for answer, and would give three rules that never match again.
+    let calls: Vec<ObservedExchange> = [("m-81f2", "a"), ("m-0c4d", "b"), ("m-77aa", "c")]
+        .iter()
+        .map(|(id, answer)| {
+            posted(
+                &format!(
+                    "<soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\"><soap:Header>\
+                     <MessageID>{id}</MessageID></soap:Header><soap:Body><Ping/></soap:Body></soap:Envelope>"
+                ),
+                200,
+                &soap_answer(&format!("<Pong>{}</Pong>", answer.repeat(3))),
+            )
+        })
+        .collect();
+    let suggestions = suggest_for_service(&[(key("POST", "/ws/OrderService"), calls)]);
+    assert!(
+        matches!(
+            suggestions[0].outcome,
+            Suggestion::VarianceUnexplained { .. }
+        ),
+        "{suggestions:?}"
+    );
 }
 
 #[test]
@@ -863,6 +985,7 @@ fn soap_calls() -> Vec<(ObservationKey, Vec<ObservedExchange>)> {
         ("R1", "OPEN"),
         ("R3", "PENDING"),
         ("R2", "CLOSED"),
+        ("R3", "PENDING"),
     ] {
         calls.push(posted(
             &soap("GetStatus", &format!("<o:ref>{reference}</o:ref>")),
@@ -949,6 +1072,8 @@ fn a_field_of_a_nested_json_body_tells_the_responses_apart() {
         ("express", "fast"),
         ("standard", "slow"),
         ("express", "fast"),
+        ("eco", "slow"),
+        ("standard", "slow"),
         ("eco", "slow"),
     ]
     .iter()

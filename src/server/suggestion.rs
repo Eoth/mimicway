@@ -540,6 +540,17 @@ enum Candidate<'a> {
 }
 
 impl Candidate<'_> {
+    /// Whether a value of this field seen once may explain a response by itself, when each response has its own value:
+    /// a path parameter, a query parameter, a scalar at the top of a JSON object, as suggestions did before they read
+    /// headers deeply, XML and nested JSON. Any other field needs every value seen twice (`find_discriminator`).
+    fn trusted_alone(&self) -> bool {
+        match *self {
+            Candidate::PathParam(_) | Candidate::QueryParam(_) => true,
+            Candidate::JsonPointer(pointer) => !pointer[1..].contains('/'),
+            Candidate::XPath(_) | Candidate::Header(_) => false,
+        }
+    }
+
     fn source(&self) -> ConditionSource {
         match *self {
             Candidate::PathParam(k) => ConditionSource::PathParam(k.to_string()),
@@ -590,20 +601,26 @@ struct FieldStats<'a> {
 
 // Which field tells the response groups apart. A field of the request (path parameter, query parameter, body field,
 // header) is judged on the calls of one route or operation, after the calls answered with a server error are set aside
-// when that is needed (`suggest_calls`); `n` calls, `k > 1` response groups.
+// when that is needed (`suggest_calls`); `n` calls, `k > 1` response groups. Repetition is the evidence that a value
+// leads to a response: a value seen once fits any sample, as an identifier unique to each call does. Responses that
+// repeat a value of their request have evidence of their own, the replay of `repeat`, and never come here.
 //
 // | The field                                                          | Verdict                                         |
 // |--------------------------------------------------------------------|-------------------------------------------------|
-// | missing from at least one call (a body cut at the size limit too)  | refused: an `Eq` condition never matches a call |
+// | missing from at least one call (a body cut or not UTF-8 too)       | refused: an `Eq` condition never matches a call |
 // |                                                                    | without it                                      |
 // | a noisy header (`NOISY_HEADERS`)                                   | never a candidate                               |
 // | one of its values seen with two responses                          | refused: it does not explain them               |
-// | each value leads to one response, each response reached by one     | explains: one `Eq` rule per response, or one    |
-// | value (k values)                                                   | rule that repeats it (`repeat`)                 |
-// | each value leads to one response, a response reached by several    | explains: that response gets one rule, `any_of` |
-// | values, at least one value seen twice                              | an `Eq` per value                               |
-// | each value leads to one response, a response reached by several    | refused for lack of evidence: a value that      |
-// | values, every value seen once (n values)                           | changes at every call would explain any sample  |
+// | each value leads to one response, every value seen twice at least  | explains: one `Eq` rule per response, `any_of`  |
+// |                                                                    | an `Eq` per value for a response reached by     |
+// |                                                                    | several                                         |
+// | each value leads to one response, each response reached by one     | explains for a path parameter, a query          |
+// | value (k values), some value seen once                             | parameter or a scalar at the top of a JSON      |
+// |                                                                    | object, as before repetition was asked; refused |
+// |                                                                    | for a header, an XML field or a nested JSON     |
+// |                                                                    | field (a message identifier would fit)          |
+// | each value leads to one response, a response reached by several    | refused for lack of evidence                    |
+// | values, some value seen once                                       |                                                 |
 //
 // Among the fields that explain, the one with the fewest distinct values wins: it cannot have fewer than `k`, and an
 // identifier that changes at every call never wins over the name that decides. On a tie, the order of `Candidate`
@@ -644,11 +661,11 @@ fn find_discriminator<'a>(
 
     let (candidate, field) = stats
         .into_iter()
-        .filter(|(_, field)| {
-            let explains = !field.conflict && field.present == calls.len();
-            let several_per_response = field.values.len() > class_count;
-            let seen_once = field.values.values().all(|&(_, count)| count == 1);
-            explains && !(several_per_response && seen_once)
+        .filter(|(candidate, field)| {
+            let consistent = !field.conflict && field.present == calls.len();
+            let repeated = field.values.values().all(|&(_, count)| count >= 2);
+            let one_per_response = field.values.len() == class_count;
+            consistent && (repeated || (one_per_response && candidate.trusted_alone()))
         })
         .min_by(|(a, fa), (b, fb)| (fa.values.len(), a).cmp(&(fb.values.len(), b)))?;
     let mut values: Vec<Vec<&str>> = vec![Vec::new(); class_count];
