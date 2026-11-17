@@ -356,7 +356,15 @@ async fn each_operation_of_a_soap_address_keeps_its_own_calls_and_gets_its_sugge
         suggestions.iter().all(|s| s["sample_count"] == 4),
         "{suggestions:?}"
     );
-    let rules: Vec<&Value> = suggestions.iter().map(|s| &s["rule"]).collect();
+    // An operation is beyond what 0.5.0 said: each suggestion is `Rules`, its rules read by `conditions`.
+    assert!(
+        suggestions.iter().all(|s| s["outcome"] == "Rules"),
+        "{suggestions:?}"
+    );
+    let rules: Vec<&Value> = suggestions
+        .iter()
+        .flat_map(|s| s["rules"].as_array().unwrap())
+        .collect();
     app.save_as_mock("orders", &rules).await;
     for operation in OPERATIONS {
         assert_eq!(

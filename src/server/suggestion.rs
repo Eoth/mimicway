@@ -89,17 +89,24 @@ pub struct SuggestedRule {
     pub redirected_to: Vec<links::ServiceRef>,
 }
 
+/// The outcome of a suggestion. `Unconditional`, `Echo` and `Conditional` keep the meaning and the form they had in
+/// 0.5.0, where a rule said everything with `condition` and `echo`: a client written then reads them right. Anything
+/// else is `Rules` (`in_form_of_0_5_0`), which such a client does not know and so ignores, rather than create rules
+/// that miss a condition or a script.
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(tag = "outcome")]
 pub enum Suggestion {
     /// No variance in the sample: one rule, without condition.
     Unconditional { rule: Box<SuggestedRule> },
-    /// Responses that differ only by the request values they repeat (fields, and a list one block per item): one rule,
-    /// without condition, whose response reads them from each request.
+    /// Responses that differ only by the one request value they repeat: one rule, without condition, whose response
+    /// repeats that value (`echo`).
     Echo { rule: Box<SuggestedRule> },
-    /// Variance explained by a request field: one rule per distinct response, accepting the values of the field that
-    /// lead to it (`Eq`, or `any_of` several `Eq`).
+    /// Variance explained by a request field: one rule per distinct response, each with one `Eq` condition.
     Conditional { rules: Vec<SuggestedRule> },
+    /// What 0.5.0 could not say: a SOAP operation, calls set aside, a rule of several conditions or of `any_of`, a
+    /// response that repeats several fields or a list (with its script). Each rule says everything by `conditions`,
+    /// `response` and `script`.
+    Rules { rules: Vec<SuggestedRule> },
     /// Variance that no field explains reliably in the sample: nothing to suggest, only a diagnosis.
     VarianceUnexplained { response_class_count: usize },
 }
@@ -265,6 +272,7 @@ pub fn suggest_for_service(
             else {
                 continue;
             };
+            let outcome = in_form_of_0_5_0(outcome, operation.is_some() || !left_out.is_empty());
             suggestions.push(EndpointSuggestion {
                 method: route.method.to_string(),
                 path_count: route.literal_paths.len(),
@@ -291,6 +299,30 @@ pub fn suggest_for_service(
         }
     }
     suggestions
+}
+
+/// `outcome` as `Rules` when a client written for 0.5.0 would read it wrong (`Suggestion`): it stands for an operation
+/// or set calls aside (`beyond`), or one of its rules has more than one condition, `any_of`, a script, or repeats other
+/// than exactly one field.
+fn in_form_of_0_5_0(outcome: Suggestion, beyond: bool) -> Suggestion {
+    let said_by_0_5_0 = |rule: &SuggestedRule| {
+        rule.conditions.any_of.is_empty()
+            && rule.conditions.all_of.len() <= 1
+            && rule.script.is_none()
+            && rule.list.is_none()
+            && rule.repeats.len() <= 1
+    };
+    match outcome {
+        Suggestion::Unconditional { rule } | Suggestion::Echo { rule }
+            if beyond || !said_by_0_5_0(&rule) =>
+        {
+            Suggestion::Rules { rules: vec![*rule] }
+        }
+        Suggestion::Conditional { rules } if beyond || !rules.iter().all(said_by_0_5_0) => {
+            Suggestion::Rules { rules }
+        }
+        other => other,
+    }
 }
 
 /// One observed call of a route, with what its request body offers.

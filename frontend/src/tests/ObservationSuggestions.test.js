@@ -294,7 +294,7 @@ describe('ObservationSuggestions', () => {
     };
     const onUseSuggestion = vi.fn();
     const { getByText } = await showSuggestions(
-      [routeSuggestion({ sub_path: '/ws/booking', operation: 'Book', outcome: 'Echo', rule })],
+      [routeSuggestion({ sub_path: '/ws/booking', operation: 'Book', outcome: 'Rules', rules: [rule] })],
       { onUseSuggestion },
     );
 
@@ -499,7 +499,7 @@ describe('ObservationSuggestions', () => {
           operation: null,
           left_out: [{ status: 500, count: 1 }],
           truncated_request_bodies: 0,
-          outcome: 'Conditional',
+          outcome: 'Rules',
           rules: [
             {
               method: 'GET',
@@ -550,7 +550,7 @@ describe('ObservationSuggestions', () => {
           left_out: [],
           truncated_request_bodies: 2,
           non_utf8_request_bodies: 1,
-          outcome: 'Conditional',
+          outcome: 'Rules',
           rules: [
             {
               method: 'POST',

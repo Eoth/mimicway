@@ -712,11 +712,10 @@ fn rules_that_repeat_their_request_answer_every_call_they_come_from_as_observed(
         let replayed = super::replay::check(&endpoints);
         prop_assert!(replayed.is_ok(), "{}", replayed.unwrap_err());
         for suggestion in suggest_for_service(&endpoints) {
-            match &suggestion.outcome {
-                Suggestion::Echo { rule } if rule.list.is_some() => lists.set(lists.get() + 1),
-                Suggestion::Echo { rule } if !rule.repeats.is_empty() => {
-                    values.set(values.get() + 1)
-                }
+            let rules = suggestion_rules(&suggestion.outcome);
+            match rules.as_slice() {
+                [rule] if rule.list.is_some() => lists.set(lists.get() + 1),
+                [rule] if !rule.repeats.is_empty() => values.set(values.get() + 1),
                 _ => refused.set(refused.get() + 1),
             }
             for rule in suggestion_rules(&suggestion.outcome) {

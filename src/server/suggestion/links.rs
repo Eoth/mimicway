@@ -415,7 +415,7 @@ pub fn redirect_suggestions(
             Suggestion::Unconditional { rule } | Suggestion::Echo { rule } => {
                 std::slice::from_mut(rule.as_mut())
             }
-            Suggestion::Conditional { rules } => rules.as_mut_slice(),
+            Suggestion::Conditional { rules } | Suggestion::Rules { rules } => rules.as_mut_slice(),
             Suggestion::VarianceUnexplained { .. } => &mut [],
         };
         for rule in rules {

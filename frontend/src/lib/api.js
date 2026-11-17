@@ -115,8 +115,10 @@ export function getObservationStatus() {
 
 // Computed by the server at each call, nothing cached, from the exchanges captured while the service was observed (the
 // latest few per endpoint, in memory only). The `outcome` of each entry is "Unconditional" (one rule, without
-// condition), "Conditional" (one rule per value of the field that explains the differences) or "VarianceUnexplained"
-// (a diagnosis only, nothing to suggest).
+// condition), "Echo" (one rule whose response repeats one request value), "Conditional" (one rule per value of the
+// field that explains the differences), "Rules" (rules that say more than those three could: an operation, calls set
+// aside, several conditions, several repeated values or a script; each rule read by `conditions` and `script`) or
+// "VarianceUnexplained" (a diagnosis only, nothing to suggest).
 export function getServiceSuggestions(name, groupName = null) {
   return request('GET', servicePath(name, groupName, '/suggestions'));
 }

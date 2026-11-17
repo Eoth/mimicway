@@ -227,8 +227,9 @@
     return t('no condition: {0} ({1} calls)', parts.join(t('; ')), rule.sample_count);
   }
 
+  // `Rules` carries what the three outcomes of 0.5.0 could not say; its rules read like the others.
   function rulesOf(suggestion) {
-    return suggestion.outcome === 'Conditional' ? suggestion.rules : [suggestion.rule];
+    return suggestion.rules ?? [suggestion.rule];
   }
 
   function ruleSummary(suggestion, rule) {
@@ -236,7 +237,7 @@
     const parts = all_of.filter((c) => !isOperation(suggestion, c)).map(conditionSummary);
     if (any_of.length) parts.push(anyOfSummary(any_of));
     if (parts.length) return t('if {0}', parts.join(t(' and ')));
-    if (suggestion.outcome === 'Echo') return repeatSummary(rule);
+    if (rule.repeats?.length || rule.list || rule.echo) return repeatSummary(rule);
     return t('no condition ({0} identical calls)', rule.sample_count);
   }
 </script>

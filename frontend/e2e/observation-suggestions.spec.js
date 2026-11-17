@@ -508,7 +508,7 @@ test.describe('Observed proxy traffic and suggested rules', () => {
       await page.getByTestId('rule-form-submit-button').click();
       await expect(page.getByTestId('rule-list-item-book')).toBeVisible();
       const suggestions = await (await request.get(`${API}/services/stock-soap/suggestions`)).json();
-      const reference = suggestions.find((s) => s.operation === 'GetStatus').rule;
+      const reference = suggestions.find((s) => s.operation === 'GetStatus').rules[0];
       const saved = await (await request.get(`${API}/services/stock-soap`)).json();
       expect(saved.rules.find((r) => r.name === 'book').script).toContain('parse_xml_items');
       const statusRule = {

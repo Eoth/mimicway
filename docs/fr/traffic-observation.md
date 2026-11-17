@@ -73,6 +73,8 @@ Limites : des valeurs de 256 octets au plus, 64 par réponse ; une liste par ré
 
 **« Actualiser les suggestions »** relit le trafic observé depuis l'activation de l'observation et recalcule les suggestions (rien ne s'actualise en arrière-plan). **« Utiliser cette suggestion »** ne crée **pas** la règle : il remplit le formulaire de règle habituel (méthode, sous-chemin, conditions, réponse), pour que vous la relisiez, l'ajustiez et l'enregistriez comme n'importe quelle autre règle.
 
+Par l'API, `GET /api/services/{name}/suggestions` donne une entrée par route (ou opération), dont l'`outcome` est `Unconditional`, `Echo` ou `Conditional` exactement comme en version 0.5.0 (chaque règle dit tout par sa `condition` et son `echo`), `VarianceUnexplained`, ou `Rules` pour ce que la 0.5.0 ne savait pas dire : une opération, des appels mis de côté, une règle de plusieurs conditions ou de conditions « au moins une », une réponse qui reprend plusieurs valeurs ou une liste. Les règles de `Rules` se lisent par leurs `conditions`, `response` et `script` ; un client écrit pour la 0.5.0 ne connaît pas cette valeur et la laisse de côté, plutôt que de créer des règles sans leurs conditions.
+
 ![Le formulaire de règle rempli à partir d'une suggestion](screenshots/observation-suggestion-prefilled-form.png)
 
 ## Suivre les services qu'une réponse désigne

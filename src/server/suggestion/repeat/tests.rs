@@ -45,16 +45,34 @@ fn answer(inner: &str) -> String {
     )
 }
 
+/// The one rule, without condition but its operation, of the one suggestion: `Echo` when 0.5.0 could say it, `Rules`
+/// otherwise.
 fn echo_rule(suggestions: &[EndpointSuggestion]) -> &SuggestedRule {
-    match suggestions {
+    let rule = match suggestions {
         [
             EndpointSuggestion {
                 outcome: Suggestion::Echo { rule },
                 ..
             },
-        ] => rule,
-        other => panic!("expected one echo suggestion, got {other:?}"),
-    }
+        ] => rule.as_ref(),
+        [
+            EndpointSuggestion {
+                outcome: Suggestion::Rules { rules },
+                ..
+            },
+        ] if rules.len() == 1 => &rules[0],
+        other => panic!("expected one rule that repeats the request, got {other:?}"),
+    };
+    assert!(
+        rule.conditions.any_of.is_empty()
+            && rule
+                .conditions
+                .all_of
+                .iter()
+                .all(|c| c.operator == crate::models::Operator::Exists),
+        "{rule:?}"
+    );
+    rule
 }
 
 /// The expression that repeats an XML field, escaped for the text of an element.
@@ -145,6 +163,11 @@ fn a_response_that_differs_elsewhere_keeps_one_rule_per_value() {
     ];
     calls[1].response_body = calls[1].response_body.replace("OPEN", "CLOSED");
     let suggestions = suggest_for_service(&endpoints(calls));
+    let rules = crate::server::suggestion::replay::rules_of(&suggestions[0].outcome);
+    assert!(
+        rules.iter().all(|r| r.repeats.is_empty()),
+        "{suggestions:?}"
+    );
     assert!(
         !matches!(suggestions[0].outcome, Suggestion::Echo { .. }),
         "{suggestions:?}"
@@ -394,8 +417,11 @@ fn a_list_of_a_hundred_items_stays_within_the_script_budget() {
     let suggestions = suggest_for_service(&endpoints(long_lists(100)));
     assert!(echo_rule(&suggestions).list.is_some());
     let suggestions = suggest_for_service(&endpoints(long_lists(200)));
+    let rules = crate::server::suggestion::replay::rules_of(&suggestions[0].outcome);
     assert!(
-        !matches!(&suggestions[0].outcome, Suggestion::Echo { .. }),
+        rules
+            .iter()
+            .all(|r| r.script.is_none() && r.repeats.is_empty()),
         "{:?}",
         suggestions[0].outcome
     );

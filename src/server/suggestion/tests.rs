@@ -536,7 +536,7 @@ fn query_calls(calls: &[Call]) -> Vec<ObservedExchange> {
 
 /// The source, and the values each rule accepts, of a conditional suggestion.
 fn accepted_values(suggestion: &Suggestion) -> Option<(ConditionSource, Vec<Vec<String>>)> {
-    let Suggestion::Conditional { rules } = suggestion else {
+    let (Suggestion::Conditional { rules } | Suggestion::Rules { rules }) = suggestion else {
         return None;
     };
     let mut source = None;
@@ -853,8 +853,9 @@ fn a_response_reached_by_two_names_is_one_rule_that_accepts_both() {
             vec!["billing".to_string()],
         ]
     );
-    let Suggestion::Conditional { rules } = &suggestions[0].outcome else {
-        unreachable!()
+    // A rule of `any_of`: 0.5.0 could not say it, the suggestion is `Rules`.
+    let Suggestion::Rules { rules } = &suggestions[0].outcome else {
+        panic!("{suggestions:?}")
     };
     // The rule of two names holds them in `any_of`, and has no single condition to show.
     assert_eq!(rules[0].conditions.all_of, vec![]);
@@ -876,10 +877,12 @@ fn an_unexplained_server_error_is_set_aside_and_said() {
     calls.insert(2, exchange(500, "upstream timeout"));
     let suggestions = suggest_for_service(&[(key("GET", "/orders"), calls.clone())]);
     assert_eq!(suggestions.len(), 1);
-    let Suggestion::Unconditional { rule } = &suggestions[0].outcome else {
-        panic!("expected an unconditional suggestion, got {suggestions:?}");
+    // Calls set aside: 0.5.0 could not say it, the suggestion is `Rules`.
+    let Suggestion::Rules { rules } = &suggestions[0].outcome else {
+        panic!("expected rules, got {suggestions:?}");
     };
-    assert_eq!((rule.response.status, rule.sample_count), (200, 5));
+    assert_eq!(rules.len(), 1);
+    assert_eq!((rules[0].response.status, rules[0].sample_count), (200, 5));
     assert_eq!(suggestions[0].sample_count, 6);
     assert_eq!(
         suggestions[0].left_out,
@@ -933,6 +936,46 @@ fn a_client_error_is_never_set_aside() {
 }
 
 #[test]
+fn what_0_5_0_could_not_say_is_an_outcome_of_its_own() {
+    // A client written for 0.5.0 read `condition: null` as "no condition": a rule of several conditions, of `any_of`,
+    // of an operation, or of calls set aside, under `Conditional` or `Unconditional`, it would create without them.
+    let outcome = |calls: Vec<ObservedExchange>| {
+        suggest_for_service(&[(key("GET", "/q"), calls)])[0]
+            .outcome
+            .clone()
+    };
+    let any_of = query_calls(&[
+        (&[("a", "1")], 200, "x"),
+        (&[("a", "1")], 200, "x"),
+        (&[("a", "3")], 200, "x"),
+        (&[("a", "3")], 200, "x"),
+        (&[("a", "2")], 404, "y"),
+        (&[("a", "2")], 404, "y"),
+    ]);
+    let mut set_aside: Vec<ObservedExchange> = (0..3).map(|_| exchange(200, "ok")).collect();
+    set_aside.push(exchange(502, "bad gateway"));
+    for (case, calls) in [("any_of", any_of), ("set aside", set_aside)] {
+        let outcome = outcome(calls);
+        assert!(
+            matches!(outcome, Suggestion::Rules { .. }),
+            "{case}: {outcome:?}"
+        );
+    }
+    // What 0.5.0 said keeps its outcome and its form.
+    let one_value = query_calls(&[
+        (&[("a", "1")], 200, "x"),
+        (&[("a", "1")], 200, "x"),
+        (&[("a", "2")], 404, "y"),
+    ]);
+    let Suggestion::Conditional { rules } = outcome(one_value) else {
+        panic!("expected a conditional suggestion");
+    };
+    assert!(rules.iter().all(|r| r.condition.is_some()));
+    let same = (0..3).map(|_| exchange(200, "ok")).collect();
+    assert!(matches!(outcome(same), Suggestion::Unconditional { .. }));
+}
+
+#[test]
 fn the_new_fields_of_a_suggestion_are_serialized() {
     let mut calls: Vec<ObservedExchange> = (0..3).map(|_| exchange(200, "ok")).collect();
     calls.push(exchange(502, "bad gateway"));
@@ -944,11 +987,12 @@ fn the_new_fields_of_a_suggestion_are_serialized() {
     );
     assert_eq!(json[0]["operation"], serde_json::Value::Null);
     assert_eq!(json[0]["truncated_request_bodies"], 0);
+    assert_eq!(json[0]["outcome"], "Rules");
     assert_eq!(
-        json[0]["rule"]["conditions"],
+        json[0]["rules"][0]["conditions"],
         serde_json::json!({ "all_of": [], "any_of": [] })
     );
-    assert_eq!(json[0]["rule"]["condition"], serde_json::Value::Null);
+    assert_eq!(json[0]["rules"][0]["condition"], serde_json::Value::Null);
 }
 
 // --- SOAP operations, XML and nested JSON bodies
@@ -1020,22 +1064,20 @@ fn each_operation_of_a_soap_endpoint_gets_its_own_suggestion() {
         operator: Operator::Exists,
     };
 
-    let Suggestion::Unconditional { rule } = &suggestions[2].outcome else {
-        panic!(
-            "expected an unconditional suggestion for Ping, got {:?}",
-            suggestions[2]
-        );
+    // An operation: 0.5.0 could not say it, every suggestion is `Rules`.
+    let Suggestion::Rules { rules } = &suggestions[2].outcome else {
+        panic!("expected rules for Ping, got {:?}", suggestions[2]);
+    };
+    let [rule] = rules.as_slice() else {
+        panic!("one rule for Ping: {rules:?}")
     };
     assert_eq!(rule.conditions.all_of, vec![exists("Ping")]);
     assert_eq!(rule.condition, Some(exists("Ping")));
     assert_eq!(suggestions[2].sample_count, 3);
 
     // The reference decides the status: one rule per reference, each with the operation and the reference.
-    let Suggestion::Conditional { rules } = &suggestions[1].outcome else {
-        panic!(
-            "expected a conditional suggestion for GetStatus, got {:?}",
-            suggestions[1]
-        );
+    let Suggestion::Rules { rules } = &suggestions[1].outcome else {
+        panic!("expected rules for GetStatus, got {:?}", suggestions[1]);
     };
     assert_eq!(rules.len(), 3);
     assert_eq!(
@@ -1051,8 +1093,8 @@ fn each_operation_of_a_soap_endpoint_gets_its_own_suggestion() {
     assert_eq!(rules[0].condition, None);
 
     assert!(matches!(
-        suggestions[0].outcome,
-        Suggestion::Unconditional { .. }
+        &suggestions[0].outcome,
+        Suggestion::Rules { rules } if rules.len() == 1 && rules[0].conditions.all_of == [exists("Book")]
     ));
     assert_eq!(super::replay::check(&endpoints), Ok(()));
 }
@@ -1140,7 +1182,7 @@ fn the_length_of_a_body_never_explains_its_answer() {
     let suggestions = suggest_for_service(&[(key("POST", "/ws/OrderService"), calls)]);
     assert_eq!(suggestions.len(), 1, "{suggestions:?}");
     assert!(
-        matches!(suggestions[0].outcome, Suggestion::Unconditional { .. }),
+        matches!(&suggestions[0].outcome, Suggestion::Rules { rules } if rules.len() == 1),
         "{suggestions:?}"
     );
     assert_eq!(
@@ -1233,7 +1275,7 @@ fn errors_are_set_aside_only_when_fewer_than_the_answers_kept() {
     }
     let (outcome, left_out) = outcome(4, 3);
     assert!(
-        matches!(outcome, Suggestion::Unconditional { .. }),
+        matches!(&outcome, Suggestion::Rules { rules } if rules.len() == 1),
         "{outcome:?}"
     );
     assert_eq!(

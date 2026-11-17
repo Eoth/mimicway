@@ -73,6 +73,8 @@ Limits: values of 256 bytes at most, 64 per response; one list per response, two
 
 **"Refresh the suggestions"** reads the traffic observed since observation was turned on and computes the suggestions again (nothing refreshes in the background). **"Use this suggestion"** does **not** create the rule: it fills the usual rule form (method, sub-path, conditions, response), so that you review, adjust and save it like any other rule.
 
+Through the API, `GET /api/services/{name}/suggestions` gives one entry per route (or operation), whose `outcome` is `Unconditional`, `Echo` or `Conditional` exactly as in version 0.5.0 (each rule says everything with its `condition` and `echo`), `VarianceUnexplained`, or `Rules` for what 0.5.0 could not say: an operation, calls set aside, a rule of several conditions or of "any of" conditions, a response that repeats several values or a list. The rules of `Rules` are read by their `conditions`, `response` and `script`; a client written for 0.5.0 does not know that outcome and leaves it aside, rather than create rules without their conditions.
+
 ![The rule form filled from a suggestion](screenshots/observation-suggestion-prefilled-form.png)
 
 ## Following the services a response points to

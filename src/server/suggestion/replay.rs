@@ -9,7 +9,7 @@ use crate::server::observation::{ObservationKey, ObservedExchange};
 pub(crate) fn rules_of(suggestion: &Suggestion) -> Vec<&SuggestedRule> {
     match suggestion {
         Suggestion::Unconditional { rule } | Suggestion::Echo { rule } => vec![rule.as_ref()],
-        Suggestion::Conditional { rules } => rules.iter().collect(),
+        Suggestion::Conditional { rules } | Suggestion::Rules { rules } => rules.iter().collect(),
         Suggestion::VarianceUnexplained { .. } => vec![],
     }
 }

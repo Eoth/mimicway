@@ -554,10 +554,13 @@ fn suggestion_bodies(n: usize) {
     ];
     warm_then_measure(&mut || {
         let suggestions = crate::server::suggestion::suggest_for_service(&endpoints);
+        // The SOAP operation's rules are `Rules` (an operation is beyond what 0.5.0 said), the JSON route's
+        // `Conditional`.
         let decided = suggestions.iter().all(|s| {
             matches!(
                 s.outcome,
                 crate::server::suggestion::Suggestion::Conditional { .. }
+                    | crate::server::suggestion::Suggestion::Rules { .. }
             )
         });
         assert!(
@@ -621,9 +624,9 @@ fn suggestion_lists(n: usize) {
         let listed = matches!(
             suggestions.as_slice(),
             [crate::server::suggestion::EndpointSuggestion {
-                outcome: crate::server::suggestion::Suggestion::Echo { rule },
+                outcome: crate::server::suggestion::Suggestion::Rules { rules },
                 ..
-            }] if rule.list.is_some()
+            }] if rules.len() == 1 && rules[0].list.is_some()
         );
         assert!(listed, "one rule with a script: {suggestions:?}");
         black_box(suggestions);
