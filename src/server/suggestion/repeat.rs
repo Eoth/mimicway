@@ -77,6 +77,8 @@ pub(super) struct Repetition {
     pub fields: Vec<ConditionSource>,
     pub list: Option<RepeatedList>,
     pub script: Option<String>,
+    /// The texts observed that the script writes as they are.
+    pub script_texts: Vec<String>,
 }
 
 /// One response read side by side with the others: its text and, per candidate, the value it should repeat.
@@ -940,6 +942,7 @@ pub(super) fn infer(
     calls: &[&Call],
     headers: &[crate::models::HeaderEntry],
     renders: &Renders,
+    lists: bool,
 ) -> Option<Repetition> {
     let status = representatives[0].exchange().response_status;
     if calls.iter().any(|c| c.exchange().response_status != status) {
@@ -947,7 +950,15 @@ pub(super) fn infer(
     }
     let format = format_of(representatives)?;
     Encoding::of(format).iter().find_map(|&encoding| {
-        infer_with(representatives, calls, headers, format, encoding, renders)
+        infer_with(
+            representatives,
+            calls,
+            headers,
+            format,
+            encoding,
+            renders,
+            lists,
+        )
     })
 }
 
@@ -1075,6 +1086,7 @@ fn infer_with(
     format: Format,
     encoding: Encoding,
     renders: &Renders,
+    lists: bool,
 ) -> Option<Repetition> {
     let attempt = Attempt {
         representatives,
@@ -1091,7 +1103,7 @@ fn infer_with(
             })
             .collect(),
     };
-    for source in list_sources(representatives) {
+    for source in list_sources(representatives).into_iter().filter(|_| lists) {
         if let Some(repetition) = try_list(&attempt, &source) {
             return Some(repetition);
         }
@@ -1124,6 +1136,7 @@ fn infer_with(
         fields: attempt.repeated(&pieces),
         list: None,
         script: None,
+        script_texts: Vec::new(),
     })
 }
 
@@ -1329,6 +1342,14 @@ fn infer_list(
             max_items,
         }),
         script: Some(script),
+        script_texts: [head, tail, &block.gap]
+            .into_iter()
+            .chain(block.inner.iter().filter_map(|p| match p {
+                Piece::Literal(text) => Some(text.as_slice()),
+                _ => None,
+            }))
+            .map(|t| String::from_utf8_lossy(t).into_owned())
+            .collect(),
     })
 }
 

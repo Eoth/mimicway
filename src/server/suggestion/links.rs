@@ -411,6 +411,26 @@ pub fn redirect_suggestions(
     own: Option<&OwnAddress>,
 ) {
     for suggestion in suggestions {
+        // A script writes its texts as they are: one that would write the address of a covered backend gives way to
+        // the suggestion without lists, whose texts are rewritten below.
+        let covered = |text: &String| {
+            find_addresses(text)
+                .iter()
+                .any(|a| covers.find(a).is_some())
+        };
+        let script_covered = super::rules_of(&suggestion.outcome)
+            .iter()
+            .any(|r| r.script_texts.iter().any(covered));
+        if script_covered {
+            match suggestion.without_lists.take() {
+                Some(without) => (suggestion.outcome, suggestion.left_out) = *without,
+                None => {
+                    suggestion.outcome = Suggestion::VarianceUnexplained {
+                        response_class_count: 0,
+                    }
+                }
+            }
+        }
         let rules = match &mut suggestion.outcome {
             Suggestion::Unconditional { rule } | Suggestion::Echo { rule } => {
                 std::slice::from_mut(rule.as_mut())

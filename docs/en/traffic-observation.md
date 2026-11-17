@@ -91,6 +91,8 @@ After a refresh, the panel lists under **"Backends named in the responses"** eac
 
 The address of Mimicway is written in the body as `{{header.x-forwarded-proto | default("http")}}://{{header.host}}`, followed by the service's path and the rest of the observed address as it was: the rule answers with the address the application used to reach Mimicway, whatever its host name and port. Headers are never templates, so a `Location` or `Link` header gets the address Mimicway was reached at while observing.
 
+A rule whose script writes a list cannot send the address it writes elsewhere: when its blocks name a backend that a service of Mimicway reaches, the suggestion is the one without the list (one rule per value, or none), whose texts are rewritten as above.
+
 Only the **suggested rules** are rewritten. The traffic Mimicway relays is never changed: while it is a proxy, the directory still answers the real addresses.
 
 ## Reading the calls kept

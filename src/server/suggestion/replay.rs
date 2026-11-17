@@ -1,21 +1,14 @@
 //! The suggested rules replayed on the calls they come from, matched and rendered as the interception does: what the
 //! property tests and the fuzz target check on generated traffic.
-use super::{SuggestedRule, Suggestion, suggest_for_service};
+pub(crate) use super::rules_of;
+use super::{SuggestedRule, suggest_for_service};
 use crate::engine::script::{ScriptContext, ScriptEngine};
 use crate::engine::{MatchEngine, RequestData, TemplateContext, TemplateRenderer};
 use crate::models::{Rule, RuleAction};
 use crate::server::observation::{ObservationKey, ObservedExchange};
 
-pub(crate) fn rules_of(suggestion: &Suggestion) -> Vec<&SuggestedRule> {
-    match suggestion {
-        Suggestion::Unconditional { rule } | Suggestion::Echo { rule } => vec![rule.as_ref()],
-        Suggestion::Conditional { rules } | Suggestion::Rules { rules } => rules.iter().collect(),
-        Suggestion::VarianceUnexplained { .. } => vec![],
-    }
-}
-
 /// The rule the form would save from a suggested one: the root's empty sub-path becomes no sub-path, as the form does.
-fn as_rule(i: usize, suggested: &SuggestedRule) -> Rule {
+pub(crate) fn as_rule(i: usize, suggested: &SuggestedRule) -> Rule {
     Rule {
         name: format!("suggested-{i}"),
         method: suggested.method.clone(),
@@ -30,7 +23,7 @@ fn as_rule(i: usize, suggested: &SuggestedRule) -> Rule {
 
 /// What `rules` answer to an observed call whose request body the mock receives as `received`, matched and rendered
 /// as the interception does: the rule's script run first, a failing one giving an empty result.
-fn answer(
+pub(crate) fn answer(
     rules: &[Rule],
     key: &ObservationKey,
     exchange: &ObservedExchange,

@@ -82,6 +82,10 @@ pub struct SuggestedRule {
     pub list: Option<RepeatedList>,
     /// The script of the rule: for a list, it writes the blocks that the body reads with `{{script.items}}`.
     pub script: Option<String>,
+    /// The texts observed that the script writes as they are (around and between the blocks of a list): what
+    /// `links::redirect_suggestions` reads for the addresses of a backend, which a script cannot send elsewhere.
+    #[serde(skip)]
+    pub script_texts: Vec<String>,
     pub sample_count: usize,
     pub response: MockResponse,
     /// The services of Mimicway this rule's response now sends the application to, instead of the backends they stand
@@ -129,6 +133,11 @@ pub struct EndpointSuggestion {
     pub truncated_request_bodies: usize,
     /// Calls whose request body was not UTF-8 text (another encoding): no field of their body was read.
     pub non_utf8_request_bodies: usize,
+    /// What is suggested instead of a rule with a list, when its script would write the address of a backend that a
+    /// service of Mimicway stands in front of (`links::redirect_suggestions`): the outcome without lists, and its calls
+    /// set aside.
+    #[serde(skip)]
+    pub without_lists: Option<Box<(Suggestion, Vec<LeftOut>)>>,
     #[serde(flatten)]
     pub outcome: Suggestion,
 }
@@ -300,11 +309,19 @@ pub(super) fn suggest_within(
                 .into_iter()
                 .collect();
             let Some((outcome, left_out)) =
-                suggest_calls(route.method, &route.pattern, &group, &base, renders)
+                suggest_calls(route.method, &route.pattern, &group, &base, renders, true)
             else {
                 continue;
             };
             let outcome = in_form_of_0_5_0(outcome, operation.is_some() || !left_out.is_empty());
+            let with_list = rules_of(&outcome).iter().any(|r| r.list.is_some());
+            let without_lists = with_list
+                .then(|| suggest_calls(route.method, &route.pattern, &group, &base, renders, false))
+                .flatten()
+                .map(|(outcome, left_out)| {
+                    let beyond = operation.is_some() || !left_out.is_empty();
+                    Box::new((in_form_of_0_5_0(outcome, beyond), left_out))
+                });
             suggestions.push(EndpointSuggestion {
                 method: route.method.to_string(),
                 path_count: route.literal_paths.len(),
@@ -326,11 +343,21 @@ pub(super) fn suggest_within(
                     .iter()
                     .filter(|c| !c.sample.exchange.request_body_utf8)
                     .count(),
+                without_lists,
                 outcome,
             });
         }
     }
     suggestions
+}
+
+/// The rules of a suggestion, whatever its outcome.
+pub(crate) fn rules_of(suggestion: &Suggestion) -> Vec<&SuggestedRule> {
+    match suggestion {
+        Suggestion::Unconditional { rule } | Suggestion::Echo { rule } => vec![rule.as_ref()],
+        Suggestion::Conditional { rules } | Suggestion::Rules { rules } => rules.iter().collect(),
+        Suggestion::VarianceUnexplained { .. } => vec![],
+    }
 }
 
 /// `outcome` as `Rules` when a client written for 0.5.0 would read it wrong (`Suggestion`): it stands for an operation
@@ -418,11 +445,12 @@ fn suggest_calls(
     calls: &[&Call],
     base: &[Condition],
     renders: &Renders,
+    lists: bool,
 ) -> Option<(Suggestion, Vec<LeftOut>)> {
     if calls.len() < min_samples() {
         return None;
     }
-    let unexplained = match explain(method, sub_path, calls, base, renders) {
+    let unexplained = match explain(method, sub_path, calls, base, renders, lists) {
         Ok(suggestion) => return Some((suggestion, Vec::new())),
         Err(unexplained) => unexplained,
     };
@@ -432,7 +460,7 @@ fn suggest_calls(
     if !errors.is_empty()
         && kept.len() >= min_samples()
         && errors.len() < kept.len()
-        && let Ok(suggestion) = explain(method, sub_path, &kept, base, renders)
+        && let Ok(suggestion) = explain(method, sub_path, &kept, base, renders, lists)
     {
         let mut by_status: BTreeMap<u16, usize> = BTreeMap::new();
         for call in errors {
@@ -456,6 +484,7 @@ fn explain(
     calls: &[&Call],
     base: &[Condition],
     renders: &Renders,
+    lists: bool,
 ) -> Result<Suggestion, Suggestion> {
     // Groups of equivalent responses, as indices into `calls`, in order of first appearance. Found by signature in a
     // map: comparing each call with every group found so far costs calls × groups, quadratic when every response
@@ -488,6 +517,7 @@ fn explain(
         repeats: Vec::new(),
         list: None,
         script: None,
+        script_texts: Vec::new(),
         sample_count,
         response,
         redirected_to: Vec::new(),
@@ -511,6 +541,7 @@ fn explain(
         calls,
         &suggested_headers(latest_call),
         renders,
+        lists,
     ) {
         let mut echo = rule(
             base_group(),
@@ -530,6 +561,7 @@ fn explain(
         echo.repeats = repetition.fields;
         echo.list = repetition.list;
         echo.script = repetition.script;
+        echo.script_texts = repetition.script_texts;
         return Ok(Suggestion::Echo {
             rule: Box::new(echo),
         });

@@ -91,6 +91,8 @@ Après une actualisation, le panneau liste sous **« Backends cités dans les r�
 
 L'adresse de Mimicway s'écrit dans le corps `{{header.x-forwarded-proto | default("http")}}://{{header.host}}`, suivie du chemin du service et du reste de l'adresse observée, tel quel : la règle répond avec l'adresse par laquelle l'application a joint Mimicway, quels que soient son nom d'hôte et son port. Les en-têtes ne sont jamais des modèles : un en-tête `Location` ou `Link` reçoit l'adresse par laquelle Mimicway était joint pendant l'observation.
 
+Une règle dont le script écrit une liste ne peut pas envoyer ailleurs l'adresse qu'il écrit : quand ses blocs nomment un backend qu'un service de Mimicway atteint, la suggestion est celle sans la liste (une règle par valeur, ou aucune), dont les textes sont réécrits comme ci-dessus.
+
 Seules les **règles suggérées** sont réécrites. Le trafic que Mimicway relaie n'est jamais modifié : tant qu'il est un proxy, l'annuaire répond toujours les adresses réelles.
 
 ## Lire les appels gardés

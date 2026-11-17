@@ -416,3 +416,52 @@ fn a_non_ascii_character_before_an_attribute_name_is_not_cut() {
         ["http://ws.internal/a"]
     );
 }
+
+#[test]
+fn a_list_whose_blocks_name_a_covered_backend_gives_way_to_the_rules_without_lists() {
+    // Each block of the list names the backend the service `orders` stands in front of: the script would write that
+    // address as it is, so the suggestion is the one without lists, whose literal texts are rewritten.
+    let call = |c: usize, items: usize| {
+        let slots: String = (0..items)
+            .map(|j| format!("<o:slot><o:date>2026-0{c}-1{j}</o:date></o:slot>"))
+            .collect();
+        let blocks: String = (0..items)
+            .map(|j| format!("<booked><at>http://orders.internal/ws/Book</at><date>2026-0{c}-1{j}</date></booked>"))
+            .collect();
+        let mut e = exchange(
+            &format!("<BookResponse>{blocks}</BookResponse>"),
+            Some("localhost:7342"),
+        );
+        e.request_body = format!(
+            "<soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:o=\"urn:o\"><soap:Body>\
+             <o:Book>{slots}</o:Book></soap:Body></soap:Envelope>"
+        );
+        e.response_content_type = Some("text/xml".into());
+        e
+    };
+    let endpoints = [endpoint(
+        "/ws",
+        vec![call(0, 2), call(1, 1), call(2, 3), call(0, 2)],
+    )];
+    let mut suggestions = super::super::suggest_for_service(&endpoints);
+    let listed = super::super::rules_of(&suggestions[0].outcome)
+        .iter()
+        .any(|r| r.list.is_some());
+    assert!(listed, "{suggestions:?}");
+    let covers = covers(vec![service("orders", "", "http://orders.internal", None)]);
+    redirect_suggestions(
+        &mut suggestions,
+        &covers,
+        OwnAddress::latest(&endpoints).as_ref(),
+    );
+    for rule in super::super::rules_of(&suggestions[0].outcome) {
+        assert!(rule.script.is_none(), "{rule:?}");
+        assert!(
+            rule.response.body.iter().all(|f| !matches!(
+                f,
+                crate::models::BodyFragment::Literal { value } if value.contains("orders.internal")
+            )),
+            "{rule:?}"
+        );
+    }
+}
