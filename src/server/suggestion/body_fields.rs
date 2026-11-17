@@ -33,6 +33,10 @@ pub(super) const MAX_FIELD_PATH: usize = 256;
 pub(super) const MAX_FIELD_VALUE: usize = 256;
 /// Distinct element paths followed in one XML body: each costs one entry and its path (`MAX_FIELD_PATH` at most).
 const MAX_XML_PATHS: usize = 4 * MAX_BODY_FIELDS;
+/// Object keys of one JSON body kept to find a key written twice, each `MAX_FIELD_PATH` bytes at most: the keys whose
+/// value is read. Past them, a key's value is skipped, and the key only looked up: a key written twice among those
+/// skipped hides no field.
+pub(super) const MAX_JSON_KEYS: usize = 4 * MAX_BODY_FIELDS;
 
 /// What a suggestion may use from one request body.
 #[derive(Debug, Default, PartialEq)]
@@ -43,6 +47,15 @@ pub(super) struct BodyReading {
     /// SOAP envelope, or its `Body` holds no element or elements of more than one name: the condition
     /// `Envelope/Body/<operation>` exists then holds for this call exactly when the operation is this one.
     pub operation: Option<String>,
+}
+
+/// The SOAP operation of `body` alone (`BodyReading::operation`), read only from a body that may hold one, XML: a
+/// JSON body is never read for it.
+pub(super) fn operation(body: &str, unread: bool) -> Option<String> {
+    if unread || body.trim_start().as_bytes().first() != Some(&b'<') {
+        return None;
+    }
+    xml_fields(body).operation
 }
 
 /// Reads `body` as JSON when it starts with `{` or `[`, as XML when it starts with `<`, and gives nothing otherwise or
@@ -230,10 +243,12 @@ fn xml_fields(body: &str) -> BodyReading {
 fn json_fields(body: &str) -> Vec<(ConditionSource, String)> {
     let mut fields = Vec::new();
     let mut path = String::new();
+    let mut keys = 0;
     let mut de = serde_json::Deserializer::from_str(body);
     let walked = JsonFields {
         path: &mut path,
         depth: 0,
+        keys: &mut keys,
         out: &mut fields,
     }
     .deserialize(&mut de);
@@ -247,6 +262,8 @@ struct JsonFields<'a> {
     /// The pointer of the value being read.
     path: &'a mut String,
     depth: usize,
+    /// Keys kept so far in the whole body, `MAX_JSON_KEYS` at most.
+    keys: &'a mut usize,
     out: &'a mut Vec<(ConditionSource, String)>,
 }
 
@@ -337,24 +354,32 @@ impl<'de> Visitor<'de> for JsonFields<'_> {
     }
 
     fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<(), A::Error> {
-        let JsonFields { path, depth, out } = self;
+        let JsonFields {
+            path,
+            depth,
+            keys,
+            out,
+        } = self;
         let mut seen: HashSet<String> = HashSet::new();
         while let Some(key) = map.next_key_seed(Key)? {
             let Some(key) = key else {
                 map.next_value::<IgnoredAny>()?;
                 continue;
             };
-            let token = key.replace('~', "~0").replace('/', "~1");
-            if !seen.insert(key) {
+            if seen.contains(&key) {
                 return Err(A::Error::custom("a key written twice"));
             }
-            if worth_reading(path, 1 + token.len(), depth, out.len()) {
+            let token = key.replace('~', "~0").replace('/', "~1");
+            if *keys < MAX_JSON_KEYS && worth_reading(path, 1 + token.len(), depth, out.len()) {
+                *keys += 1;
+                seen.insert(key);
                 let start = path.len();
                 path.push('/');
                 path.push_str(&token);
                 map.next_value_seed(JsonFields {
                     path: &mut *path,
                     depth: depth + 1,
+                    keys: &mut *keys,
                     out: &mut *out,
                 })?;
                 path.truncate(start);
@@ -366,7 +391,12 @@ impl<'de> Visitor<'de> for JsonFields<'_> {
     }
 
     fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<(), A::Error> {
-        let JsonFields { path, depth, out } = self;
+        let JsonFields {
+            path,
+            depth,
+            keys,
+            out,
+        } = self;
         let mut index = 0usize;
         loop {
             let token = index.to_string();
@@ -378,6 +408,7 @@ impl<'de> Visitor<'de> for JsonFields<'_> {
                     .next_element_seed(JsonFields {
                         path: &mut *path,
                         depth: depth + 1,
+                        keys: &mut *keys,
                         out: &mut *out,
                     })?
                     .is_some();

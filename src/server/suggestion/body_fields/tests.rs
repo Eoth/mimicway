@@ -442,3 +442,51 @@ fn every_json_field_matches_the_body_it_was_read_from() {
         "{with_fields:?} {nested:?}"
     );
 }
+
+#[test]
+fn the_keys_kept_to_find_a_key_written_twice_are_bounded() {
+    // `MAX_JSON_KEYS` keys whose value is read, then one more: its value is skipped, and a key written twice among the
+    // kept ones still gives no field.
+    let object = |keys: usize, tail: &str| {
+        let mut text: String = (0..keys).map(|k| format!("\"k{k}\":{{}},")).collect();
+        text.push_str(tail);
+        format!("{{{text}}}")
+    };
+    let field = |name: &str| {
+        (
+            ConditionSource::JsonPointer(format!("/{name}")),
+            "1".to_string(),
+        )
+    };
+    assert_eq!(
+        read(&object(MAX_JSON_KEYS - 1, r#""x":"1""#), false).fields,
+        vec![field("x")]
+    );
+    assert_eq!(
+        read(&object(MAX_JSON_KEYS, r#""x":"1""#), false).fields,
+        vec![]
+    );
+    let twice = format!(
+        "{{\"a\":\"1\",{}\"a\":\"2\"}}",
+        (0..MAX_JSON_KEYS)
+            .map(|k| format!("\"k{k}\":{{}},"))
+            .collect::<String>()
+    );
+    assert_eq!(read(&twice, false).fields, vec![]);
+}
+
+#[test]
+fn the_operation_alone_reads_only_xml() {
+    assert_eq!(
+        operation(r#"{"Envelope":{"Body":{"Ping":1}}}"#, false),
+        None
+    );
+    assert_eq!(
+        operation("<Envelope><Body><Ping/></Body></Envelope>", false).as_deref(),
+        Some("Ping")
+    );
+    assert_eq!(
+        operation("<Envelope><Body><Ping/></Body></Envelope>", true),
+        None
+    );
+}

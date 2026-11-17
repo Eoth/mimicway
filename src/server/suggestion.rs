@@ -229,7 +229,7 @@ pub(super) fn observed_routes(
 /// The SOAP operation an observed request names, as suggestions read it (`body_fields`): what splits the observation of
 /// one address into one endpoint per operation (`ObservationKey::operation`).
 pub fn request_operation(exchange: &ObservedExchange) -> Option<String> {
-    body_fields::read(&exchange.request_body, unread(exchange)).operation
+    body_fields::operation(&exchange.request_body, unread(exchange))
 }
 
 /// Whether the request body of an exchange is left unread by suggestions: cut at the size limit of observation (its

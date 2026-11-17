@@ -14,6 +14,10 @@ const DEFAULT_MAX_BODY_SIZE: usize = 16 * 1024;
 const DEFAULT_MAX_BUFFER_SIZE: usize = 10 * 1024 * 1024;
 const DEFAULT_SAMPLES_PER_KEY: usize = 8;
 const DEFAULT_MAX_KEYS: usize = 200;
+/// Distinct SOAP operations followed for one path of a service (one method): a service names a few dozen at most.
+/// Past them, a call goes to the endpoint of the path without operation, so that a caller inventing an operation per
+/// call never turns one fixed path into as many endpoints as the store follows, pushing every other one out.
+pub(crate) const MAX_OPERATIONS_PER_PATH: usize = 32;
 
 /// Largest body kept in an `ObservedExchange`, in bytes (request and response truncated separately), like
 /// `request_log::max_body_size` and `message_log::max_body_size`.
@@ -204,6 +208,26 @@ impl ObservationStore {
         let inner = &mut *guard;
         let seq = inner.next_seq;
         inner.next_seq += 1;
+
+        // A new operation of a path that already has `MAX_OPERATIONS_PER_PATH`: the endpoint without operation. Counted
+        // over the endpoints followed, `max_keys` at most, and only when the endpoint is new.
+        let mut key = key;
+        if key.operation.is_some() && !inner.buckets.contains_key(&key) {
+            let operations = inner
+                .buckets
+                .keys()
+                .filter(|k| {
+                    k.operation.is_some()
+                        && k.sub_path == key.sub_path
+                        && k.method == key.method
+                        && k.service_name == key.service_name
+                        && k.group_name == key.group_name
+                })
+                .count();
+            if operations >= MAX_OPERATIONS_PER_PATH {
+                key.operation = None;
+            }
+        }
 
         let bucket = match inner.buckets.get_mut(&key) {
             Some(bucket) => {
@@ -726,5 +750,28 @@ mod tests {
         assert_eq!(max_buffer_size_in(&lookup), 4);
         assert_eq!(samples_per_key_in(&lookup), 5);
         assert_eq!(max_keys_in(&lookup), 6);
+    }
+
+    #[test]
+    fn a_path_follows_so_many_operations_and_files_the_next_ones_without_one() {
+        let store = ObservationStore::new();
+        let key = |operation: usize| ObservationKey {
+            operation: Some(format!("Op{operation}")),
+            ..sample_key("/ws")
+        };
+        for operation in 0..MAX_OPERATIONS_PER_PATH + 5 {
+            store.record_within(key(operation), sample_exchange(b"<x/>"), 1000, 8);
+        }
+        assert_eq!(store.key_count(), MAX_OPERATIONS_PER_PATH + 1);
+        assert_eq!(store.observations(&sample_key("/ws")).len(), 5);
+        // An operation already followed keeps its endpoint; another path has operations of its own.
+        store.record_within(key(0), sample_exchange(b"<x/>"), 1000, 8);
+        assert_eq!(store.observations(&key(0)).len(), 2);
+        let other = ObservationKey {
+            operation: Some("Op99".into()),
+            ..sample_key("/ws/other")
+        };
+        store.record_within(other.clone(), sample_exchange(b"<x/>"), 1000, 8);
+        assert_eq!(store.observations(&other).len(), 1);
     }
 }
