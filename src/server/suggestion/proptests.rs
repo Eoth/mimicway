@@ -214,15 +214,32 @@ proptest! {
 
     #[test]
     fn suggested_condition_never_uses_a_noisy_header(
-        obs in prop::collection::vec(arb_exchange(), 3..15)
+        obs in prop::collection::vec(arb_exchange(), 3..15),
+        noisy in prop::collection::vec((prop::sample::select(NOISY_HEADERS), 0usize..2), 4..12),
     ) {
-        let calls: Vec<(String, ObservedExchange)> = obs.into_iter().map(|e| ("/fuzz".to_string(), e)).collect();
+        // Random exchanges, then exchanges whose noisy header follows the answer, each value seen again: the header
+        // fits, and must still never be a condition.
+        let mut calls: Vec<(String, ObservedExchange)> = obs.into_iter().map(|e| ("/fuzz".to_string(), e)).collect();
+        let name = noisy[0].0.to_ascii_uppercase();
+        calls.extend(noisy.iter().map(|&(_, kind)| {
+            let e = ObservedExchange::new(
+                HashMap::new(),
+                HashMap::from([(name.clone(), format!("value-{kind}"))]),
+                b"",
+                None,
+                200,
+                HashMap::new(),
+                format!("answer {}", ["a", "b"][kind]).as_bytes(),
+                None,
+            );
+            ("/noisy".to_string(), e)
+        }));
         for suggestion in suggest_for_service(&endpoints(&calls)) {
             for rule in suggestion_rules(&suggestion.outcome) {
-                if let Some(cond) = &rule.condition
-                    && let ConditionSource::Header(k) = &cond.source
-                {
-                    prop_assert!(!NOISY_HEADERS.contains(&k.to_lowercase().as_str()));
+                for cond in rule.conditions.all_of.iter().chain(&rule.conditions.any_of) {
+                    if let ConditionSource::Header(k) = &cond.source {
+                        prop_assert!(!NOISY_HEADERS.contains(&k.to_lowercase().as_str()), "{rule:?}");
+                    }
                 }
             }
         }
@@ -262,7 +279,7 @@ struct BodyCall {
     /// Sent in ISO-8859-1 rather than UTF-8: the bytes the mock receives are not the text observation keeps.
     latin1: bool,
     /// A SOAP body broken after the operation's start tag: its end tag lost (`false`), or elements nested past the
-    /// limit of the XML readers right after it (`true`).
+    /// limit of the XML readers right after it (`true`); a JSON body with a key written twice.
     broken: Option<bool>,
 }
 
@@ -319,8 +336,15 @@ fn request_body(call: &BodyCall, seq: usize) -> String {
         )
     } else {
         let items: Vec<String> = (0..call.items).map(|i| format!("{{\"n\":{i}}}")).collect();
+        // A broken JSON body writes its key twice: the reader of JSON pointers keeps the last value, and no field of
+        // such a body is offered.
+        let twice = if call.broken.is_some() {
+            "\"ref\":\"R9\","
+        } else {
+            ""
+        };
         format!(
-            "{{\"req\":{{\"meta\":{{\"seq\":{seq}}},\"ref\":{}}},\"items\":[{}]}}",
+            "{{\"req\":{{\"meta\":{{\"seq\":{seq}}},{twice}\"ref\":{}}},\"items\":[{}]}}",
             serde_json::Value::from(value),
             items.join(",")
         )
