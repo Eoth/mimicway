@@ -642,12 +642,13 @@ enum Candidate<'a> {
 
 impl Candidate<'_> {
     /// Whether a value of this field seen once may explain a response by itself, when each response has its own value:
-    /// a path parameter, a query parameter, a scalar at the top of a JSON object, as suggestions did before they read
-    /// headers deeply, XML and nested JSON. Any other field needs every value seen twice (`find_discriminator`).
-    fn trusted_alone(&self) -> bool {
+    /// a path parameter, a query parameter, a scalar at the top of a JSON object (`objects`: every body is one, so that
+    /// `/0` is no index of an array), as suggestions did before they read headers deeply, XML and nested JSON. Any other
+    /// field needs every value seen twice (`find_discriminator`).
+    fn trusted_alone(&self, objects: bool) -> bool {
         match *self {
             Candidate::PathParam(_) | Candidate::QueryParam(_) => true,
-            Candidate::JsonPointer(pointer) => !pointer[1..].contains('/'),
+            Candidate::JsonPointer(pointer) => objects && !pointer[1..].contains('/'),
             Candidate::XPath(_) | Candidate::Header(_) => false,
         }
     }
@@ -760,13 +761,14 @@ fn find_discriminator<'a>(
         }
     }
 
+    let objects = calls.iter().all(|c| c.body.json_object);
     let (candidate, field) = stats
         .into_iter()
         .filter(|(candidate, field)| {
             let consistent = !field.conflict && field.present == calls.len();
             let repeated = field.values.values().all(|&(_, count)| count >= 2);
             let one_per_response = field.values.len() == class_count;
-            consistent && (repeated || (one_per_response && candidate.trusted_alone()))
+            consistent && (repeated || (one_per_response && candidate.trusted_alone(objects)))
         })
         .min_by(|(a, fa), (b, fb)| (fa.values.len(), a).cmp(&(fb.values.len(), b)))?;
     let mut values: Vec<Vec<&str>> = vec![Vec::new(); class_count];

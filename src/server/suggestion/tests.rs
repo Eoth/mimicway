@@ -1285,3 +1285,20 @@ fn errors_are_set_aside_only_when_fewer_than_the_answers_kept() {
         }]
     );
 }
+
+#[test]
+fn the_first_item_of_a_json_array_is_no_field_at_the_top_of_an_object() {
+    // `/0` of `["A"]` is an index: like any field but those of the top of an object, it needs its values seen twice.
+    let calls: Vec<ObservedExchange> = [("A", "x"), ("B", "y"), ("C", "z")]
+        .iter()
+        .map(|(v, answer)| {
+            let mut e = exchange(200, answer);
+            e.request_body = format!(r#"["{v}"]"#);
+            e
+        })
+        .collect();
+    assert!(matches!(
+        suggest("POST", "/q", &calls).unwrap(),
+        Suggestion::VarianceUnexplained { .. }
+    ));
+}

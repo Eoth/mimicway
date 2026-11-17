@@ -47,6 +47,9 @@ pub(super) struct BodyReading {
     /// SOAP envelope, or its `Body` holds no element or elements of more than one name: the condition
     /// `Envelope/Body/<operation>` exists then holds for this call exactly when the operation is this one.
     pub operation: Option<String>,
+    /// Whether the body is a JSON object: a pointer of one segment is then a field at its top, where in an array it is
+    /// an index.
+    pub json_object: bool,
 }
 
 /// The SOAP operation of `body` alone (`BodyReading::operation`), read only from a body that may hold one, XML: a
@@ -65,9 +68,10 @@ pub(super) fn read(body: &str, unread: bool) -> BodyReading {
         return BodyReading::default();
     }
     match body.trim_start().as_bytes().first() {
-        Some(b'{' | b'[') => BodyReading {
+        Some(first @ (b'{' | b'[')) => BodyReading {
             fields: json_fields(body),
             operation: None,
+            json_object: *first == b'{',
         },
         Some(b'<') => xml_fields(body),
         _ => BodyReading::default(),
@@ -233,7 +237,11 @@ fn xml_fields(body: &str) -> BodyReading {
         }
         Operations::One(_) | Operations::None | Operations::Several => None,
     };
-    BodyReading { fields, operation }
+    BodyReading {
+        fields,
+        operation,
+        json_object: false,
+    }
 }
 
 /// The scalar fields of a JSON body (strings, numbers, booleans; `null` left out), at any depth up to
