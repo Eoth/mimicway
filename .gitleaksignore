@@ -1,0 +1,3 @@
+# A finding that is no secret: one line each, the fingerprint gitleaks prints.
+# The XPath of a test (Envelope/Body/Ping), read as a generic API key.
+fb2d6cf218f0edd082a5c2627173c35eaac7c42b:frontend/src/tests/ObservationSuggestions.test.js:generic-api-key:536
