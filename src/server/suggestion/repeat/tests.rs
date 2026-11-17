@@ -640,3 +640,16 @@ fn items_with_values_longer_than_a_value_followed_are_not_generalized() {
     assert!(listed(MAX_VALUE));
     assert!(!listed(MAX_VALUE + 1));
 }
+
+#[test]
+fn a_hole_before_a_bracket_or_in_a_document_with_a_doctype_is_not_generalized() {
+    // `<r>R-1]></r>`: a value `]` would write `]]>` in text. And a document type may declare what this reading does
+    // not follow.
+    for shape in ["<r>{}]></r>", "<!DOCTYPE r [<!ENTITY e \"x\">]><r>{}</r>"] {
+        let calls = xml_value_calls(|v| shape.replace("{}", v));
+        let suggestions = suggest_for_service(&endpoints(calls));
+        for rule in crate::server::suggestion::replay::rules_of(&suggestions[0].outcome) {
+            assert!(rule.repeats.is_empty(), "{shape}: {rule:?}");
+        }
+    }
+}

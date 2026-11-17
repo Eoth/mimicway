@@ -369,8 +369,9 @@ impl Context {
 /// The context of each hole of `skeleton`, a document whose holes are `\0` bytes (no document of these formats holds
 /// one), in order; `None` when a hole stands where no escaping keeps the document well formed: inside a tag, a
 /// comment, a processing instruction or a declaration, right after a backslash in a JSON string, in text right before
-/// `>` (a value ending in `]]` would write `]]>`), in a CDATA section next to `]`, `>` or another hole (a value would
-/// end the section early).
+/// `>` or `]` (a value ending in `]` or `]]` would write `]]>`), in a CDATA section next to `]`, `>` or another hole (a
+/// value would end the section early), in a document with a `<!DOCTYPE`, out of a JSON string where no whole value
+/// stands.
 fn contexts(format: Format, skeleton: &[u8]) -> Option<Vec<Context>> {
     match format {
         Format::Text => Some(vec![
@@ -411,6 +412,13 @@ fn json_contexts(skeleton: &[u8]) -> Option<Vec<Context>> {
 }
 
 fn xml_contexts(skeleton: &[u8]) -> Option<Vec<Context>> {
+    // A document type declaration may declare entities and defaults this reading does not follow: not generalized.
+    if skeleton
+        .windows(9)
+        .any(|w| w.eq_ignore_ascii_case(b"<!DOCTYPE"))
+    {
+        return None;
+    }
     #[derive(Clone, Copy, PartialEq)]
     enum State {
         Text,
@@ -428,7 +436,10 @@ fn xml_contexts(skeleton: &[u8]) -> Option<Vec<Context>> {
         if rest[0] == 0 {
             let (before, after) = (&skeleton[..i], &skeleton[i + 1..]);
             found.push(match state {
-                State::Text if !after.starts_with(b">") => Context::XmlText,
+                // A value ending in `]` or `]]` before `]>` or `>` would write `]]>`, which no text may hold.
+                State::Text if !after.starts_with(b">") && !after.starts_with(b"]") => {
+                    Context::XmlText
+                }
                 State::Attr(_) => Context::XmlAttr,
                 State::Cdata
                     if !before.ends_with(b"]")
