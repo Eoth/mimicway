@@ -1347,6 +1347,18 @@ mod tests {
         );
         let over = rhai::Dynamic::from("\u{1}".repeat(MAX_STRING_SIZE / 6 + 1));
         assert!(escape_impl(Escaping::JsonString, &over).is_err());
+        // The limit itself is a length a text may have: the plain characters that fill what the escaped ones leave.
+        let exact = format!(
+            "{}{}",
+            "\u{1}".repeat(MAX_STRING_SIZE / 6),
+            "a".repeat(MAX_STRING_SIZE % 6)
+        );
+        assert_eq!(
+            escape_impl(Escaping::JsonString, &rhai::Dynamic::from(exact))
+                .map(|s| s.len())
+                .ok(),
+            Some(MAX_STRING_SIZE)
+        );
     }
 
     #[test]
