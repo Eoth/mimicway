@@ -7,7 +7,15 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { curlArgs, curlCommand, shellArg, bodyFileName, bodyNeedsFile, commandRefusal } from '../lib/curl.js';
+import {
+  curlArgs,
+  curlCommand,
+  shellArg,
+  bodyFileName,
+  bodyNeedsFile,
+  commandRefusal,
+  holdsUnsafe,
+} from '../lib/curl.js';
 
 let bin;
 // By their full path: the command runs with the stand-in curl alone on PATH.
@@ -191,6 +199,34 @@ describe('what the command says', () => {
     '\u2069',
     '\ufeff',
   ];
+
+  // The rule, written from the Unicode properties the engine knows, one test per property: other characters (control,
+  // format, unassigned, private use), line and paragraph separators, characters that render as nothing (default
+  // ignorable, variation selectors); tab and line feed stay.
+  const properties = [/\p{C}/u, /\p{Zl}/u, /\p{Zp}/u, /\p{Default_Ignorable_Code_Point}/u, /\p{Variation_Selector}/u];
+  const unsafeByRule = (c) => c !== '\t' && c !== '\n' && properties.some((p) => p.test(c));
+
+  it(
+    'decides every code point of Unicode as the rule of its properties does',
+    () => {
+      const disagree = [];
+      for (let cp = 0; cp <= 0x10ffff; cp++) {
+        if (cp >= 0xd800 && cp <= 0xdfff) continue;
+        const c = String.fromCodePoint(cp);
+        if (holdsUnsafe(c) !== unsafeByRule(c)) disagree.push(cp.toString(16));
+      }
+      expect(disagree.slice(0, 20), `${disagree.length} code points`).toEqual([]);
+      // The fillers that render as nothing, and what a reading of the list found missing, are in the rule.
+      for (const cp of [0x115f, 0x1160, 0x3164, 0xad, 0x34f, 0x180e, 0x200b, 0x200d, 0x2060, 0x2064, 0xfe00, 0xfe0f]) {
+        expect(holdsUnsafe(String.fromCodePoint(cp)), cp.toString(16)).toBe(true);
+      }
+      for (const cp of [0xe0000, 0xe0001, 0xe007f, 0xfff9, 0xfffb]) {
+        expect(holdsUnsafe(String.fromCodePoint(cp)), cp.toString(16)).toBe(true);
+      }
+      for (const c of ['a', 'é', '中', '😀', ' ', '\t', '\n', "'", '$']) expect(holdsUnsafe(c), c).toBe(false);
+    },
+    SHELL_TIMEOUT_MS,
+  );
 
   it('sends a body holding a control or invisible character from its file, never in the command', () => {
     for (const c of UNSAFE_SAMPLES) {

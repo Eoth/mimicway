@@ -25,11 +25,12 @@ export function shellArg(value) {
 // A header name as HTTP defines it (RFC 9110, token).
 const TOKEN = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
 
-// What a copied command never holds: the control characters but tab and line feed (C0, DEL, C1), which a terminal acts
-// on when they are pasted (ESC [ 2 0 1 ~ ends a protected paste, and what follows runs without Enter), and the
-// invisible characters that reorder or hide text (bidirectional controls, marks, separators of lines and paragraphs,
-// the byte order mark), which make a command read otherwise than it runs.
-const UNSAFE = /[\u0000-\u0008\u000B-\u001F\u007F-\u009F\u061C\u200E\u200F\u2028-\u202E\u2066-\u2069\uFEFF]/;
+// What a copied command never holds, said by Unicode properties rather than listed: every "other" character (\p{C}:
+// controls but tab and line feed, which a terminal acts on when they are pasted, ESC [ 2 0 1 ~ ending a protected
+// paste so that what follows runs without Enter; format characters, among them the bidirectional controls that make
+// a command read otherwise than it runs; unassigned code points and private use), the line and paragraph separators,
+// and what renders as nothing (default ignorable code points, the Hangul fillers among them, and variation selectors).
+const UNSAFE = /(?![\t\n])[\p{C}\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}\p{Variation_Selector}]/u;
 
 // Headers curl writes itself from the URL and the body: the kept ones would be wrong for the command (a body cut, a
 // host where the call came through).
