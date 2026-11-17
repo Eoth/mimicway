@@ -847,7 +847,7 @@ Defects and debts found on the way. They are taken by bundle: the items of a bun
 
 | Bundle | Items | Goes with |
 |---|---|---|
-| The judges | E52; E49 waits for the maintainer | first, before the themes |
+| The judges | E52, E71; E49 waits for the maintainer | first, before the themes |
 | Where the relay goes | E62 | "Bounded" (0.6) |
 | Weight | E10 | "Lightest, with the proof" (0.6) |
 | Keyboard | E42, E47 | "Accessible" (0.6) |
@@ -1251,3 +1251,12 @@ Size S
 
 **Done when.** A test that holds a relay between finding its service and reading the generation, deletes the service, creates it again with another target and observes it, finds nothing kept from that relay.
 
+### E71. The escapings of templates and scripts in the mutation gate
+
+Size S
+
+**Why.** `src/engine/escape.rs` (the pipes and script functions `xml_text`, `xml_attr`, `cdata`, `json_string`, `json_value`) came with 0.5.1, after the rest of `src/engine/` had joined the mutation gate (`scripts/mutants-gate.sh`): the weekly pass does not change it, and only the lines of a push are judged. A suggested rule is well formed for any value because of these functions.
+
+**What.** One whole pass of cargo-mutants on the file; each mutation that survives gets a test from a judge that generates its cases, or its reason in `.cargo/mutants.toml`; then the file joins `SCOPE`.
+
+**Done when.** A second pass leaves no survivor, and `SCOPE` names the file.
