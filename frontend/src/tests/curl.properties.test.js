@@ -216,6 +216,10 @@ describe('what the command says', () => {
       }
     }
     expect(curlCommand(kept(), 'http://h\u001b')).toBeNull();
+    const cut = kept();
+    cut.request.head_truncated = true;
+    expect(commandRefusal(cut, 'http://h')).toBe('cut');
+    expect(curlCommand(cut, 'http://h')).toBeNull();
     expect(commandRefusal(kept(), 'http://h')).toBeNull();
   });
 

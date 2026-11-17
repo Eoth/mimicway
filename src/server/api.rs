@@ -634,9 +634,12 @@ async fn observed_endpoints(
         .into_iter()
         .filter(|_| observed)
         .map(|key| {
-            let observations = state.observation.store.observations(&key);
+            // A call cut at `MAX_HEAD_SIZE` is read whole nowhere: its values may be the start of what was sent.
+            let mut observations = state.observation.store.observations(&key);
+            observations.retain(|e| !e.request_head_truncated && !e.response_head_truncated);
             (key, observations)
         })
+        .filter(|(_, observations)| !observations.is_empty())
         .collect();
     Ok((config, endpoints))
 }
@@ -3401,6 +3404,84 @@ mod tests {
             .unwrap();
         let (_, calls) = get(format!("{base}/services/proxy-svc/observed-calls")).await;
         assert_eq!(calls, serde_json::json!([]));
+    }
+
+    // A call whose head passed the bound is listed, shown cut, and never read whole by a suggestion.
+    #[tokio::test]
+    async fn a_call_cut_outside_its_body_is_listed_but_never_suggested() {
+        let target_app = axum::Router::new().fallback(|| async { "ok" });
+        let target_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let target_port = target_listener.local_addr().unwrap().port();
+        tokio::spawn(async move { axum::serve(target_listener, target_app).await.unwrap() });
+        let svc = Service {
+            is_mocked: false,
+            real_target_url: format!("http://127.0.0.1:{target_port}"),
+            ..svc_named("big", None)
+        };
+        let base = spawn_test_app(MockConfig {
+            services: vec![svc],
+            groups: vec![],
+        })
+        .await;
+        let client = reqwest::Client::new();
+        client
+            .post(format!("{base}/services/big/observe"))
+            .send()
+            .await
+            .unwrap();
+        let proxy_base = base.trim_end_matches("/api");
+        let big = "v".repeat(crate::server::observation::MAX_HEAD_SIZE + 1);
+        for _ in 0..3 {
+            let relayed = client
+                .get(format!("{proxy_base}/big/status"))
+                .header("x-big", &big)
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(relayed.status(), StatusCode::OK);
+        }
+        let get = |path: String| {
+            let client = client.clone();
+            async move {
+                client
+                    .get(path)
+                    .send()
+                    .await
+                    .unwrap()
+                    .json::<serde_json::Value>()
+                    .await
+                    .unwrap()
+            }
+        };
+        let calls = get(format!("{base}/services/big/observed-calls")).await;
+        assert_eq!(calls.as_array().unwrap().len(), 3);
+        let detail = get(format!(
+            "{base}/services/big/observed-calls/{}",
+            calls[0]["id"]
+        ))
+        .await;
+        assert_eq!(detail["request"]["head_truncated"], true);
+        assert!(
+            detail["request"]["headers"]["x-big"]
+                .as_str()
+                .unwrap()
+                .len()
+                < big.len()
+        );
+        assert_eq!(
+            get(format!("{base}/services/big/suggestions")).await,
+            serde_json::json!([])
+        );
+        // The same calls with a head within the bound give their suggestion.
+        for _ in 0..3 {
+            client
+                .get(format!("{proxy_base}/big/status"))
+                .send()
+                .await
+                .unwrap();
+        }
+        let suggestions = get(format!("{base}/services/big/suggestions")).await;
+        assert_eq!(suggestions.as_array().unwrap().len(), 1, "{suggestions}");
     }
 
     // A relay still running when observation stops, or stops and starts again, keeps nothing when it ends: neither the

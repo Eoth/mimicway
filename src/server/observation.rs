@@ -125,6 +125,47 @@ pub struct ObservationKey {
     pub operation: Option<String>,
 }
 
+/// Bytes of a side of a kept call outside its body: for the request its path, query, the parameters of its listen
+/// path, its `Host` and its headers (names and values) with their media type; for the response its headers and media
+/// type. Only HTTP's own limit on a head (hyper's, a few hundred KiB) bounded them before; past this bound, values are
+/// cut in that order and the call is marked (`request_head_truncated`, `response_head_truncated`): it is read whole
+/// nowhere (no suggestion is drawn from it, no command copied), and shown as cut.
+pub(crate) const MAX_HEAD_SIZE: usize = 16 * 1024;
+
+/// `text` cut to what `left` allows, at a character boundary; `left` lowered by what it keeps.
+fn keep_within(text: &mut String, left: &mut usize) -> bool {
+    if text.len() <= *left {
+        *left -= text.len();
+        return false;
+    }
+    let mut end = *left;
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    text.truncate(end);
+    *left = 0;
+    true
+}
+
+/// Headers kept within `left`, by name: a header whose name does not fit is left out, a value is cut to what remains.
+fn headers_within(headers: &mut HashMap<String, String>, left: &mut usize) -> bool {
+    let mut names: Vec<String> = headers.keys().cloned().collect();
+    names.sort();
+    let mut cut = false;
+    for name in names {
+        if name.len() > *left {
+            headers.remove(&name);
+            cut = true;
+            continue;
+        }
+        *left -= name.len();
+        if let Some(value) = headers.get_mut(&name) {
+            cut |= keep_within(value, left);
+        }
+    }
+    cut
+}
+
 /// An exchange whose two sides were both buffered within `max_buffer_size()`. A partial one (a response too large
 /// or of unknown size) is never stored (see `ProxyClient::forward_with_capture`).
 #[derive(Debug, Clone, Serialize)]
@@ -155,8 +196,12 @@ pub struct ObservedExchange {
     /// Mimicway's own address as the caller reached it (the request's `Host`), when it sent one: an address of Mimicway
     /// in a response is not another backend (`suggestion::links`).
     pub request_host: Option<String>,
+    /// Whether the request outside its body was cut at `MAX_HEAD_SIZE` (`bound_heads`).
+    pub request_head_truncated: bool,
     pub response_status: u16,
     pub response_headers: HashMap<String, String>,
+    /// Whether the response's headers were cut at `MAX_HEAD_SIZE`.
+    pub response_head_truncated: bool,
     pub response_body: String,
     pub response_body_truncated: bool,
     pub response_body_size: usize,
@@ -194,7 +239,9 @@ impl ObservedExchange {
             request_content_type,
             request_path_params: HashMap::new(),
             request_host: None,
+            request_head_truncated: false,
             response_status,
+            response_head_truncated: false,
             response_headers: crate::server::redaction::redact_headers(&response_headers),
             response_body: resp_body,
             response_body_truncated: resp_truncated,
@@ -202,6 +249,43 @@ impl ObservedExchange {
             response_body_utf8: std::str::from_utf8(response_body).is_ok(),
             response_content_type,
         }
+    }
+}
+
+impl ObservedExchange {
+    /// Cuts each side outside its body to `MAX_HEAD_SIZE` (see there), and marks a side cut. The query parameters are
+    /// read again from a query that was cut, so that they never say more than the query kept.
+    pub(crate) fn bound_heads(&mut self) {
+        let mut left = MAX_HEAD_SIZE;
+        let mut cut = keep_within(&mut self.request_path, &mut left);
+        let mut query_cut = false;
+        if let Some(query) = &mut self.request_query {
+            query_cut = keep_within(query, &mut left);
+        }
+        if query_cut {
+            self.request_query_params =
+                url::form_urlencoded::parse(self.request_query.as_deref().unwrap_or("").as_bytes())
+                    .map(|(k, v)| (k.into_owned(), v.into_owned()))
+                    .collect();
+        }
+        cut |= query_cut;
+        cut |= headers_within(&mut self.request_path_params, &mut left);
+        if let Some(host) = &mut self.request_host {
+            cut |= keep_within(host, &mut left);
+        }
+        if let Some(content_type) = &mut self.request_content_type {
+            cut |= keep_within(content_type, &mut left);
+        }
+        cut |= headers_within(&mut self.request_headers, &mut left);
+        self.request_head_truncated |= cut;
+
+        let mut left = MAX_HEAD_SIZE;
+        let mut cut = false;
+        if let Some(content_type) = &mut self.response_content_type {
+            cut |= keep_within(content_type, &mut left);
+        }
+        cut |= headers_within(&mut self.response_headers, &mut left);
+        self.response_head_truncated |= cut;
     }
 }
 
@@ -290,12 +374,16 @@ impl ObservationStore {
     /// between the check and the recording (`ObservationState::record`).
     fn record_within_if(
         &self,
-        key: ObservationKey,
+        mut key: ObservationKey,
         mut exchange: ObservedExchange,
         max_keys: usize,
         samples_per_key: usize,
         accept: impl FnOnce() -> bool,
     ) {
+        exchange.bound_heads();
+        // The endpoint's path is a part of the request's path: the same bound, so that a key never holds more.
+        let mut left = MAX_HEAD_SIZE;
+        exchange.request_head_truncated |= keep_within(&mut key.sub_path, &mut left);
         let mut guard = self.inner.write().unwrap();
         if !accept() {
             return;
@@ -373,6 +461,14 @@ impl ObservationStore {
         if max_failed_calls == 0 {
             return;
         }
+        call.request.bound_heads();
+        let mut left = MAX_HEAD_SIZE;
+        if let Some(operation) = &mut call.operation {
+            call.request.request_head_truncated |= keep_within(operation, &mut left);
+        }
+        // The target holds the path of the request after the service's own.
+        let mut left = MAX_HEAD_SIZE;
+        call.request.request_head_truncated |= keep_within(&mut call.target, &mut left);
         let mut guard = self.inner.write().unwrap();
         if !accept() {
             return;
@@ -1319,5 +1415,75 @@ mod tests {
         store.forget_service(None, "svc");
         store.record(sample_key("/a"), sample_exchange(b"x"));
         assert_eq!(store.calls(None, "svc")[0].id, 0);
+    }
+
+    // What a call holds outside its bodies, at the edge of its bound and one byte past it.
+    #[test]
+    fn a_call_keeps_so_much_outside_its_bodies_and_says_when_it_was_cut() {
+        let exchange = |path_len: usize, header_len: usize| {
+            let mut e = ObservedExchange::new(
+                HashMap::new(),
+                [("x-big".to_string(), "h".repeat(header_len))].into(),
+                b"",
+                None,
+                200,
+                [("x-long".to_string(), "r".repeat(MAX_HEAD_SIZE))].into(),
+                b"",
+                None,
+            );
+            e.request_path = format!("/{}", "p".repeat(path_len - 1));
+            e.request_query = Some("a=1&b=2".into());
+            e.request_query_params = [("a".into(), "1".into()), ("b".into(), "2".into())].into();
+            e
+        };
+        // Path, query and one header: exactly the bound.
+        let at_bound = MAX_HEAD_SIZE - "a=1&b=2".len() - "x-big".len() - 100;
+        let mut e = exchange(at_bound, 100);
+        e.bound_heads();
+        assert!(!e.request_head_truncated);
+        assert_eq!(e.request_headers["x-big"].len(), 100);
+        assert!(
+            e.response_head_truncated,
+            "the response: its header name over the bound"
+        );
+        assert_eq!(
+            e.response_headers["x-long"].len(),
+            MAX_HEAD_SIZE - "x-long".len()
+        );
+
+        let mut e = exchange(at_bound, 101);
+        e.bound_heads();
+        assert!(e.request_head_truncated);
+        assert_eq!(
+            e.request_headers["x-big"].len(),
+            100,
+            "cut to what remained"
+        );
+
+        // A path over the bound alone: the path cut, the query and its parameters gone with it, the header left out.
+        let mut e = exchange(MAX_HEAD_SIZE + 10, 1);
+        e.bound_heads();
+        assert!(e.request_head_truncated);
+        assert_eq!(e.request_path.len(), MAX_HEAD_SIZE);
+        assert_eq!(e.request_query.as_deref(), Some(""));
+        assert!(e.request_query_params.is_empty());
+        assert!(e.request_headers.is_empty());
+
+        // Through the store: the key of the endpoint and the target of a failure are bounded too.
+        let store = ObservationStore::new();
+        let mut key = sample_key(&"k".repeat(MAX_HEAD_SIZE * 2));
+        key.sub_path.insert(0, '/');
+        store.record(key, exchange(10, 1));
+        let mut failed = failed_call(None, "svc", b"x");
+        failed.target = format!("http://backend.test/{}", "t".repeat(MAX_HEAD_SIZE));
+        store.record_failure(failed);
+        for call in store.calls(None, "svc") {
+            let detail = store.call(None, "svc", call.id).unwrap();
+            assert!(detail.request.head_truncated, "{call:?}");
+            if let Some(failure) = detail.failure {
+                assert_eq!(failure.target.len(), MAX_HEAD_SIZE);
+            }
+        }
+        assert!(store.keys_for_service(None, "svc")[0].sub_path.len() <= MAX_HEAD_SIZE);
     }
 }

@@ -46,11 +46,14 @@ export function bodyNeedsFile(call) {
 }
 
 /**
- * Why no command is offered for a call, or null: a value other than the body (which goes through its file) holds a
- * character a command must not hold. The server keeps no such value today; a command is refused rather than built.
+ * Why no command is offered for a call, or null: the call was cut outside its body (`cut`), or a value other than the
+ * body (which goes through its file) holds a character a command must not hold (`unsafe`; the server keeps no such
+ * value today, a command is refused rather than built).
  */
 export function commandRefusal(call, origin) {
   const { method, request } = call;
+  // Its path, query or headers were cut at the bound of observation: a command would send another request.
+  if (request.head_truncated) return 'cut';
   const values = [origin, method, request.path, request.query ?? '', ...Object.entries(request.headers).flat()];
   return values.some(holdsUnsafe) ? 'unsafe' : null;
 }

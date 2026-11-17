@@ -188,4 +188,14 @@ describe('ObservedCalls', () => {
     expect(view.queryByTestId('observed-call-command-orders-10')).not.toBeInTheDocument();
     expect(view.queryByTestId('observed-call-copy-button-orders-10')).not.toBeInTheDocument();
   });
+  it('says a call cut outside its body, and offers no command for it', async () => {
+    getObservedCalls.mockResolvedValue([failedSummary]);
+    getObservedCall.mockResolvedValue({ ...failedDetail, request: { ...failedDetail.request, head_truncated: true } });
+    const view = render(ObservedCalls, { props: { serviceName: 'orders' } });
+    await fireEvent.click(view.getByText('Show the calls kept'));
+    await fireEvent.click(await view.findByTestId('observed-call-toggle-orders-9'));
+    expect((await view.findByTestId('observed-call-request-cut-orders-9')).textContent).toContain('16 KiB');
+    expect(view.getByTestId('observed-call-no-command-orders-9').textContent).toContain('cut at the size limit');
+    expect(view.queryByTestId('observed-call-copy-button-orders-9')).not.toBeInTheDocument();
+  });
 });

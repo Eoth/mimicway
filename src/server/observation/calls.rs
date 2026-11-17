@@ -69,6 +69,8 @@ pub struct CallRequest {
     pub host: Option<String>,
     /// By name, for a stable display; one value per name, credentials as `[redacted]`.
     pub headers: BTreeMap<String, String>,
+    /// Whether the path, query, `Host` or headers were cut at `MAX_HEAD_SIZE`: shown as cut, no command offered.
+    pub head_truncated: bool,
     pub body: KeptBody,
 }
 
@@ -76,6 +78,7 @@ pub struct CallRequest {
 pub struct CallResponse {
     pub status: u16,
     pub headers: BTreeMap<String, String>,
+    pub head_truncated: bool,
     pub body: KeptBody,
 }
 
@@ -114,6 +117,7 @@ fn request_of(exchange: &ObservedExchange) -> CallRequest {
         query: exchange.request_query.clone(),
         host: exchange.request_host.clone(),
         headers: sorted(&exchange.request_headers),
+        head_truncated: exchange.request_head_truncated,
         body: KeptBody {
             text: exchange.request_body.clone(),
             truncated: exchange.request_body_truncated,
@@ -135,6 +139,7 @@ impl CallDetail {
             response: Some(CallResponse {
                 status: exchange.response_status,
                 headers: sorted(&exchange.response_headers),
+                head_truncated: exchange.response_head_truncated,
                 body: KeptBody {
                     text: exchange.response_body.clone(),
                     truncated: exchange.response_body_truncated,

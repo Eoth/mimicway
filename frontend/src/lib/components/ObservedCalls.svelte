@@ -108,6 +108,10 @@
   // Why no command is offered for a call, in words.
   function refusal(reason) {
     switch (reason) {
+      case 'cut':
+        return t(
+          'No command is offered for this call: its address or headers were cut at the size limit of observation, and a command would send another request.',
+        );
       default:
         return t(
           'No command is offered for this call: one of its values holds a control character, which a terminal could act on when the command is pasted.',
@@ -157,6 +161,16 @@
       </p>
     {/if}
     <pre class="call-body" data-testid={testid}>{body.text}</pre>
+  {/if}
+{/snippet}
+
+{#snippet headCut(cut, testid)}
+  {#if cut}
+    <p class="call-note" data-testid={testid}>
+      {t(
+        'Cut: the address and headers were longer than observation keeps (16 KiB outside the body); what is shown is their beginning.',
+      )}
+    </p>
   {/if}
 {/snippet}
 
@@ -249,6 +263,7 @@
               {#if detail.operation}
                 <p class="call-note">{t('SOAP operation {0}', detail.operation)}</p>
               {/if}
+              {@render headCut(detail.request.head_truncated, `observed-call-request-cut-${serviceName}-${call.id}`)}
               {@render headerList(detail.request.headers)}
               {@render keptBody(detail.request.body, `observed-call-request-body-${serviceName}-${call.id}`)}
 
@@ -269,6 +284,10 @@
                 {/if}
               {:else if detail.response}
                 <h6>{t('Response {0}', detail.response.status)}</h6>
+                {@render headCut(
+                  detail.response.head_truncated,
+                  `observed-call-response-cut-${serviceName}-${call.id}`,
+                )}
                 {@render headerList(detail.response.headers)}
                 {@render keptBody(detail.response.body, `observed-call-response-body-${serviceName}-${call.id}`)}
               {/if}
