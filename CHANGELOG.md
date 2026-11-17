@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-11-17
+
 ### Added
 - The interface shows the version of Mimicway that answers, at the foot of the page once signed in: what to quote when reporting a problem. The server tells it on a new route, `GET /api/version`, which needs a token when authentication is on, like every route but the four open ones: `GET /api/health`, read by probes without a token, still does not name the version. The interface asks when it loads its data (start, sign-in, import), never before sign-in, and shows nothing in front of a server that does not tell.
 
@@ -225,7 +227,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - Optional Kafka support (Cargo feature `messaging-kafka`, not compiled by default).
 - Accessible Svelte 5 interface (WCAG 2.1 AA), dark mode.
 
-[Unreleased]: https://github.com/Eoth/mimicway/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/Eoth/mimicway/compare/v0.5.2...HEAD
+[0.5.2]: https://github.com/Eoth/mimicway/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/Eoth/mimicway/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/Eoth/mimicway/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/Eoth/mimicway/compare/v0.3.0...v0.4.0
