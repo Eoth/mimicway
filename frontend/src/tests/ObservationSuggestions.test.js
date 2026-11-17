@@ -280,7 +280,7 @@ describe('ObservationSuggestions', () => {
         { type: 'XPath', key: 'Envelope/Body/Book/ref' },
         { type: 'Header', key: 'x-channel' },
       ],
-      list: { items: { type: 'XPath', key: 'Envelope/Body/Book/slot' }, fields: ['date', 'type'] },
+      list: { items: { type: 'XPath', key: 'Envelope/Body/Book/slot' }, fields: ['date', 'type'], max_items: 250 },
       script: 'let items = parse_xml_items(request.body, "Envelope/Body/Book/slot");',
       sample_count: 3,
       response: {
@@ -308,6 +308,9 @@ describe('ObservationSuggestions', () => {
         ),
       ).toBeInTheDocument(),
     );
+    expect(
+      getByText('Its script writes 250 items at most: a longer list gets the response without its blocks.'),
+    ).toBeInTheDocument();
     await fireEvent.click(getByText('Use this suggestion'));
     expect(onUseSuggestion).toHaveBeenCalledWith(
       expect.objectContaining({ script: rule.script, response_mode: 'advanced', response: rule.response }),

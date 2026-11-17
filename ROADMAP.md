@@ -854,7 +854,7 @@ Defects and debts found on the way. They are taken by bundle: the items of a bun
 | Screen reader | E15, E43 | "Accessible" (0.6) |
 | Forms and messages | E8, E12, E19, E21, E31, E32 | "Words anyone can read" (0.6) |
 | Proxy path and suggestions | E7, E34, E35, E36, E46, E59, E61, E64, E65, E66, and E48 once it is unblocked | "Recorded, without personal data" (0.7) |
-| Builders and rule engine | E2, E28, E45, and E9 and E54 once decided | "Guided and explained" (0.7) |
+| Builders and rule engine | E2, E28, E45, and E9, E54 and E67 once decided | "Guided and explained" (0.7) |
 | Tests | E6, E11, E16 | the first theme that touches them |
 | Kafka and TCP | E3, E4 | "Protocols" (1.1) |
 
@@ -1220,3 +1220,14 @@ Size S
 **What.** A setting naming query parameters to redact (with a short default list: `api_key`, `apikey`, `access_token`, `token`, `password`), applied before anything is kept to the query of the request log and of observation, the raw query included, with the parameter's name kept.
 
 **Done when.** A call with `?api_key=secret` through an observed service and a mocked one leaves no `secret` in any answer of the API, the command copied holds `api_key=[redacted]`, and a parameter added to the setting is redacted the same way.
+
+### E67. A rule whose script fails answers as if nothing had happened
+
+Size S. **Decision needed** (what a mock answers when its rule's script fails: an error the caller sees, or the response as today).
+
+**Why.** A script that fails (a limit of the sandbox reached, a runtime error) is logged and gives an empty result: the rule still answers its status, and `{{script.…}}` renders empty (`run_rule_script`, `src/server/intercept.rs`). A suggested rule whose script writes the blocks of a list answers, past the number of items it says it holds (`max_items`), `200` with the text around the list and no block: a caller cannot tell it from an empty list.
+
+**What.** Once decided: either a failing script answers an error (`500`, with a header naming the rule and the limit reached), for every rule, or a rule says how it answers then; the request log marks the call either way.
+
+**Done when.** A rule whose script reaches a limit answers as decided, and the request log shows the failure (test).
+

@@ -15,6 +15,11 @@ use crate::engine::escape::Escaping;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+/// The most items a list may hold in a script (an array of `script_budget.rs`).
+pub(crate) const MAX_LIST_ITEMS: usize = super::script_budget::MAX_ARRAY_SIZE;
+/// The most fields `parse_xml_items` reads, and entries `parse_json` reads, in one request (`script_budget.rs`).
+pub(crate) const MAX_READ_FIELDS: usize = super::script_budget::MAX_MAP_SIZE;
+
 #[derive(Clone)]
 pub struct ScriptEngine {
     engine: Arc<rhai::Engine>,

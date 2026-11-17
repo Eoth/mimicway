@@ -381,6 +381,7 @@
   "{0} request bodies are in another encoding than UTF-8: their fields could not be read, and no rule can read them.": "{0} corps de requête sont dans un autre encodage que l'UTF-8 : leurs champs n'ont pas pu être lus, et aucune règle ne peut les lire.",
   "no condition: {0} ({1} calls)": "sans condition : {0} ({1} appels)",
   "the response repeats {0}": "la réponse reprend {0}",
+  "Its script writes {0} items at most: a longer list gets the response without its blocks.": "Son script écrit {0} éléments au plus : une liste plus longue reçoit la réponse sans ses blocs.",
   "the response writes one block per \"{0}\" of the request, with its {1}": "la réponse écrit un bloc par « {0} » de la requête, avec ses {1}",
   "{0} \"{1}\"": "{0} « {1} »",
   "; ": " ; ",

@@ -173,6 +173,17 @@ fn a_response_that_differs_elsewhere_keeps_one_rule_per_value() {
     );
 }
 
+/// The request of `book_call`, whole: an observed exchange keeps 16 KiB of it.
+fn book_request(slots: &[(&str, &str)]) -> String {
+    let request: String = slots
+        .iter()
+        .map(|(date, kind)| {
+            format!("<o:slot><o:date>{date}</o:date><o:type>{kind}</o:type></o:slot>")
+        })
+        .collect();
+    envelope("Book", &format!("<o:ref>B1</o:ref>{request}"))
+}
+
 fn book_call(slots: &[(&str, &str)]) -> ObservedExchange {
     let request: String = slots
         .iter()
@@ -243,12 +254,14 @@ fn a_response_with_a_block_per_item_of_the_request_gets_a_script_that_writes_the
     ]);
     let suggestions = suggest_for_service(&endpoints);
     let rule = echo_rule(&suggestions);
+    let list = rule.list.as_ref().expect("a list");
     assert_eq!(
-        rule.list,
-        Some(RepeatedList {
-            items: ConditionSource::XPath("Envelope/Body/Book/slot".into()),
-            fields: vec!["date".into(), "type".into()],
-        })
+        list.items,
+        ConditionSource::XPath("Envelope/Body/Book/slot".into())
+    );
+    assert_eq!(
+        list.fields,
+        vec!["date".into(), "type".into()] as Vec<String>
     );
     assert!(rule.script.is_some());
     assert_eq!(crate::server::suggestion::replay::check(&endpoints), Ok(()));
@@ -308,13 +321,9 @@ fn a_json_array_answered_with_an_object_per_item_gets_a_script_too() {
     ]);
     let suggestions = suggest_for_service(&endpoints);
     let rule = echo_rule(&suggestions);
-    assert_eq!(
-        rule.list,
-        Some(RepeatedList {
-            items: ConditionSource::JsonPointer("/lines".into()),
-            fields: vec!["sku".into(), "qty".into()],
-        })
-    );
+    let list = rule.list.as_ref().expect("a list");
+    assert_eq!(list.items, ConditionSource::JsonPointer("/lines".into()));
+    assert_eq!(list.fields, vec!["sku".into(), "qty".into()] as Vec<String>);
     assert_eq!(
         rule.repeats,
         vec![ConditionSource::JsonPointer("/order/ref".into())]
@@ -408,11 +417,39 @@ fn long_lists(items: usize) -> Vec<ObservedExchange> {
 }
 
 #[test]
-fn a_list_of_a_hundred_items_stays_within_the_script_budget() {
-    // The script runs on every call within the operations a script may run (script_budget.rs): about 60 per item of
-    // two fields. Past that, the observed calls are not rendered back and nothing is suggested, as the docs say.
-    let suggestions = suggest_for_service(&endpoints(long_lists(100)));
-    assert!(echo_rule(&suggestions).list.is_some());
+fn a_list_rule_says_how_many_items_its_script_writes() {
+    // The script runs within the limits of any script (script_budget.rs): two fields per item read by
+    // `parse_xml_items`, 500 fields at most, hold 250 items. The rule says so, and says it right.
+    let suggestions = suggest_for_service(&endpoints(long_lists(10)));
+    let rule = echo_rule(&suggestions);
+    let max_items = rule.list.as_ref().unwrap().max_items;
+    assert_eq!(max_items, 250);
+    let slots = |n: usize| -> Vec<(String, String)> {
+        (0..n)
+            .map(|j| (format!("2027-01-{j:04}"), format!("T{}", j % 7)))
+            .collect()
+    };
+    for (n, whole) in [(max_items, true), (max_items + 1, false)] {
+        let slots = slots(n);
+        let refs: Vec<(&str, &str)> = slots
+            .iter()
+            .map(|(a, b)| (a.as_str(), b.as_str()))
+            .collect();
+        let ctx = ScriptContext {
+            body: book_request(&refs),
+            headers: HashMap::new(),
+            query_params: HashMap::new(),
+            path_params: HashMap::new(),
+        };
+        assert_eq!(
+            engine()
+                .execute(rule.script.as_ref().unwrap(), &ctx)
+                .is_ok(),
+            whole,
+            "{n} items"
+        );
+    }
+    // Lists observed past it are not generalized.
     let suggestions = suggest_for_service(&endpoints(long_lists(300)));
     let rules = crate::server::suggestion::replay::rules_of(&suggestions[0].outcome);
     assert!(

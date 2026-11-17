@@ -356,6 +356,14 @@
                 <span class="suggestion-status">{rule.response.status}</span>
                 <code class="suggestion-body">{bodyPreview(rule)}</code>
               </div>
+              {#if rule.list?.max_items != null}
+                <p class="suggestion-redirect" data-testid="observation-suggestion-max-items-{serviceName}-{i}-{j}">
+                  {t(
+                    'Its script writes {0} items at most: a longer list gets the response without its blocks.',
+                    rule.list.max_items,
+                  )}
+                </p>
+              {/if}
               {#if rule.redirected_to?.length}
                 <p class="suggestion-redirect" data-testid="observation-suggestion-redirect-{serviceName}-{i}-{j}">
                   {tCount(

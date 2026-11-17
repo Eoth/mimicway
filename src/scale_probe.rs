@@ -115,14 +115,15 @@ pub const FAMILIES: &[Family] = &[
         env: &[("TRAFFIC_OBSERVATION_MAX_BODY_SIZE", "1048576")],
         run: suggestion_bodies,
     },
-    // A list read side by side in six responses, then checked by running its script on each call. 4n + 2 items stay
-    // within what a script may run (10,000 operations, about 60 per item of two fields).
+    // A list read side by side in sixteen responses, then checked by running its script on each call. 4n + 2 items stay
+    // within what a script may read (500 fields, 250 items of two), and the one run that measures the most items a
+    // script writes (at 250 items, whatever n) stays small beside the runs on the calls.
     Family {
         name: "suggestion-lists",
-        n: 28,
+        n: 60,
         growth: Growth::Linear,
-        about: "suggestions from 6 calls of a SOAP operation whose response holds a block per item of the request, each request holding n to n + 2 items",
-        env: &[],
+        about: "suggestions from 16 calls of a SOAP operation whose response holds a block per item of the request, each request holding n to n + 2 items",
+        env: &[("TRAFFIC_OBSERVATION_MAX_BODY_SIZE", "1048576")],
         run: suggestion_lists,
     },
     // 4n stays under 256 values, where Rhai's string interner starts to evict (`throttle_cache`): a step at a threshold,
@@ -625,7 +626,7 @@ fn suggestion_lists(n: usize) {
             sub_path: "/ws/booking".into(),
             operation: None,
         },
-        (0..6).map(call).collect::<Vec<_>>(),
+        (0..16).map(call).collect::<Vec<_>>(),
     )];
     warm_then_measure(&mut || {
         let suggestions = crate::server::suggestion::suggest_for_service(&endpoints);

@@ -62,6 +62,10 @@ pub struct RepeatedList {
     pub items: ConditionSource,
     /// The fields of an item that each block repeats, in the order of a block.
     pub fields: Vec<String>,
+    /// The most items the script writes within the limits of a script (`script_budget.rs`), measured on requests
+    /// built like the observed ones, their values as long as the longest seen: past it, the script stops and the
+    /// response holds the text around the list without its blocks.
+    pub max_items: usize,
 }
 
 /// The response of a rule that repeats its request, checked against every call it comes from.
@@ -1287,6 +1291,7 @@ fn infer_list(
     if !renders_back(&response, Some(&script), attempt.calls) {
         return None;
     }
+    let max_items = most_items(&script, source, fields, read);
     Some(Repetition {
         body: response.body,
         fields: attempt.repeated(&pieces),
@@ -1296,9 +1301,105 @@ fn infer_list(
                 ListSource::Json(pointer) => ConditionSource::JsonPointer(pointer.clone()),
             },
             fields: used,
+            max_items,
         }),
         script: Some(script),
     })
+}
+
+/// A request body holding `n` items at `source`, each field with a value of the length of `lengths`.
+fn request_with(source: &ListSource, fields: &[(String, usize)], n: usize) -> String {
+    match source {
+        ListSource::Xml(path) => {
+            let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+            let Some((item, parents)) = segments.split_last() else {
+                return String::new();
+            };
+            let fields: String = fields
+                .iter()
+                .map(|(name, length)| format!("<{name}>{}</{name}>", "x".repeat(*length)))
+                .collect();
+            let mut body: String = parents.iter().map(|p| format!("<{p}>")).collect();
+            for _ in 0..n {
+                body.push_str(&format!("<{item}>{fields}</{item}>"));
+            }
+            body.extend(parents.iter().rev().map(|p| format!("</{p}>")));
+            body
+        }
+        ListSource::Json(pointer) => {
+            let item: serde_json::Map<String, serde_json::Value> = fields
+                .iter()
+                .map(|(name, length)| (name.clone(), "x".repeat(*length).into()))
+                .collect();
+            let mut value = serde_json::Value::Array(vec![item.into(); n]);
+            for segment in pointer
+                .split('/')
+                .skip(1)
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+            {
+                let key = segment.replace("~1", "/").replace("~0", "~");
+                value = match key.parse::<usize>() {
+                    Ok(index) if index < 16 => {
+                        let mut array = vec![serde_json::Value::Null; index + 1];
+                        array[index] = value;
+                        serde_json::Value::Array(array)
+                    }
+                    _ => serde_json::json!({ key: value }),
+                };
+            }
+            value.to_string()
+        }
+    }
+}
+
+/// The most items `script` writes for a request like the observed ones (`RepeatedList::max_items`): the largest `n`
+/// whose request the engine runs it on without reaching a limit. The fields a script may read bound it from above;
+/// one run there tells whether nothing else does (the usual case), else halving below it, in about ten runs.
+fn most_items(
+    script: &str,
+    source: &ListSource,
+    fields: &[String],
+    read: &[Vec<BTreeMap<String, String>>],
+) -> usize {
+    let lengths: Vec<(String, usize)> = fields
+        .iter()
+        .map(|f| {
+            let longest = read
+                .iter()
+                .flatten()
+                .filter_map(|item| item.get(f).map(String::len))
+                .max()
+                .unwrap_or(1);
+            (f.clone(), longest.max(1))
+        })
+        .collect();
+    let runs = |n: usize| {
+        let ctx = ScriptContext {
+            body: request_with(source, &lengths, n),
+            headers: HashMap::new(),
+            query_params: HashMap::new(),
+            path_params: HashMap::new(),
+        };
+        engine().execute(script, &ctx).is_ok()
+    };
+    let bound = crate::engine::script::MAX_LIST_ITEMS
+        .min(crate::engine::script::MAX_READ_FIELDS / fields.len().max(1));
+    if runs(bound) {
+        return bound;
+    }
+    let (mut low, mut high) = (0, bound);
+    // `runs(low)` holds and `runs(high)` does not.
+    while high - low > 1 {
+        let middle = low + (high - low) / 2;
+        if runs(middle) {
+            low = middle;
+        } else {
+            high = middle;
+        }
+    }
+    low
 }
 
 /// The contexts of the holes of a response with a list: those of `pieces` (the list among them, at `list`), and those
