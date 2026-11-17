@@ -208,13 +208,19 @@ fn xml_fields(body: &str) -> BodyReading {
         }
     }
 
-    BodyReading {
-        fields,
-        operation: match operations {
-            Operations::One(name) => Some(name),
-            Operations::None | Operations::Several => None,
-        },
-    }
+    // The operation only when the reader of conditions finds it too: a body malformed or nested too deep past the
+    // operation's start tag names an operation this reading saw, and that `Envelope/Body/<operation>` exists never
+    // finds (it reads a value up to the first end tag, and stops at the first malformed part).
+    let operation = match operations {
+        Operations::One(name)
+            if MatchEngine::extract_xpath(body.as_bytes(), &format!("Envelope/Body/{name}"))
+                .is_some() =>
+        {
+            Some(name)
+        }
+        Operations::One(_) | Operations::None | Operations::Several => None,
+    };
+    BodyReading { fields, operation }
 }
 
 /// The scalar fields of a JSON body (strings, numbers, booleans; `null` left out), at any depth up to

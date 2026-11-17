@@ -202,18 +202,21 @@ fn reading_stops_where_the_xpath_reader_stops() {
     // A malformed part: what came before is kept, what comes after is not read.
     let reading = read("<r><a>1</a><b>2</c><d>3</d></r>", false);
     assert_eq!(reading.fields, vec![xpath("r/a", "1")]);
-    // An element nested past the limit of the XML readers ends the reading, the operation included.
+    // An element nested past the limit of the XML readers ends the reading. The reader of conditions finds no
+    // `Envelope/Body/A` there (it stops at that element, before any end tag): no operation either.
     let deep = format!(
         "<Envelope><Body><A>{}</A><B/></Body></Envelope>",
         "<x>".repeat(XML_DEPTH_LIMIT)
     );
     let reading = read(&deep, false);
-    assert_eq!(reading.operation.as_deref(), Some("A"));
-    assert!(!matches(
-        &ConditionSource::XPath("Envelope/Body/B".into()),
-        Operator::Exists,
-        &deep
-    ));
+    assert_eq!(reading.operation, None);
+    for operation in ["A", "B"] {
+        assert!(!matches(
+            &ConditionSource::XPath(format!("Envelope/Body/{operation}")),
+            Operator::Exists,
+            &deep
+        ));
+    }
 }
 
 // --- Generated documents

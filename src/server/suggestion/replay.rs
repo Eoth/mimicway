@@ -72,8 +72,9 @@ fn answer(
 /// Suggests rules for `endpoints`, saves all of them in the order given, and replays every observed call of a route
 /// that got rules: each must get back the status and the body the backend sent, and each route's pattern must match
 /// the paths it lists. A route with more paths than are listed is skipped (its members are not all known). A suggestion
-/// for a SOAP operation stands for the calls in which the reader of XPath conditions finds that operation; the calls it
-/// left out must all be server errors, as many as it says, and are not replayed.
+/// for a SOAP operation stands for the calls whose body suggestions read that operation in (`request_operation`), as
+/// observation files them, not the calls its rules match: a call they do not match fails rather than being left out of
+/// the replay. The calls a suggestion left out must all be server errors, as many as it says, and are not replayed.
 pub(crate) fn check(endpoints: &[(ObservationKey, Vec<ObservedExchange>)]) -> Result<(), String> {
     let received: Vec<Vec<Vec<u8>>> = endpoints
         .iter()
@@ -113,10 +114,6 @@ pub(crate) fn check_received(
         {
             continue;
         }
-        let operation = suggestion
-            .operation
-            .as_ref()
-            .map(|name| format!("Envelope/Body/{name}"));
         let calls: Vec<(&ObservationKey, &ObservedExchange, &[u8])> = endpoints
             .iter()
             .zip(received)
@@ -129,10 +126,9 @@ pub(crate) fn check_received(
                     .zip(bodies)
                     .map(move |(e, b)| (key, e, b.as_slice()))
             })
-            .filter(|(_, _, body)| {
-                operation
-                    .as_ref()
-                    .is_none_or(|path| MatchEngine::extract_xpath(body, path).is_some())
+            .filter(|(_, e, _)| {
+                suggestion.operation.is_none()
+                    || super::request_operation(e).as_ref() == suggestion.operation.as_ref()
             })
             .collect();
         for left in &suggestion.left_out {

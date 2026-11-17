@@ -261,11 +261,28 @@ struct BodyCall {
     odd: Option<u16>,
     /// Sent in ISO-8859-1 rather than UTF-8: the bytes the mock receives are not the text observation keeps.
     latin1: bool,
+    /// A SOAP body broken after the operation's start tag: its end tag lost (`false`), or elements nested past the
+    /// limit of the XML readers right after it (`true`).
+    broken: Option<bool>,
 }
 
 /// The bytes of `call`'s request body, as the client sends them.
 fn request_bytes(call: &BodyCall, seq: usize) -> Vec<u8> {
-    let text = request_body(call, seq);
+    let mut text = request_body(call, seq);
+    if call.soap {
+        let operation = BODY_OPERATIONS[call.operation];
+        let start = format!("<o:{operation}>");
+        let end = format!("</o:{operation}>");
+        match call.broken {
+            Some(false) => text = text.replace(&end, ""),
+            Some(true) => {
+                let depth = crate::engine::matcher::XML_DEPTH_LIMIT + 10;
+                let deep = format!("{start}{}{}", "<o:x>".repeat(depth), "</o:x>".repeat(depth));
+                text = text.replace(&start, &deep);
+            }
+            None => {}
+        }
+    }
     if !call.latin1 {
         return text.into_bytes();
     }
@@ -323,9 +340,10 @@ fn arb_body_calls() -> impl Strategy<Value = Vec<(String, ObservedExchange, Vec<
         0usize..3,
         prop::option::weighted(0.1, prop::sample::select(vec![500u16, 503, 404])),
         prop::bool::weighted(0.1),
+        prop::option::weighted(0.08, any::<bool>()),
     )
         .prop_map(
-            |(soap, prefix, operation, value, writing, items, odd, latin1)| BodyCall {
+            |(soap, prefix, operation, value, writing, items, odd, latin1, broken)| BodyCall {
                 soap,
                 prefix,
                 operation,
@@ -334,6 +352,7 @@ fn arb_body_calls() -> impl Strategy<Value = Vec<(String, ObservedExchange, Vec<
                 items,
                 odd,
                 latin1,
+                broken,
             },
         );
     (

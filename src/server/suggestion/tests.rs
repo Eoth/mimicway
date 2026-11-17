@@ -1065,3 +1065,24 @@ fn a_body_that_is_not_utf8_gives_no_field_nor_operation_and_is_counted() {
     assert_eq!(suggestions[0].non_utf8_request_bodies, 2);
     assert_eq!(super::replay::check_received(&endpoints, &[sent]), Ok(()));
 }
+
+#[test]
+fn an_operation_the_condition_reader_does_not_find_is_no_operation() {
+    // Malformed past the operation's start tag, or nested deeper than the readers follow: `Envelope/Body/Ping` exists
+    // is false for these bodies, so a rule carrying it would answer none of them.
+    let deep = format!(
+        "<Envelope><Body><Ping>{}{}</Ping></Body></Envelope>",
+        "<a>".repeat(1100),
+        "</a>".repeat(1100)
+    );
+    for request in ["<Envelope><Body><Ping></Body></Envelope>", deep.as_str()] {
+        let calls: Vec<ObservedExchange> = (0..3)
+            .map(|_| posted(request, 200, &soap_answer("<Pong/>")))
+            .collect();
+        let endpoints = vec![(key("POST", "/ws/OrderService"), calls)];
+        let suggestions = suggest_for_service(&endpoints);
+        assert_eq!(suggestions.len(), 1, "{suggestions:?}");
+        assert_eq!(suggestions[0].operation, None, "{}", &request[..40]);
+        assert_eq!(super::replay::check(&endpoints), Ok(()));
+    }
+}
