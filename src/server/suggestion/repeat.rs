@@ -382,14 +382,24 @@ fn contexts(format: Format, skeleton: &[u8]) -> Option<Vec<Context>> {
     }
 }
 
+/// A JSON hole out of any string holds a whole value only between `:`, `[` or `,` and `,`, `}`, `]` or the end, blanks
+/// skipped: next to `-`, a digit or `.00`, a value would join a token of its own (`--3`, `-"abc"`, `7.00`).
+fn whole_json_value(skeleton: &[u8], at: usize) -> bool {
+    let blank = |b: &&u8| matches!(b, b' ' | b'\t' | b'\n' | b'\r');
+    let before = skeleton[..at].iter().rev().find(|b| !blank(b));
+    let after = skeleton[at + 1..].iter().find(|b| !blank(b));
+    matches!(before, Some(b':' | b'[' | b',')) && matches!(after, None | Some(b',' | b'}' | b']'))
+}
+
 fn json_contexts(skeleton: &[u8]) -> Option<Vec<Context>> {
     let (mut in_string, mut escaped) = (false, false);
     let mut found = Vec::new();
-    for &b in skeleton {
+    for (at, &b) in skeleton.iter().enumerate() {
         match (b, in_string, escaped) {
             (0, true, true) => return None,
             (0, true, false) => found.push(Context::JsonString),
-            (0, false, _) => found.push(Context::JsonBare),
+            (0, false, _) if whole_json_value(skeleton, at) => found.push(Context::JsonBare),
+            (0, false, _) => return None,
             (_, true, true) => escaped = false,
             (b'\\', true, false) => escaped = true,
             (b'"', true, false) => in_string = false,

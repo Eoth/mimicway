@@ -594,3 +594,47 @@ fn an_identifier_of_the_path_query_or_headers_repeated_as_a_json_value_stays_wel
         panic!("{failure}");
     }
 }
+
+#[test]
+fn a_number_next_to_another_token_of_json_is_not_generalized() {
+    // `{"balance":-5}` for `/accounts/5`: a value written there joins the `-` (`--3`, `-"abc"`); so does one before
+    // `.00`, or after a digit. Not generalized: the rules of before stay.
+    for shape in [
+        "{{\"balance\":-{}}}",
+        "{{\"price\":{}.00}}",
+        "{{\"code\":1{}}}",
+    ] {
+        let endpoints: Vec<(ObservationKey, Vec<ObservedExchange>)> = ["5", "7", "9"]
+            .iter()
+            .map(|id| {
+                let e = ObservedExchange::new(
+                    HashMap::new(),
+                    HashMap::new(),
+                    b"",
+                    None,
+                    200,
+                    HashMap::new(),
+                    shape
+                        .replace("{{", "{")
+                        .replace("}}", "}")
+                        .replacen("{}", id, 1)
+                        .as_bytes(),
+                    Some("application/json".into()),
+                );
+                let key = ObservationKey {
+                    group_name: None,
+                    service_name: "svc".into(),
+                    method: "GET".into(),
+                    sub_path: format!("/accounts/{id}"),
+                    operation: None,
+                };
+                (key, vec![e])
+            })
+            .collect();
+        for suggestion in suggest_for_service(&endpoints) {
+            for rule in rules_of(&suggestion.outcome) {
+                assert!(rule.repeats.is_empty(), "{shape}: {rule:?}");
+            }
+        }
+    }
+}
