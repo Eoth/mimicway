@@ -15,6 +15,8 @@ vi.mock('../lib/api.js', () => ({
   getObservationStatus: vi.fn(),
   getServiceSuggestions: vi.fn(),
   getLinkedBackends: vi.fn(),
+  getObservedCalls: vi.fn(),
+  getObservedCall: vi.fn(),
 }));
 
 beforeEach(() => {

@@ -19,6 +19,8 @@
   // calls those directly, past Mimicway. "Create a proxy service in front of it" opens the usual service form filled
   // (onCreateService, App.svelte), never a one-click creation; once that service exists, the server writes the
   // suggested rules with its address in Mimicway instead of the backend's.
+  //
+  // The calls kept, failed relays included, are read one by one below the suggestions (ObservedCalls.svelte).
   import {
     observeService,
     unobserveService,
@@ -27,6 +29,7 @@
     getLinkedBackends,
   } from '../api.js';
   import { t, tCount } from '../i18n.svelte.js';
+  import ObservedCalls from './ObservedCalls.svelte';
 
   let {
     serviceName,
@@ -416,6 +419,8 @@
           </ul>
         </div>
       {/if}
+
+      <ObservedCalls {serviceName} {groupName} />
     {/if}
 
     {#if error}

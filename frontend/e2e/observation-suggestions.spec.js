@@ -65,6 +65,8 @@ test.describe('Observed proxy traffic and suggested rules', () => {
 
       await toggleBtn.click();
       await expect(toggleBtn).toHaveText('Stop observing');
+      // Centred, so that the panel, longer in French, stays whole after the switch of language.
+      await panel.evaluate((element) => element.scrollIntoView({ block: 'center', behavior: 'instant' }));
       await docsScreenshot(page, 'observation-panel-on.png', '[data-testid="observation-panel-orders-proxy"]');
 
       // Real proxied traffic, id=1 and id=2 three times each: six samples of the route, above the three a suggestion

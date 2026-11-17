@@ -127,6 +127,16 @@ export function getLinkedBackends(name, groupName = null) {
   return request('GET', servicePath(name, groupName, '/linked-backends'));
 }
 
+// The calls observation kept for a service, the most recent first: each relayed exchange, and each relay that got no
+// response (`failure` says why), with its request. One call, whole, by its `id`; a call no longer kept answers 404.
+export function getObservedCalls(name, groupName = null) {
+  return request('GET', servicePath(name, groupName, '/observed-calls'));
+}
+
+export function getObservedCall(name, groupName, id) {
+  return request('GET', servicePath(name, groupName, `/observed-calls/${encodeURIComponent(id)}`));
+}
+
 // Config
 export function getConfig() {
   return request('GET', '/config');
