@@ -154,15 +154,15 @@ describe('what the command says', () => {
       'content-type: text/xml',
       '--header',
       'x-empty;',
-      '--data-binary',
+      '--data-raw',
       '<ping/>',
       'http://localhost:7342/orders/ws?a=1&a=2',
     ]);
   });
 
-  it('names no method curl would choose itself, and keeps an empty query', () => {
+  it('names no method curl would choose itself, and sends an empty query as none, as curl would', () => {
     const get = { ...kept({ headers: {}, body: { text: '', content_type: null }, query: '' }), method: 'GET' };
-    expect(curlArgs(get, 'http://h')).toEqual(['--globoff', 'http://h/orders/ws?']);
+    expect(curlArgs(get, 'http://h')).toEqual(['--globoff', 'http://h/orders/ws']);
     const head = { ...get, method: 'HEAD', request: { ...get.request, query: null } };
     expect(curlArgs(head, 'http://h')).toEqual(['--globoff', '--head', 'http://h/orders/ws']);
     const getWithBody = { ...kept({ headers: {} }), method: 'GET' };
@@ -178,9 +178,22 @@ describe('what the command says', () => {
     expect(bodyFileName(kept({ body: { text: 'x', content_type: null } }))).toBe('request-body-7.txt');
   });
 
+  it('never hands curl a body or a header it could read as a file', () => {
+    const args = curlArgs(
+      kept({
+        headers: { '@/etc/passwd': 'x', 'x-ok': '@/etc/hostname' },
+        body: { text: '@/proc/self/environ', content_type: null },
+      }),
+      'http://h',
+    );
+    expect(args).toContain('--data-raw');
+    expect(args).not.toContain('--data-binary');
+    expect(args.filter((a, i) => args[i - 1] === '--header')).toEqual(['x-ok: @/etc/hostname']);
+  });
+
   it('writes one option per line', () => {
     expect(curlCommand(kept({ headers: {} }), 'http://h')).toBe(
-      "curl --globoff \\\n  --request POST \\\n  --data-binary '<ping/>' \\\n  'http://h/orders/ws?a=1&a=2'",
+      "curl --globoff \\\n  --request POST \\\n  --data-raw '<ping/>' \\\n  'http://h/orders/ws?a=1&a=2'",
     );
   });
 });

@@ -83,7 +83,7 @@ describe('ObservedCalls', () => {
     expect(view.getByTestId('observed-call-request-body-orders-9').textContent).toBe("<GetStatus ref='1'/>");
     const command = view.getByTestId('observed-call-command-orders-9').textContent;
     expect(command).toContain("--header 'authorization: [redacted]'");
-    expect(command).toContain(`--data-binary '<GetStatus ref='\\''1'\\''/>'`);
+    expect(command).toContain(`--data-raw '<GetStatus ref='\\''1'\\''/>'`);
     expect(command).toContain(`'${window.location.origin}/orders/ws?a=1'`);
     expect(view.getByText(/put the real values back/)).toBeInTheDocument();
 
