@@ -116,18 +116,31 @@ function scrollIntoFrame(selector) {
   });
 }
 
-// Content that arrives while the subject is framed (a list fetched from the API, shown above it) can push it out of
-// view again: it is framed again, for FRAMING_MS at most, before the call fails. A screen already framed is not scrolled, and keeps its position and its open popups.
-const FRAMING_MS = 2000;
+// Content that arrives while the subject is framed (a list fetched from the API, a warning computed by the server,
+// shown above it) pushes it out of view again, some time after the screen looked ready. So a subject counts as framed
+// only once it has been measured twice in a row, STILL_MS apart, at the same place and entirely in view: a subject
+// that moves is framed again, for FRAMING_MS at most, before the call fails. A screen already framed is not scrolled,
+// and keeps its position and its open popups.
+const FRAMING_MS = 5000;
+const STILL_MS = 150;
+
+const sameBox = (a, b) => a.top === b.top && a.bottom === b.bottom && a.left === b.left && a.right === b.right;
 
 async function frameSubject(page, filename, subject, language) {
   const deadline = Date.now() + FRAMING_MS;
-  for (let attempt = 0; ; attempt++) {
+  let framed = null;
+  for (;;) {
     const box = await page.evaluate(subjectBox, subject);
-    if (box.problem || fitsInView(box) || Date.now() > deadline) break;
-    if (attempt > 0) await page.waitForTimeout(100);
-    await page.evaluate(scrollIntoFrame, subject);
-    await nextFrames(page);
+    if (box.problem || Date.now() > deadline) break;
+    if (!fitsInView(box)) {
+      framed = null;
+      await page.evaluate(scrollIntoFrame, subject);
+      await nextFrames(page);
+      continue;
+    }
+    if (framed && sameBox(framed, box)) return;
+    framed = box;
+    await page.waitForTimeout(STILL_MS);
   }
   await assertSubjectInView(page, filename, subject, language);
 }
