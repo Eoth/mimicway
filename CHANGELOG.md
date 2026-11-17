@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-11-17
+
 ### Added
 - Template pipes and script functions that write a value inside a document, whatever the value: `xml_text` (text of an XML element), `xml_attr` (attribute value), `cdata` (inside a CDATA section, `]]>` split in two sections), `json_string` (inside a JSON string, control characters included) and `json_value` (out of any string: a text that is exactly a JSON number as it is, any other as a JSON string).
 - The calls of an observed service can be read one by one, failed relays included. The observation panel lists the calls kept, the most recent first, and opens one in place: its request (method, path, query, headers, body) and the backend's response, or why no response came (target refused by `PROXY_ALLOWED_TARGETS`, backend unreachable, no answer in time, response cut off), in plain words. A relay that fails is now kept with its request, where observation kept nothing and the request log only a line: in a list of its own, bounded across all observed services by `TRAFFIC_OBSERVATION_MAX_FAILED_CALLS` (new setting, 100 by default), so that a backend that stays down never pushes a good sample out, and never read by suggestions (a 502 written by Mimicway is not an answer of the backend). A call can be copied as a `curl` command, which sends it again through Mimicway, and its request body downloaded as kept; a body cut at `TRAFFIC_OBSERVATION_MAX_BODY_SIZE` is shown as cut, with its real size, and a body that was not UTF-8 is said not to be the original byte for byte. Nothing refreshes by itself. New routes: `GET …/{name}/observed-calls` and `GET …/{name}/observed-calls/{id}`, with and without a group, under the same right as the suggestions.
@@ -216,7 +218,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - Optional Kafka support (Cargo feature `messaging-kafka`, not compiled by default).
 - Accessible Svelte 5 interface (WCAG 2.1 AA), dark mode.
 
-[Unreleased]: https://github.com/Eoth/mimicway/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/Eoth/mimicway/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/Eoth/mimicway/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/Eoth/mimicway/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/Eoth/mimicway/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/Eoth/mimicway/compare/v0.2.0...v0.3.0
