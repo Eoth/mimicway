@@ -93,12 +93,35 @@ The address of Mimicway is written in the body as `{{header.x-forwarded-proto | 
 
 Only the **suggested rules** are rewritten. The traffic Mimicway relays is never changed: while it is a proxy, the directory still answers the real addresses.
 
+## Reading the calls kept
+
+What observation kept can be read call by call, not only through the rules it suggests. Under the suggestions, **"Show the calls kept"** lists the calls relayed while the service is observed, the most recent first: the time, the method, the path with its query, and the backend's status, or why no response came. **"Details"** opens a call in place: its request (method, path, query, headers, body) and the backend's response (status, headers, body). As for the suggestions, nothing refreshes in the background: **"Refresh the calls"** reads the list again.
+
+A relay that fails is kept too, with its request: when the backend is stopped, does not answer in time, cuts its response short, or when the target is outside `PROXY_ALLOWED_TARGETS`, the caller gets `502` (or `504` after a timeout), and the call shows the request as it was sent, the reason in plain words, the target Mimicway aimed at and the error of the network in its own words. These calls are kept in a list of their own (`TRAFFIC_OBSERVATION_MAX_FAILED_CALLS`, across all observed services), so that a backend that stays down never pushes the good samples out, and they **never** feed a suggestion: a `502` written by Mimicway is not an answer of the backend.
+
+An open call can be sent again by hand:
+
+- **"Copy the command"** copies a `curl` command, for a POSIX shell (sh, bash, zsh), that sends the same request to Mimicway, at the address of the page, which relays it to the backend: once the backend is back, the command replays the call, and observation keeps the replay. The command is shown above the button, to select by hand where the browser cannot copy (a page served over plain HTTP from another machine). Every value is quoted for the shell, whatever it holds (quotes, `$`, backticks, line breaks, any language).
+- **"Download the request body"** saves the body as it was kept.
+
+What the command and the file cannot hold, the screen says:
+
+- a credential header is kept as `[redacted]`, and stays so in the command: put the real value back before running it;
+- a body cut at `TRAFFIC_OBSERVATION_MAX_BODY_SIZE` is shown as cut, with its real size and the setting to raise; the command sends the part kept;
+- a body in another encoding than UTF-8 is kept as text, each byte that is not UTF-8 replaced: what is shown, copied and downloaded is not the original byte for byte;
+- a body holding a NUL character cannot be written in a command line: the command reads it from the downloaded file.
+
+Through the API, `GET /api/services/{name}/observed-calls` (or `/api/groups/{group}/services/{name}/observed-calls`) lists the calls, each with its `id`, and `GET …/observed-calls/{id}` gives one whole (`request`, then `response`, or `failure` with its `cause`: `refused_target`, `unreachable`, `timeout`, `interrupted` or `other`). Both ask for the same right on the service as its suggestions.
+
 ## Requirements and limits
 
 - Only for a service in **pure proxy** mode (`is_mocked` off): "Observe this service" is refused otherwise, since observation only makes sense on traffic relayed to a real backend.
 - A call is captured only when the sizes of its request and response are known in advance (a `Content-Length` header, or no body). A response streamed in chunks (`Transfer-Encoding: chunked`, no announced size) is still relayed normally but not observed.
 - A path of more than 32 segments is not suggested.
 - The number of observations kept is bounded, per path (per operation for a SOAP address) and overall (see the `TRAFFIC_OBSERVATION_*` settings in the README): beyond that, the oldest are replaced by the newest, so memory never grows without limit. At most 32 operations of one path are kept apart; the calls of any further operation share the path's own place.
-- Credentials are never captured: `Authorization`, cookies, API-key headers and any header listed in `REDACT_HEADERS` are kept as `[redacted]`, and suggested rules never copy them.
+- A request whose body is too large to buffer (`TRAFFIC_OBSERVATION_MAX_BUFFER_SIZE`) or of unknown size is relayed as it comes and not kept, whether its relay succeeds or fails.
+- Failed relays are bounded apart from the exchanges (`TRAFFIC_OBSERVATION_MAX_FAILED_CALLS`, 100 by default, across all observed services): beyond that, the oldest goes first.
+- A call keeps one value per header name, and leaves out a header whose value is not plain ASCII text.
+- Credentials are never captured: `Authorization`, cookies, API-key headers and any header listed in `REDACT_HEADERS` are kept as `[redacted]` before anything is kept, and suggested rules and copied commands never hold them. **Not redacted**: a credential carried in the query string (`?api_key=…`) or in a body (a password in a SOAP envelope), and a header that carries one under a name the list does not know (add it to `REDACT_HEADERS`). Whoever may read the service's suggestions reads them in its calls.
 - Observation stops by itself when its service is deleted, renamed or moved to another group, and on every full reset of the configuration. What it observed is then forgotten, as when you stop observing: observing again starts from nothing, and a service created later under the same name never inherits another one's traffic.
 - Like the [request log](request-log.md), nothing is written to disk: a restart of Mimicway starts with no observation.

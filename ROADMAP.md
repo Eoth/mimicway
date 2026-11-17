@@ -48,22 +48,12 @@ At the maintainers' request, templates in response headers then server-sent even
 
 ## Asked first: a chain of services, observed end to end
 
-A directory answers with the addresses of the services it knows, each address is a SOAP service, and the application calls them one after the other. Observing such a chain today stops at the first step. Tried on 2026-11-16 against a local directory and a local SOAP backend (version 0.5.0 plus `develop`): ten calls to four names of a directory, two of which give the same address, were answered "no field explains the responses" (now three rules, one of them accepting two names); nine calls to three operations of one SOAP endpoint, the same (now one suggestion per operation); an operation that repeats the reference of its request, or answers a block per item of a list, one rule per value seen (now one rule that reads them from the request); a call whose relay fails leaves a line in the request log and nothing of what was sent. These items make the chain work without a rule written by hand; they ship together, before the releases below.
+A directory answers with the addresses of the services it knows, each address is a SOAP service, and the application calls them one after the other. Observing such a chain today stops at the first step. Tried on 2026-11-16 against a local directory and a local SOAP backend (version 0.5.0 plus `develop`): ten calls to four names of a directory, two of which give the same address, were answered "no field explains the responses" (now three rules, one of them accepting two names); nine calls to three operations of one SOAP endpoint, the same (now one suggestion per operation); an operation that repeats the reference of its request, or answers a block per item of a list, one rule per value seen (now one rule that reads them from the request); a call whose relay fails leaves a line in the request log and nothing of what was sent (now listed with its request and the reason, and its command copied replays it). These items make the chain work without a rule written by hand; they ship together, before the releases below.
 
 | Theme | Items, in order | Taken together because |
 |---|---|---|
 | Screens that fit | U37, U40 | the log screens, their tables and the list of services, independent of the rest |
-| The chain and its calls | U36, U35, U39 | the observation store, its panel and the list of backends, then the same steps without a click |
-
-### U36. The calls of an observed service can be read, failed ones included
-
-Size M
-
-**Why.** What observation captured only shows through the rules it suggests. When a relay fails (backend unreachable, timeout, target refused), the caller gets `502`, the request log keeps one line without the request, and observation keeps nothing: the request that broke cannot be read again, nor sent again by hand to find out why. The request log keeps no request for a service in proxy mode, on purpose (nothing is buffered on that path).
-
-**What.** For an observed service only, the panel lists the calls kept, most recent first, and opens one: request (method, path, query, headers, body) and response, or the reason no response came. A failed relay is kept with its request, in a bounded list of its own so that failures never push the good samples out, and never feeds a suggestion. One call can be copied as a `curl` command or its request body downloaded, as kept. Nothing leaves what observation already promises, and the security model says so: opt-in per service, memory only, bounded, forgotten when observation stops, credentials redacted before anything is kept (a copied command holds `[redacted]`, never the secret), a body cut at `TRAFFIC_OBSERVATION_MAX_BODY_SIZE` shown as cut with its real size and the setting to raise; reading a call asks for the same right on the service as its suggestions.
-
-**Done when.** A call relayed to a stopped backend is listed with its whole request and the reason, and its copied command replays it once the backend is back (end-to-end test); a user without access to the service reads none of its calls (authorization test); a test searches every answer of the new endpoints for a credential sent in the request and finds none; the scale test counts the list.
+| The chain and its calls | U35, U39 | the panel of observation and its list of backends, then the same steps without a click |
 
 ### U35. The services a directory names, created in one go
 
@@ -863,7 +853,7 @@ Defects and debts found on the way. They are taken by bundle: the items of a bun
 | Keyboard | E42, E47 | "Accessible" (0.6) |
 | Screen reader | E15, E43 | "Accessible" (0.6) |
 | Forms and messages | E8, E12, E19, E21, E31, E32 | "Words anyone can read" (0.6) |
-| Proxy path and suggestions | E7, E34, E35, E36, E46, E59, E61, E64, and E48 once it is unblocked | "Recorded, without personal data" (0.7) |
+| Proxy path and suggestions | E7, E34, E35, E36, E46, E59, E61, E64, E65, E66, and E48 once it is unblocked | "Recorded, without personal data" (0.7) |
 | Builders and rule engine | E2, E28, E45, and E9 and E54 once decided | "Guided and explained" (0.7) |
 | Tests | E6, E11, E16 | the first theme that touches them |
 | Kafka and TCP | E3, E4 | "Protocols" (1.1) |
@@ -1210,3 +1200,23 @@ Size S
 **What.** The XML readers decode a body by the encoding its declaration names (ISO-8859-1 and Windows-1252 at least) before reading it, the same way in conditions, templates and scripts; suggestions then read such a body like any other.
 
 **Done when.** A rule with an XPath condition answers an ISO-8859-1 envelope whose element holds `é`; the suggestions of three such calls name their operation, and the replay judge, given the bytes the mock receives, finds every call answered.
+
+### E65. Answers that hold captured traffic tell caches not to keep them
+
+Size S
+
+**Why.** The request log, the suggestions and the calls of an observed service hand back what applications sent their backends (headers, bodies, paths), and their answers carry no `Cache-Control`: a browser's cache, or a proxy in front of a Mimicway without authentication, may keep a copy of them after observation forgot them.
+
+**What.** Every answer of the API that holds traffic (`/logs`, `/messaging/logs`, `…/suggestions`, `…/linked-backends`, `…/observed-calls`) says `Cache-Control: no-store`, set in one place for those routes.
+
+**Done when.** A test lists the routes of the API that return traffic and finds `no-store` on each answer, with and without a group; a route added later that returns traffic without it fails that test.
+
+### E66. Credentials in a query string are kept as sent
+
+Size S
+
+**Why.** Observation and the request log replace credential headers by `[redacted]`, but a credential carried in the query string (`?api_key=…`, `?access_token=…`) is kept as sent, shown in the calls of an observed service and in the `curl` command copied from one. The guide says so; nothing lets an operator close it.
+
+**What.** A setting naming query parameters to redact (with a short default list: `api_key`, `apikey`, `access_token`, `token`, `password`), applied before anything is kept to the query of the request log and of observation, the raw query included, with the parameter's name kept.
+
+**Done when.** A call with `?api_key=secret` through an observed service and a mocked one leaves no `secret` in any answer of the API, the command copied holds `api_key=[redacted]`, and a parameter added to the setting is redacted the same way.

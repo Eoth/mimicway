@@ -93,12 +93,35 @@ L'adresse de Mimicway s'écrit dans le corps `{{header.x-forwarded-proto | defau
 
 Seules les **règles suggérées** sont réécrites. Le trafic que Mimicway relaie n'est jamais modifié : tant qu'il est un proxy, l'annuaire répond toujours les adresses réelles.
 
+## Lire les appels gardés
+
+Ce que l'observation a gardé se lit appel par appel, pas seulement à travers les règles qu'elle propose. Sous les suggestions, **« Afficher les appels gardés »** liste les appels relayés pendant que le service est observé, le plus récent d'abord : l'heure, la méthode, le chemin avec sa query, et le statut du backend, ou la raison pour laquelle aucune réponse n'est venue. **« Detail »** ouvre un appel sur place : sa requête (méthode, chemin, query, en-têtes, corps) et la réponse du backend (statut, en-têtes, corps). Comme pour les suggestions, rien ne se rafraîchit en arrière-plan : **« Actualiser les appels »** relit la liste.
+
+Un relais qui échoue est gardé lui aussi, avec sa requête : quand le backend est arrêté, ne répond pas à temps, coupe sa réponse, ou quand la cible est hors de `PROXY_ALLOWED_TARGETS`, l'appelant reçoit `502` (ou `504` après un délai dépassé), et l'appel montre la requête telle qu'elle a été envoyée, la raison en mots simples, la cible visée par Mimicway et l'erreur du réseau dans ses propres termes. Ces appels sont gardés dans une liste à part (`TRAFFIC_OBSERVATION_MAX_FAILED_CALLS`, tous services observés confondus), pour qu'un backend qui reste arrêté ne chasse jamais les bons échantillons, et ils ne nourrissent **jamais** une suggestion : un `502` écrit par Mimicway n'est pas une réponse du backend.
+
+Un appel ouvert peut être renvoyé à la main :
+
+- **« Copier la commande »** copie une commande `curl`, pour un shell POSIX (sh, bash, zsh), qui envoie la même requête à Mimicway, à l'adresse de la page, qui la relaie au backend : une fois le backend revenu, la commande rejoue l'appel, et l'observation garde ce nouvel appel. La commande est affichée au-dessus du bouton, à sélectionner à la main là où le navigateur ne peut pas copier (une page servie en HTTP simple depuis une autre machine). Chaque valeur est protégée pour le shell, quoi qu'elle contienne (guillemets, `$`, accents graves, retours à la ligne, toute langue).
+- **« Télécharger le corps de la requête »** enregistre le corps tel qu'il a été gardé.
+
+Ce que la commande et le fichier ne peuvent pas porter, l'écran le dit :
+
+- un en-tête d'identification est gardé comme `[redacted]`, et le reste dans la commande : remettez la vraie valeur avant de la lancer ;
+- un corps coupé à `TRAFFIC_OBSERVATION_MAX_BODY_SIZE` est montré comme coupé, avec sa vraie taille et le réglage à augmenter ; la commande envoie la partie gardée ;
+- un corps dans un autre encodage que l'UTF-8 est gardé comme du texte, chaque octet qui n'est pas de l'UTF-8 remplacé : ce qui est montré, copié et téléchargé n'est pas l'original octet pour octet ;
+- un corps qui contient un caractère NUL ne peut pas s'écrire dans une ligne de commande : la commande le lit dans le fichier téléchargé.
+
+Par l'API, `GET /api/services/{name}/observed-calls` (ou `/api/groups/{group}/services/{name}/observed-calls`) liste les appels, chacun avec son `id`, et `GET …/observed-calls/{id}` en donne un entier (`request`, puis `response`, ou `failure` avec sa `cause` : `refused_target`, `unreachable`, `timeout`, `interrupted` ou `other`). Les deux demandent sur le service le même droit que ses suggestions.
+
 ## Prérequis et limites
 
 - Seulement pour un service en mode **proxy pur** (`is_mocked` désactivé) : « Observer ce service » est refusé sinon, puisque l'observation n'a de sens que sur du trafic relayé à un vrai backend.
 - Un appel n'est capturé que si les tailles de sa requête et de sa réponse sont connues à l'avance (un en-tête `Content-Length`, ou pas de corps). Une réponse envoyée par morceaux (`Transfer-Encoding: chunked`, sans taille annoncée) est toujours relayée normalement, mais pas observée.
 - Un chemin de plus de 32 segments n'est pas proposé.
 - Le nombre d'observations conservées est borné, par chemin (par opération pour une adresse SOAP) et au total (voir les réglages `TRAFFIC_OBSERVATION_*` dans le README) : au-delà, les plus anciennes sont remplacées par les plus récentes, si bien que la mémoire ne croît jamais sans limite. Au plus 32 opérations d'un même chemin sont gardées à part ; les appels de toute autre opération partagent la place du chemin lui-même.
-- Les identifiants ne sont jamais capturés : `Authorization`, les cookies, les en-têtes de clé d'API et tout en-tête listé dans `REDACT_HEADERS` sont conservés comme `[redacted]`, et les règles suggérées ne les recopient jamais.
+- Une requête dont le corps est trop grand pour être mis en mémoire (`TRAFFIC_OBSERVATION_MAX_BUFFER_SIZE`) ou de taille inconnue est relayée au fil de l'eau et n'est pas gardée, que son relais réussisse ou échoue.
+- Les relais en échec sont bornés à part des échanges (`TRAFFIC_OBSERVATION_MAX_FAILED_CALLS`, 100 par défaut, tous services observés confondus) : au-delà, le plus ancien part le premier.
+- Un appel garde une valeur par nom d'en-tête, et laisse de côté un en-tête dont la valeur n'est pas du texte ASCII simple.
+- Les identifiants ne sont jamais capturés : `Authorization`, les cookies, les en-têtes de clé d'API et tout en-tête listé dans `REDACT_HEADERS` sont conservés comme `[redacted]` avant que rien ne soit gardé, et ni les règles suggérées ni les commandes copiées ne les contiennent. **Non masqués** : un identifiant porté par la query (`?api_key=…`) ou par un corps (un mot de passe dans une enveloppe SOAP), et un en-tête qui en porte un sous un nom que la liste ne connaît pas (ajoutez-le à `REDACT_HEADERS`). Qui peut lire les suggestions du service les lit dans ses appels.
 - L'observation s'arrête d'elle-même quand son service est supprimé, renommé ou déplacé dans un autre groupe, et à chaque réinitialisation complète de la configuration. Ce qu'elle a observé est alors oublié, comme quand vous arrêtez d'observer : observer à nouveau repart de zéro, et un service créé plus tard sous le même nom n'hérite jamais du trafic d'un autre.
 - Comme pour le [journal des requêtes](request-log.md), rien n'est écrit sur disque : un redémarrage de Mimicway repart sans aucune observation.

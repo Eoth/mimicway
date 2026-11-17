@@ -25,7 +25,7 @@ Read along the path a request takes, from the outside in. Production code lives 
 | 8 | `src/engine/script.rs`, `src/engine/script_budget.rs`, `src/engine/script_json.rs`, `alloc/src/lib.rs` | Rhai sandbox: disabled module loading and `eval`, native functions; limits of a run (operations, time, memory, variables, size of each value), the functions that stop before building a value over them, and the allocator that counts what a run holds (the project's only `unsafe` code). |
 | 9 | `src/engine/template.rs`, `src/engine/renderer.rs`, `src/engine/matcher.rs`, `src/engine/regex_cache.rs` | Response templates, chaos injection, condition evaluation on untrusted input. |
 | 10 | `src/store/mod.rs` | Persistence: atomic writes, backups, restore. |
-| 11 | `src/server/redaction.rs`, `src/server/request_log.rs`, `src/server/observation.rs`, `src/server/suggestion.rs` | What is kept from traffic, and how credentials are removed. |
+| 11 | `src/server/redaction.rs`, `src/server/request_log.rs`, `src/server/observation.rs`, `src/server/observation/calls.rs`, `src/server/suggestion.rs` | What is kept from traffic (observed exchanges, and failed relays with their request), how credentials are removed before anything is kept, and what the calls API hands back. |
 | 12 | `src/tcp/`, `src/messaging/` | Only if you enable these features. |
 
 ## Authorization matrix
@@ -39,7 +39,7 @@ With `AUTH_ENABLED=false` every caller is an anonymous super-admin: this mode is
 | `GET /api/config`, `GET /api/services`, `GET /api/logs`, `GET /api/observation/status` | Any authenticated user, filtered to what they can access |
 | `PUT /api/config`, `DELETE /api/config/reset`, `GET /api/config/backups`, `POST /api/config/restore/{file}` | Super-admins |
 | `POST /api/services` | Super-admins anywhere; group admins inside their group |
-| `GET`, `PUT` a service; toggle, ping, reorder rules, observe, suggestions | Members and admins of the service's group, super-admins. Moving a service to another group also requires the right to create it there |
+| `GET`, `PUT` a service; toggle, ping, reorder rules, observe, suggestions, linked backends, observed calls | Members and admins of the service's group, super-admins. Moving a service to another group also requires the right to create it there |
 | `DELETE` a service | Super-admins |
 | `GET /api/groups` | Groups the user belongs to (all for super-admins) |
 | `POST /api/groups` | Any authenticated user, who becomes its admin |

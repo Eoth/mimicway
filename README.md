@@ -159,6 +159,7 @@ Everything is set through environment variables; none is required.
 | `REQUEST_LOG_MAX_BODY_SIZE` | `16384` | Bytes of each body kept in the request log. |
 | `TRAFFIC_OBSERVATION_MAX_BODY_SIZE` | `16384` | Bytes of each body kept by traffic observation. |
 | `TRAFFIC_OBSERVATION_MAX_BUFFER_SIZE` | `10485760` | Largest request or response body (by its `Content-Length`) that traffic observation buffers to capture an exchange; larger or unsized bodies are streamed and not observed. |
+| `TRAFFIC_OBSERVATION_MAX_FAILED_CALLS` | `100` | Relays of observed services that failed (backend unreachable, timeout, target refused) kept with their request, across all observed services, apart from the exchanges; the oldest makes room. |
 | `TRAFFIC_OBSERVATION_MAX_KEYS` | `200` | Distinct paths (method and path, and SOAP operation) followed at once, across all observed services; the least recently called makes room. |
 | `TRAFFIC_OBSERVATION_SAMPLES_PER_KEY` | `8` | Exchanges kept per path (per operation for a SOAP address). |
 | `TRAFFIC_OBSERVATION_MIN_SAMPLES` | `3` | Exchanges of a route (the paths grouped under one pattern) needed before a rule is suggested. |
@@ -200,6 +201,8 @@ All under `/api`, JSON in and out. Error messages follow the request's `Accept-L
 | POST, DELETE | `…/{name}/observe` | Start, stop traffic observation. |
 | GET | `…/{name}/suggestions` | Rules suggested from observed traffic. |
 | GET | `…/{name}/linked-backends` | Backends the observed responses point to, and who serves them. |
+| GET | `…/{name}/observed-calls` | Calls kept by observation, failed relays included, the most recent first. |
+| GET | `…/{name}/observed-calls/{id}` | One call kept: its request, and its response or why none came. |
 | GET | `/api/observation/status` | Services under observation. |
 | POST | `/api/rule-test` | Test a draft rule against a captured request. |
 | POST | `/api/rule-conflicts` | Overlaps between a draft rule and the service's other rules. |
