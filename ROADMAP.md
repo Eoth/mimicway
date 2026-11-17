@@ -853,7 +853,7 @@ Defects and debts found on the way. They are taken by bundle: the items of a bun
 | Keyboard | E42, E47 | "Accessible" (0.6) |
 | Screen reader | E15, E43 | "Accessible" (0.6) |
 | Forms and messages | E8, E12, E19, E21, E31, E32 | "Words anyone can read" (0.6) |
-| Proxy path and suggestions | E7, E34, E35, E36, E46, E59, E61, E64, E65, E66, E68, and E48 once it is unblocked | "Recorded, without personal data" (0.7) |
+| Proxy path and suggestions | E7, E34, E35, E36, E46, E59, E61, E64, E65, E66, E68, E70, and E48 once it is unblocked | "Recorded, without personal data" (0.7) |
 | Builders and rule engine | E2, E28, E45, and E9, E54 and E67 once decided | "Guided and explained" (0.7) |
 | Tests | E6, E11, E16 | the first theme that touches them |
 | Kafka and TCP | E3, E4 | "Protocols" (1.1) |
@@ -1240,3 +1240,14 @@ Size S
 **What.** A bound per observed service on the endpoints it may hold (a share of `TRAFFIC_OBSERVATION_MAX_KEYS`), its least recently updated endpoint leaving its place when a new one comes, so that one service never pushes another out.
 
 **Done when.** A service sent calls to a thousand invented paths leaves the endpoints of another observed service in place (test), and the scale test counts the eviction.
+
+### E70. A relay is observed under the observation of the service it was routed to
+
+Size S
+
+**Why.** A relay reads the generation of the service's observation (`intercept.rs`, `handle_service`) after the service was found in a snapshot of the configuration, a moment earlier. A service deleted, created again under the same identity with another target and observed in that moment would see the relay to the former target kept in the new observation: a window of a few microseconds, which nothing has hit.
+
+**What.** The generation is taken with the service it belongs to: read under the same snapshot (the configuration carrying a version that the observation records when it is turned on), or checked against the configuration when the capture is recorded, so that a relay keeps nothing for an observation started after the service it was routed to.
+
+**Done when.** A test that holds a relay between finding its service and reading the generation, deletes the service, creates it again with another target and observes it, finds nothing kept from that relay.
+
