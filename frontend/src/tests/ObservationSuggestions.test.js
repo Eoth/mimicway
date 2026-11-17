@@ -264,6 +264,54 @@ describe('ObservationSuggestions', () => {
     );
   });
 
+  it('names in plain words what a response repeats, and gives the form the script that writes its list', async () => {
+    const rule = {
+      method: 'POST',
+      sub_path: '/ws/booking',
+      conditions: {
+        all_of: [{ source: { type: 'XPath', key: 'Envelope/Body/Book' }, operator: { type: 'Exists' } }],
+        any_of: [],
+      },
+      condition: { source: { type: 'XPath', key: 'Envelope/Body/Book' }, operator: { type: 'Exists' } },
+      echo: null,
+      repeats: [
+        { type: 'XPath', key: 'Envelope/Body/Book/ref' },
+        { type: 'Header', key: 'x-channel' },
+      ],
+      list: { items: { type: 'XPath', key: 'Envelope/Body/Book/slot' }, fields: ['date', 'type'] },
+      script: 'let items = parse_xml_items(request.body, "Envelope/Body/Book/slot");',
+      sample_count: 3,
+      response: {
+        status: 200,
+        headers: [],
+        body: [
+          { type: 'Literal', value: '<BookResponse>' },
+          { type: 'Template', template: '{{script.items}}' },
+          { type: 'Literal', value: '</BookResponse>' },
+        ],
+        chaos: null,
+      },
+    };
+    const onUseSuggestion = vi.fn();
+    const { getByText } = await showSuggestions(
+      [routeSuggestion({ sub_path: '/ws/booking', operation: 'Book', outcome: 'Echo', rule })],
+      { onUseSuggestion },
+    );
+
+    await waitFor(() =>
+      expect(
+        getByText(
+          'no condition: the response repeats XML element of the body "ref" and HTTP header "x-channel"; ' +
+            'the response writes one block per "slot" of the request, with its "date" and "type" (3 calls)',
+        ),
+      ).toBeInTheDocument(),
+    );
+    await fireEvent.click(getByText('Use this suggestion'));
+    expect(onUseSuggestion).toHaveBeenCalledWith(
+      expect.objectContaining({ script: rule.script, response_mode: 'advanced', response: rule.response }),
+    );
+  });
+
   it('names the one observed path a pattern stands for', async () => {
     const rule = {
       method: 'GET',

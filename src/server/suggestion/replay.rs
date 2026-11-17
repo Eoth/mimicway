@@ -1,6 +1,7 @@
 //! The suggested rules replayed on the calls they come from, matched and rendered as the interception does: what the
 //! property tests and the fuzz target check on generated traffic.
 use super::{SuggestedRule, Suggestion, suggest_for_service};
+use crate::engine::script::{ScriptContext, ScriptEngine};
 use crate::engine::{MatchEngine, RequestData, TemplateContext, TemplateRenderer};
 use crate::models::{Rule, RuleAction};
 use crate::server::observation::{ObservationKey, ObservedExchange};
@@ -20,14 +21,15 @@ fn as_rule(i: usize, suggested: &SuggestedRule) -> Rule {
         method: suggested.method.clone(),
         sub_path: (!suggested.sub_path.is_empty()).then(|| suggested.sub_path.clone()),
         action: RuleAction::Mock,
-        script: None,
+        script: suggested.script.clone(),
         response_mode: None,
         conditions: suggested.conditions.clone(),
         response: suggested.response.clone(),
     }
 }
 
-/// What `rules` answer to an observed call, matched and rendered as the interception does.
+/// What `rules` answer to an observed call, matched and rendered as the interception does: the rule's script run
+/// first, a failing one giving an empty result.
 fn answer(
     rules: &[Rule],
     key: &ObservationKey,
@@ -45,13 +47,22 @@ fn answer(
     let (rule, sub_params) = MatchEngine::first_match(rules, &req)?;
     let mut params = req.path_params.clone();
     params.extend(sub_params);
+    let script_result = rule.script.as_ref().map(|code| {
+        let ctx = ScriptContext {
+            body: String::from_utf8_lossy(&req.body).into_owned(),
+            headers: req.headers.clone(),
+            query_params: req.query_params.clone(),
+            path_params: params.clone(),
+        };
+        ScriptEngine::new().execute(code, &ctx).unwrap_or_default()
+    });
     let ctx = TemplateContext {
         path_params: &params,
         query_params: &req.query_params,
         headers: &req.headers,
         request_body: &req.body,
         seq_counter: 0,
-        script_result: None,
+        script_result: script_result.as_ref(),
     };
     let body = TemplateRenderer::render_body(&rule.response.body, &[], &ctx);
     Some((rule.response.status, body))

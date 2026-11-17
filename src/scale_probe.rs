@@ -115,6 +115,16 @@ pub const FAMILIES: &[Family] = &[
         env: &[("TRAFFIC_OBSERVATION_MAX_BODY_SIZE", "1048576")],
         run: suggestion_bodies,
     },
+    // A list read side by side in six responses, then checked by running its script on each call. 4n + 2 items stay
+    // within what a script may run (10,000 operations, about 60 per item of two fields).
+    Family {
+        name: "suggestion-lists",
+        n: 28,
+        growth: Growth::Linear,
+        about: "suggestions from 6 calls of a SOAP operation whose response holds a block per item of the request, each request holding n to n + 2 items",
+        env: &[],
+        run: suggestion_lists,
+    },
     // 4n stays under 256 values, where Rhai's string interner starts to evict (`throttle_cache`): a step at a threshold,
     // bounded per value, that the ratio would read as growth. Rhai refuses maps of more than 500 keys anyway.
     Family {
@@ -512,7 +522,12 @@ fn suggestion_bodies(n: usize) {
             None,
             200,
             HashMap::new(),
-            format!("<booked>{kind}</booked>").as_bytes(),
+            // The answer depends on the kind without repeating it: one rule per kind.
+            format!(
+                "<booked>{}</booked>",
+                kind.len() + kind.as_bytes()[0] as usize
+            )
+            .as_bytes(),
             Some("text/xml".into()),
         )
     };
@@ -553,6 +568,64 @@ fn suggestion_bodies(n: usize) {
                 .map(|s| (&s.sub_path, &s.operation, s.sample_count))
                 .collect::<Vec<_>>()
         );
+        black_box(suggestions);
+    });
+}
+
+fn suggestion_lists(n: usize) {
+    let call = |c: usize| {
+        let items = n + c % 3;
+        let slots: String = (0..items)
+            .map(|j| {
+                format!(
+                    "<o:slot><o:date>2026-{c:02}-{j:04}</o:date><o:type>T{}</o:type></o:slot>",
+                    j % 7
+                )
+            })
+            .collect();
+        let blocks: String = (0..items)
+            .map(|j| {
+                format!(
+                    "<booked><date>2026-{c:02}-{j:04}</date><type>T{}</type></booked>",
+                    j % 7
+                )
+            })
+            .collect();
+        ObservedExchange::new(
+            HashMap::new(),
+            HashMap::new(),
+            format!(
+                "<soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\"><soap:Body>\
+                 <o:Book xmlns:o=\"urn:o\"><o:ref>R{c}</o:ref>{slots}</o:Book></soap:Body></soap:Envelope>"
+            )
+            .as_bytes(),
+            None,
+            200,
+            HashMap::new(),
+            format!("<BookResponse><ref>R{c}</ref>{blocks}</BookResponse>").as_bytes(),
+            Some("text/xml".into()),
+        )
+    };
+    let endpoints = vec![(
+        ObservationKey {
+            group_name: None,
+            service_name: "svc".into(),
+            method: "POST".into(),
+            sub_path: "/ws/booking".into(),
+            operation: None,
+        },
+        (0..6).map(call).collect::<Vec<_>>(),
+    )];
+    warm_then_measure(&mut || {
+        let suggestions = crate::server::suggestion::suggest_for_service(&endpoints);
+        let listed = matches!(
+            suggestions.as_slice(),
+            [crate::server::suggestion::EndpointSuggestion {
+                outcome: crate::server::suggestion::Suggestion::Echo { rule },
+                ..
+            }] if rule.list.is_some()
+        );
+        assert!(listed, "one rule with a script: {suggestions:?}");
         black_box(suggestions);
     });
 }

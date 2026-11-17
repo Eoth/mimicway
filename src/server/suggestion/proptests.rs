@@ -412,3 +412,232 @@ fn rules_suggested_from_bodies_answer_every_call_they_come_from_as_observed() {
          XML fields {xml_fields:?}, JSON fields {json_fields:?}"
     );
 }
+
+/// Values a request sends and its response repeats: markup, quotes, the end of a CDATA section, template braces.
+const REPEATED: &[&str] = &[
+    "R1", "R2", "R3", "a&b", "<x>", "\"q\"", "it's", "]]>", "{{uuid}}", "}}", "x y", "é",
+];
+
+/// How a response writes the values it repeats.
+#[derive(Debug, Clone, Copy)]
+enum Writing {
+    /// XML text, `&`, `<` and `>` escaped.
+    XmlText,
+    /// XML, quotes escaped too.
+    XmlAll,
+    /// XML, each value in a CDATA section (a value holding `]]>` escaped instead).
+    Cdata,
+    Json,
+}
+
+fn xml_escaped(value: &str, quotes: bool) -> String {
+    let text = value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;");
+    if quotes {
+        text.replace('"', "&quot;").replace('\'', "&apos;")
+    } else {
+        text
+    }
+}
+
+fn written(value: &str, writing: Writing) -> String {
+    match writing {
+        Writing::XmlText => xml_escaped(value, false),
+        Writing::XmlAll => xml_escaped(value, true),
+        Writing::Cdata if !value.contains("]]>") => format!("<![CDATA[{value}]]>"),
+        Writing::Cdata => xml_escaped(value, false),
+        Writing::Json => {
+            let quoted = serde_json::Value::from(value).to_string();
+            quoted[1..quoted.len() - 1].to_string()
+        }
+    }
+}
+
+/// One call to an operation whose response repeats its request: a reference, and a list of (date, type) slots, each
+/// answered with a block; `odd` answers something the request does not explain.
+#[derive(Debug, Clone)]
+struct RepeatCall {
+    reference: usize,
+    slots: Vec<(usize, usize)>,
+    in_cdata: bool,
+    odd: bool,
+}
+
+fn repeat_exchange(call: &RepeatCall, writing: Writing, prefix: bool) -> ObservedExchange {
+    let value = |i: usize| REPEATED[i];
+    let (request, response) = if let Writing::Json = writing {
+        let slots: Vec<serde_json::Value> = call
+            .slots
+            .iter()
+            .map(|&(d, t)| serde_json::json!({"date": value(d), "type": value(t)}))
+            .collect();
+        let request = serde_json::json!({"order": {"ref": value(call.reference)}, "slots": slots});
+        let blocks: Vec<String> = call
+            .slots
+            .iter()
+            .map(|&(d, t)| {
+                format!(
+                    "{{\"date\":\"{}\",\"type\":\"{}\",\"ok\":true}}",
+                    written(value(d), writing),
+                    written(value(t), writing)
+                )
+            })
+            .collect();
+        let response = format!(
+            "{{\"ref\":\"{}\",\"booked\":[{}]}}",
+            written(value(call.reference), writing),
+            blocks.join(",")
+        );
+        (request.to_string(), response)
+    } else {
+        let (p, ns) = if prefix {
+            (
+                "s:",
+                " xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\"",
+            )
+        } else {
+            ("", "")
+        };
+        let field = |name: &str, v: &str| {
+            let text = if call.in_cdata && !v.contains("]]>") {
+                format!("<![CDATA[{v}]]>")
+            } else {
+                xml_escaped(v, false)
+            };
+            format!("<o:{name}>{text}</o:{name}>")
+        };
+        let slots: String = call
+            .slots
+            .iter()
+            .map(|&(d, t)| {
+                format!(
+                    "<o:slot>{}{}</o:slot>",
+                    field("date", value(d)),
+                    field("type", value(t))
+                )
+            })
+            .collect();
+        let request = format!(
+            "<{p}Envelope{ns} xmlns:o=\"urn:o\"><{p}Body><o:Book>{}{slots}</o:Book></{p}Body></{p}Envelope>",
+            field("ref", value(call.reference))
+        );
+        let blocks: String = call
+            .slots
+            .iter()
+            .map(|&(d, t)| {
+                format!(
+                    "<booked><date>{}</date><type>{}</type></booked>",
+                    written(value(d), writing),
+                    written(value(t), writing)
+                )
+            })
+            .collect();
+        let response = format!(
+            "<Envelope><Body><BookResponse><ref>{}</ref>{blocks}</BookResponse></Body></Envelope>",
+            written(value(call.reference), writing)
+        );
+        (request, response)
+    };
+    let response = if call.odd {
+        format!(
+            "{response}<!-- {} -->",
+            call.slots.len() * 7 + call.reference
+        )
+    } else {
+        response
+    };
+    ObservedExchange::new(
+        HashMap::new(),
+        HashMap::new(),
+        request.as_bytes(),
+        None,
+        200,
+        HashMap::new(),
+        response.as_bytes(),
+        None,
+    )
+}
+
+fn arb_repeat_calls() -> impl Strategy<Value = Vec<(String, ObservedExchange)>> {
+    let call = (
+        0..REPEATED.len(),
+        prop::collection::vec((0..REPEATED.len(), 0..REPEATED.len()), 0..4),
+        prop::bool::weighted(0.2),
+        prop::bool::weighted(0.05),
+    )
+        .prop_map(|(reference, slots, in_cdata, odd)| RepeatCall {
+            reference,
+            slots,
+            in_cdata,
+            odd,
+        });
+    (
+        prop::sample::select(vec![
+            Writing::XmlText,
+            Writing::XmlText,
+            Writing::XmlAll,
+            Writing::Cdata,
+            Writing::Json,
+            Writing::Json,
+        ]),
+        any::<bool>(),
+        // Some operations hold no list at all: the values alone.
+        prop::bool::weighted(0.3),
+        prop::collection::vec(call, 3..8),
+    )
+        .prop_map(|(writing, prefix, listless, mut calls)| {
+            if listless {
+                calls.iter_mut().for_each(|call| call.slots.clear());
+            }
+            calls
+                .iter()
+                .map(|call| ("/ws/a".to_string(), repeat_exchange(call, writing, prefix)))
+                .collect()
+        })
+}
+
+#[test]
+fn rules_that_repeat_their_request_answer_every_call_they_come_from_as_observed() {
+    use proptest::test_runner::TestRunner;
+    use std::cell::Cell;
+    let config = crate::test_seed::config(256, 0x7265_7065_6174_7321);
+    let (values, lists, refused) = (Cell::new(0), Cell::new(0), Cell::new(0));
+    let result = TestRunner::new(config).run(&arb_repeat_calls(), |calls| {
+        let endpoints = posted_endpoints(&calls);
+        let replayed = super::replay::check(&endpoints);
+        prop_assert!(replayed.is_ok(), "{}", replayed.unwrap_err());
+        for suggestion in suggest_for_service(&endpoints) {
+            match &suggestion.outcome {
+                Suggestion::Echo { rule } if rule.list.is_some() => lists.set(lists.get() + 1),
+                Suggestion::Echo { rule } if !rule.repeats.is_empty() => {
+                    values.set(values.get() + 1)
+                }
+                _ => refused.set(refused.get() + 1),
+            }
+            for rule in suggestion_rules(&suggestion.outcome) {
+                for fragment in &rule.response.body {
+                    if let BodyFragment::Template { template } = fragment {
+                        let written = template == "{{script.items}}"
+                            || template.starts_with("{{xpath.Envelope/Body/Book/")
+                            || template.starts_with("{{body./");
+                        prop_assert!(
+                            written,
+                            "a template not written by the suggestion: {template}"
+                        );
+                    }
+                }
+            }
+        }
+        Ok(())
+    });
+    if let Err(failure) = result {
+        panic!("{failure}");
+    }
+    // The cases the judge must see, for the written seed.
+    assert!(
+        values.get() >= 35 && lists.get() >= 80 && refused.get() >= 50,
+        "values {values:?}, lists {lists:?}, others {refused:?}"
+    );
+}

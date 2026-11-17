@@ -56,6 +56,19 @@ Inside an operation, and for any body, the fields of the body are tried like the
 
 A rule suggested from such a field matches the calls it was drawn from: the field is read as the condition written from it reads the request. Reading a body is bounded: the first 64 fields of a body, 16 levels deep at most, a path of 256 bytes and a value of 256 bytes at most; anything beyond gives no field. A request body cut at the size limit of observation (`TRAFFIC_OBSERVATION_MAX_BODY_SIZE`) gives no field and no operation, and the suggestion says how many bodies were cut: raise that setting when a field you expect is never used.
 
+## Responses that repeat the request
+
+Many operations answer with what they were asked: the reference of the request, its dates, each line of a list. One rule per value seen would answer a request never seen with the values of another one. When the responses of a route (or of an operation) differ **only** where they repeat values of their own request, Mimicway suggests a **single** rule without condition whose response reads each value from the request:
+
+- **Values**: a path or query parameter, a header, a field of an XML or JSON body. The response keeps the observed text and holds an expression where each value stands, for instance `{{xpath.Envelope/Body/GetStatus/ref}}` or `{{body./order/ref}}`, followed by the pipes that escape the value for the format of the response (`replace("&", "&amp;")` and the like for XML, quotes and backslashes for JSON), so that a value with `&` or a quote keeps the response valid. Several fields can be repeated at once. A field whose value was the same in every call stays as written: nothing shows that the response repeats it.
+- **Lists**: when the request holds a repeated element (`<slot>` elements, a JSON array of objects) and the response a block per item, each block being the same text around values of the item of the same rank, the suggested rule comes with a **script** that reads the items (`parse_xml_items`, `parse_json`) and writes one block per item, each value escaped for the format of the response; the response reads the result with `{{script.items}}`. A request with no item gets the text around the list alone. "Use this suggestion" fills the form with the script, switched on, and the advanced template.
+
+The panel names, in plain words, the fields the response repeats and the list it writes one block per item of.
+
+The guarantee: such a rule is suggested only if, rendered by Mimicway itself (templates and script) for each observed request, it gives back the observed response **byte for byte**; otherwise you get the suggestions described above, one rule per value. Text observed in a response never becomes a template nor code: it stays in literal fragments of the response, or in string literals of the script, escaped.
+
+Limits: values of 256 bytes at most, 64 per response; one list per response, two calls with items at least, and items of 32 fields at most. The script runs within the budget of any script (10,000 operations), which holds a list of about a hundred items of two fields: a larger list observed gives no such rule, and at run time a script out of budget answers the text around the list without its blocks. A response whose values are not written as their format escapes them (in a CDATA section, say) is generalized only for the values read as they are.
+
 ## Using a suggestion
 
 **"Refresh the suggestions"** reads the traffic observed since observation was turned on and computes the suggestions again (nothing refreshes in the background). **"Use this suggestion"** does **not** create the rule: it fills the usual rule form (method, sub-path, conditions, response), so that you review, adjust and save it like any other rule.

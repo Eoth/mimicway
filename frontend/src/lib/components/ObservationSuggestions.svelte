@@ -153,6 +153,8 @@
     );
   }
 
+  // A rule that repeats a list carries the script that writes its blocks: the form opens on the advanced template,
+  // where the body reads the script's result, with the script switched on.
   function toRuleDraft(rule) {
     const conditions = ruleConditions(rule);
     return {
@@ -160,8 +162,8 @@
       method: rule.method,
       sub_path: rule.sub_path,
       action: 'mock',
-      script: null,
-      response_mode: null,
+      script: rule.script ?? null,
+      response_mode: rule.script ? 'advanced' : null,
       conditions: {
         all_of: conditions.all_of.map((c) => $state.snapshot(c)),
         any_of: conditions.any_of.map((c) => $state.snapshot(c)),
@@ -198,6 +200,33 @@
     return text.length > 120 ? `${text.slice(0, 120)}…` : text;
   }
 
+  // A field of the request in plain words: its kind, and its name; for a field of the body, the last name of its path
+  // (`ref` for `Envelope/Body/GetStatus/ref`), what the request calls it.
+  function fieldName(source) {
+    const key = source?.key ?? '';
+    const name = source?.type === 'XPath' || source?.type === 'JsonPointer' ? key.split('/').pop() : key;
+    return t('{0} "{1}"', sourceLabel(source?.type), name.replaceAll('~1', '/').replaceAll('~0', '~'));
+  }
+
+  // What the response of a rule without condition takes from each request: the fields it repeats, and the list of the
+  // request it writes one block per item of. A server that only sends `echo` still names its one field.
+  function repeatSummary(rule) {
+    const repeats = rule.repeats ?? (rule.echo ? [rule.echo] : []);
+    const parts = [];
+    if (repeats.length) parts.push(t('the response repeats {0}', repeats.map(fieldName).join(t(' and '))));
+    if (rule.list) {
+      const items = (rule.list.items?.key ?? '').split('/').pop();
+      parts.push(
+        t(
+          'the response writes one block per "{0}" of the request, with its {1}',
+          items,
+          rule.list.fields.map((f) => t('"{0}"', f)).join(t(' and ')),
+        ),
+      );
+    }
+    return t('no condition: {0} ({1} calls)', parts.join(t('; ')), rule.sample_count);
+  }
+
   function rulesOf(suggestion) {
     return suggestion.outcome === 'Conditional' ? suggestion.rules : [suggestion.rule];
   }
@@ -207,14 +236,7 @@
     const parts = all_of.filter((c) => !isOperation(suggestion, c)).map(conditionSummary);
     if (any_of.length) parts.push(anyOfSummary(any_of));
     if (parts.length) return t('if {0}', parts.join(t(' and ')));
-    if (suggestion.outcome === 'Echo') {
-      return t(
-        'no condition: the response repeats {0} "{1}" ({2} calls)',
-        sourceLabel(rule.echo?.type),
-        rule.echo?.key,
-        rule.sample_count,
-      );
-    }
+    if (suggestion.outcome === 'Echo') return repeatSummary(rule);
     return t('no condition ({0} identical calls)', rule.sample_count);
   }
 </script>

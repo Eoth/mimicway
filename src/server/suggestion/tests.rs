@@ -377,6 +377,9 @@ fn a_response_that_repeats_the_value_that_varies_becomes_one_rule() {
     assert_eq!(rule.echo, Some(ConditionSource::PathParam("name".into())));
     let template = |t: &str| BodyFragment::Template { template: t.into() };
     let literal = |v: &str| BodyFragment::Literal { value: v.into() };
+    // Escaped as the text of an XML element: a name with `&` must not break the response.
+    let name =
+        r#"{{path.name | replace("&", "&amp;") | replace("<", "&lt;") | replace(">", "&gt;")}}"#;
     assert_eq!(
         rule.response.body,
         vec![
@@ -384,9 +387,9 @@ fn a_response_that_repeats_the_value_that_varies_becomes_one_rule() {
                 "<soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\"><soap:Body><lookupResponse>\
                  <url>http://backend.internal:8080/ws/"
             ),
-            template("{{path.name}}"),
+            template(name),
             literal("</url><name>"),
-            template("{{path.name}}"),
+            template(name),
             literal("</name></lookupResponse></soap:Body></soap:Envelope>"),
         ]
     );
@@ -502,7 +505,7 @@ fn a_json_field_name_with_a_slash_or_a_tilde_is_escaped_in_its_pointer() {
     let calls: Vec<ObservedExchange> = ["on", "on", "off", "off"]
         .iter()
         .map(|mode| {
-            let mut e = exchange(200, mode);
+            let mut e = exchange(200, if *mode == "on" { "enabled" } else { "disabled" });
             e.request_body = format!(r#"{{"a/b~c":"{mode}"}}"#);
             e
         })
@@ -854,12 +857,18 @@ fn soap_calls() -> Vec<(ObservationKey, Vec<ObservedExchange>)> {
     for _ in 0..3 {
         calls.push(posted(&soap("Ping", ""), 200, &soap_answer("<Pong/>")));
     }
-    for reference in ["R1", "R2", "R1", "R3", "R2"] {
+    for (reference, state) in [
+        ("R1", "OPEN"),
+        ("R2", "CLOSED"),
+        ("R1", "OPEN"),
+        ("R3", "PENDING"),
+        ("R2", "CLOSED"),
+    ] {
         calls.push(posted(
             &soap("GetStatus", &format!("<o:ref>{reference}</o:ref>")),
             200,
             &soap_answer(&format!(
-                "<GetStatusResponse><status>{reference}-OPEN</status></GetStatusResponse>"
+                "<GetStatusResponse><status>{state}</status></GetStatusResponse>"
             )),
         ));
     }

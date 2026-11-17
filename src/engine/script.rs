@@ -453,7 +453,10 @@ fn dynamic_field_to_string(value: &rhai::Dynamic) -> Result<String, Box<rhai::Ev
 // tag of the field on), rather than gathering a large body whole before Rhai checks it, and at the first element nested
 // deeper than `XML_DEPTH_LIMIT`; otherwise it stops at the first malformed part of the text, keeping the items read
 // before it.
-fn parse_xml_items_impl(xml: &str, path: &str) -> Result<rhai::Array, Box<rhai::EvalAltResult>> {
+pub(crate) fn parse_xml_items_impl(
+    xml: &str,
+    path: &str,
+) -> Result<rhai::Array, Box<rhai::EvalAltResult>> {
     use super::script_budget::{
         ARRAY_TOO_LARGE, MAP_TOO_LARGE, MAX_ARRAY_SIZE, MAX_MAP_SIZE, MAX_STRING_SIZE,
         TEXT_TOO_LARGE, XML_TOO_DEEP, too_large,

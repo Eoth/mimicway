@@ -11,10 +11,12 @@
 // rule built from the first answer seen would silently break the others. Hence three steps: (1) group the observations
 // by equivalent response; (2) one group gives an unconditional rule; (3) several groups need a request field whose
 // every value leads to one group (`find_discriminator`, and the table above it of what is chosen and refused) before
-// anything is suggested: one rule per group, accepting the values that lead to it. When each group has one value and
-// that value is all that differs between the responses (the backend repeats it), one rule that repeats it
-// (`{{path.name}}`) replaces one rule per value. When no field tells the groups apart, the calls answered with a server
-// error are set aside and the others tried alone; failing that, nothing is suggested: no rule beats a fragile one.
+// anything is suggested: one rule per group, accepting the values that lead to it. Before that, when the responses
+// differ only where they repeat values of their own request (`repeat`: fields, and a list one block per item), one rule
+// that reads them from each request (`{{xpath.Envelope/Body/GetStatus/ref}}`, a script for a list) replaces one rule
+// per value, provided the engine renders it back into every observed response. When no field tells the groups apart,
+// the calls answered with a server error are set aside and the others tried alone; failing that, nothing is suggested:
+// no rule beats a fragile one.
 use crate::models::{
     BodyFragment, Condition, ConditionGroup, ConditionSource, HeaderEntry, MockResponse, Operator,
 };
@@ -24,7 +26,10 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 mod body_fields;
 pub mod links;
+mod repeat;
 mod routes;
+
+pub use repeat::RepeatedList;
 
 const DEFAULT_MIN_SAMPLES: usize = 3;
 /// Literal paths listed with a suggestion, as examples of what its pattern covers.
@@ -68,8 +73,15 @@ pub struct SuggestedRule {
     /// The one condition of the rule when it has exactly one, in `all_of`; `None` otherwise, `conditions` then says
     /// everything.
     pub condition: Option<Condition>,
-    /// The request field whose value the response repeats, through a template fragment of `response.body`.
+    /// The request field whose value the response repeats, through a template fragment of `response.body`, when it
+    /// repeats exactly one; `None` otherwise, `repeats` then says everything.
     pub echo: Option<ConditionSource>,
+    /// Every request field whose value the response repeats, in the order of their first appearance in the body.
+    pub repeats: Vec<ConditionSource>,
+    /// The list of the request the response repeats, one block per item, written by `script`.
+    pub list: Option<RepeatedList>,
+    /// The script of the rule: for a list, it writes the blocks that the body reads with `{{script.items}}`.
+    pub script: Option<String>,
     pub sample_count: usize,
     pub response: MockResponse,
     /// The services of Mimicway this rule's response now sends the application to, instead of the backends they stand
@@ -82,8 +94,8 @@ pub struct SuggestedRule {
 pub enum Suggestion {
     /// No variance in the sample: one rule, without condition.
     Unconditional { rule: Box<SuggestedRule> },
-    /// Responses that differ only by a request value they repeat: one rule, without condition, whose response repeats
-    /// that value.
+    /// Responses that differ only by the request values they repeat (fields, and a list one block per item): one rule,
+    /// without condition, whose response reads them from each request.
     Echo { rule: Box<SuggestedRule> },
     /// Variance explained by a request field: one rule per distinct response, accepting the values of the field that
     /// lead to it (`Eq`, or `any_of` several `Eq`).
@@ -388,7 +400,7 @@ fn explain(
         class_of.push(class);
     }
     let latest = |class: &[usize]| calls[class[class.len() - 1]].exchange();
-    let rule = |conditions: ConditionGroup, echo, sample_count, response| SuggestedRule {
+    let rule = |conditions: ConditionGroup, sample_count, response| SuggestedRule {
         method: method.to_string(),
         sub_path: sub_path.to_string(),
         condition: match (conditions.all_of.as_slice(), conditions.any_of.is_empty()) {
@@ -396,7 +408,10 @@ fn explain(
             _ => None,
         },
         conditions,
-        echo,
+        echo: None,
+        repeats: Vec::new(),
+        list: None,
+        script: None,
         sample_count,
         response,
         redirected_to: Vec::new(),
@@ -409,7 +424,35 @@ fn explain(
     if classes.len() == 1 {
         let response = build_response(latest(&classes[0]));
         return Ok(Suggestion::Unconditional {
-            rule: Box::new(rule(base_group(), None, calls.len(), response)),
+            rule: Box::new(rule(base_group(), calls.len(), response)),
+        });
+    }
+
+    let representatives: Vec<&Call> = classes.iter().map(|c| calls[c[c.len() - 1]]).collect();
+    let latest_call = calls[calls.len() - 1].exchange();
+    if let Some(repetition) =
+        repeat::infer(&representatives, calls, &suggested_headers(latest_call))
+    {
+        let mut echo = rule(
+            base_group(),
+            calls.len(),
+            MockResponse {
+                status: latest_call.response_status,
+                headers: suggested_headers(latest_call),
+                body: repetition.body,
+                chaos: None,
+                events: None,
+            },
+        );
+        echo.echo = match repetition.fields.as_slice() {
+            [only] => Some(only.clone()),
+            _ => None,
+        };
+        echo.repeats = repetition.fields;
+        echo.list = repetition.list;
+        echo.script = repetition.script;
+        return Ok(Suggestion::Echo {
+            rule: Box::new(echo),
         });
     }
 
@@ -418,20 +461,6 @@ fn explain(
             response_class_count: classes.len(),
         });
     };
-    if choice.values.iter().all(|values| values.len() == 1) {
-        let representatives: Vec<&ObservedExchange> = classes.iter().map(|c| latest(c)).collect();
-        let values: Vec<&str> = choice.values.iter().map(|v| v[0]).collect();
-        if let Some(response) = echo_response(&choice.candidate, &representatives, &values) {
-            return Ok(Suggestion::Echo {
-                rule: Box::new(rule(
-                    base_group(),
-                    Some(choice.candidate.source()),
-                    calls.len(),
-                    response,
-                )),
-            });
-        }
-    }
     let rules = classes
         .iter()
         .zip(&choice.values)
@@ -445,7 +474,7 @@ fn explain(
                 [one] => conditions.all_of.push(equal(one)),
                 several => conditions.any_of = several.iter().map(|v| equal(v)).collect(),
             }
-            rule(conditions, None, class.len(), build_response(latest(class)))
+            rule(conditions, class.len(), build_response(latest(class)))
         })
         .collect();
     Ok(Suggestion::Conditional { rules })
@@ -487,60 +516,6 @@ fn build_response(exchange: &ObservedExchange) -> MockResponse {
     }
 }
 
-/// The response of an echo rule, when the groups' responses (their latest one each) differ only by the value that
-/// tells them apart: same status, each body holding its group's value, and the same text around every occurrence. The
-/// text around stays in `Literal` fragments; only the expression that reads the value (`{{path.name}}`, written here,
-/// never taken from the traffic) is a template. Only the body is generalized: a response that repeats the value in a
-/// header is not.
-fn echo_response(
-    candidate: &Candidate,
-    representatives: &[&ObservedExchange],
-    values: &[&str],
-) -> Option<MockResponse> {
-    let expression = candidate.template_expression()?;
-    let latest = representatives.iter().max_by_key(|e| e.timestamp)?;
-    let headers = suggested_headers(latest);
-    let mut pieces: Option<Vec<&str>> = None;
-    for (exchange, &value) in representatives.iter().zip(values) {
-        if value.is_empty()
-            || exchange.response_status != latest.response_status
-            || !exchange.response_body.contains(value)
-            || headers.iter().any(|h| h.value.contains(value))
-            || suggested_headers(exchange)
-                .iter()
-                .any(|h| h.value.contains(value))
-        {
-            return None;
-        }
-        let split: Vec<&str> = exchange.response_body.split(value).collect();
-        match &pieces {
-            None => pieces = Some(split),
-            Some(previous) if *previous != split => return None,
-            Some(_) => {}
-        }
-    }
-    let mut body = Vec::new();
-    for (i, piece) in pieces?.into_iter().enumerate() {
-        if i > 0 {
-            body.push(BodyFragment::Template {
-                template: expression.clone(),
-            });
-        }
-        if !piece.is_empty() {
-            body.push(BodyFragment::Literal {
-                value: piece.to_string(),
-            });
-        }
-    }
-    Some(MockResponse {
-        status: latest.response_status,
-        headers,
-        body,
-        chaos: None,
-        events: None,
-    })
-}
-
 /// A candidate condition source, without its value (known once the field is chosen), borrowed from the calls. The
 /// order of the variants is the order of preference between fields with as many values.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -565,20 +540,24 @@ impl Candidate<'_> {
         }
     }
 
-    /// The template expression that reads this source's value in a response. Only for a name made of letters, digits,
-    /// `_`, `-` and `.`: a query parameter's name comes from the observed traffic, and an expression ends at the first
-    /// `}}`, so any other name could write more template than the one variable meant. Body fields are not repeated yet.
+    /// The template expression that reads this source's value in a response. A name comes from the observed traffic,
+    /// and an expression ends at the first `}}`, splits at a `|` and reads quotes and parentheses as its own syntax: so
+    /// only a name made of letters, digits, `_`, `-` and `.` is written (a path, a JSON pointer or an XPath may also
+    /// hold `/`, a pointer `~`), and any other name gets no expression.
     fn template_expression(&self) -> Option<String> {
-        let (variable, key) = match *self {
-            Candidate::PathParam(k) => ("path", k),
-            Candidate::QueryParam(k) => ("query", k),
-            Candidate::Header(k) => ("header", k),
-            Candidate::JsonPointer(_) | Candidate::XPath(_) => return None,
+        let (variable, key, body) = match *self {
+            Candidate::PathParam(k) => ("path", k, false),
+            Candidate::QueryParam(k) => ("query", k, false),
+            Candidate::Header(k) => ("header", k, false),
+            Candidate::JsonPointer(k) => ("body", k, true),
+            Candidate::XPath(k) => ("xpath", k, true),
         };
         let plain = !key.is_empty()
-            && key
-                .bytes()
-                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-' | b'.'));
+            && key.chars().all(|c| {
+                c.is_ascii_alphanumeric()
+                    || matches!(c, '_' | '-' | '.')
+                    || (body && (c == '/' || c == '~' || (!c.is_ascii() && c.is_alphanumeric())))
+            });
         plain.then(|| format!("{{{{{variable}.{key}}}}}"))
     }
 }
@@ -610,7 +589,7 @@ struct FieldStats<'a> {
 // | a noisy header (`NOISY_HEADERS`)                                   | never a candidate                               |
 // | one of its values seen with two responses                          | refused: it does not explain them               |
 // | each value leads to one response, each response reached by one     | explains: one `Eq` rule per response, or one    |
-// | value (k values)                                                   | rule that repeats it (`echo_response`)          |
+// | value (k values)                                                   | rule that repeats it (`repeat`)                 |
 // | each value leads to one response, a response reached by several    | explains: that response gets one rule, `any_of` |
 // | values, at least one value seen twice                              | an `Eq` per value                               |
 // | each value leads to one response, a response reached by several    | refused for lack of evidence: a value that      |

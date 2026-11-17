@@ -187,7 +187,8 @@ test.describe('Observed proxy traffic and suggested rules', () => {
       );
       const card = page.getByTestId('observation-suggestion-directory-0-0');
       await expect(card).toContainText('no condition: the response repeats Path parameter "name" (3 calls)');
-      await expect(card).toContainText('<url>http://backend.internal:8080/ws/{{path.name}}</url>');
+      // The name is escaped for XML by the pipes that follow it.
+      await expect(card).toContainText('<url>http://backend.internal:8080/ws/{{path.name | replace("&", "&amp;")');
       await expect(page.getByTestId('observation-suggestion-directory-0-1')).toHaveCount(0);
       await docsScreenshot(
         page,
@@ -277,7 +278,7 @@ test.describe('Observed proxy traffic and suggested rules', () => {
       await expect(page.getByTestId('observation-create-service-directory-0')).toHaveCount(0);
       const card = page.getByTestId('observation-suggestion-directory-0-0');
       await expect(card).toContainText(
-        '<url>{{header.x-forwarded-proto | default("http")}}://{{header.host}}/localhost/ws/{{path.name}}</url>',
+        '<url>{{header.x-forwarded-proto | default("http")}}://{{header.host}}/localhost/ws/{{path.name |',
       );
       await expect(page.getByTestId('observation-suggestion-redirect-directory-0-0')).toHaveText(
         'Sends the application to the service localhost in Mimicway, instead of the backend behind it.',
@@ -400,6 +401,137 @@ test.describe('Observed proxy traffic and suggested rules', () => {
         data: envelope('GetStatus', '<o:ref>R3</o:ref>'),
       });
       expect(await other.text()).not.toContain('<status>OPEN</status>');
+    } finally {
+      target.close();
+    }
+  });
+  test('an operation that repeats its reference, and one that answers a block per item, answer requests never seen', async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(40000);
+    // GetStatus repeats the reference it is asked about; Book answers one block per slot, with its date and type.
+    const escape = (text) => text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+    const answerOf = (request) => {
+      const ref = /<o:ref>(.*?)<\/o:ref>/.exec(request)?.[1];
+      if (request.includes('<o:GetStatus>')) {
+        return `<GetStatusResponse><ref>${ref}</ref><state>OPEN</state></GetStatusResponse>`;
+      }
+      const slots = [...request.matchAll(/<o:slot><o:date>(.*?)<\/o:date><o:type>(.*?)<\/o:type><\/o:slot>/g)];
+      const blocks = slots.map(([, date, type]) => `<booked><date>${date}</date><type>${type}</type></booked>`);
+      return `<BookResponse>${blocks.join('')}</BookResponse>`;
+    };
+    const target = await new Promise((resolve) => {
+      const server = http.createServer((req, res) => {
+        let body = '';
+        req.on('data', (chunk) => (body += chunk));
+        req.on('end', () => {
+          const answer = `<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body>${answerOf(body)}</soap:Body></soap:Envelope>`;
+          res.writeHead(200, { 'content-type': 'text/xml', 'content-length': Buffer.byteLength(answer) });
+          res.end(answer);
+        });
+      });
+      server.listen(0, '127.0.0.1', () => resolve(server));
+    });
+    const targetPort = target.address().port;
+    const envelope = (operation, inner) =>
+      '<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:o="urn:orders"><soap:Body>' +
+      `<o:${operation}>${inner}</o:${operation}></soap:Body></soap:Envelope>`;
+    const status = (ref) => envelope('GetStatus', `<o:ref>${escape(ref)}</o:ref>`);
+    const book = (slots) =>
+      envelope(
+        'Book',
+        slots
+          .map(([date, type]) => `<o:slot><o:date>${date}</o:date><o:type>${escape(type)}</o:type></o:slot>`)
+          .join(''),
+      );
+    const send = (port, body) =>
+      request.post(`http://${port === 7342 ? 'localhost:7342/stock-soap' : `127.0.0.1:${port}`}/ws/StockService`, {
+        data: body,
+        headers: { 'content-type': 'text/xml' },
+      });
+
+    try {
+      const created = await request.post(`${API}/services`, { data: proxyService('stock-soap', targetPort) });
+      expect(created.ok()).toBe(true);
+      await request.post(`${API}/services/stock-soap/observe`);
+      for (const body of [
+        status('R-100'),
+        status('R-200'),
+        status('R-300'),
+        book([
+          ['2026-03-01', 'A'],
+          ['2026-03-02', 'B'],
+        ]),
+        book([['2026-04-09', 'C']]),
+        book([
+          ['2026-05-01', 'A'],
+          ['2026-05-02', 'A'],
+          ['2026-05-03', 'B'],
+        ]),
+      ]) {
+        expect((await send(7342, body)).ok()).toBe(true);
+      }
+
+      // Requests never seen, and what the real backend answers to them.
+      const unseen = [
+        status('R-999 & co'),
+        book([
+          ['2027-01-01', 'X'],
+          ['2027-01-02', 'Y<'],
+        ]),
+        book([['2027-02-01', 'Z']]),
+        book([
+          ['2027-03-01', 'P'],
+          ['2027-03-02', 'Q'],
+          ['2027-03-03', 'R'],
+        ]),
+      ];
+      const expected = [];
+      for (const body of unseen) expected.push(await (await send(targetPort, body)).text());
+
+      await page.goto('/');
+      await page.waitForLoadState('networkidle');
+      await page.getByText('No group').click();
+      await page.getByTestId('service-card-configure-button-stock-soap').click();
+      await page.getByTestId('observation-refresh-suggestions-button-stock-soap').click();
+      await expect(page.getByTestId('observation-suggestion-stock-soap-0-0')).toContainText(
+        'no condition: the response writes one block per "slot" of the request, with its "date" and "type" (3 calls)',
+      );
+      await expect(page.getByTestId('observation-suggestion-stock-soap-1-0')).toContainText(
+        'no condition: the response repeats XML element of the body "ref" (3 calls)',
+      );
+
+      // The list's rule through the form, which receives its script; the reference's rule as suggested.
+      await page.getByTestId('observation-use-suggestion-stock-soap-0-0').click();
+      await page.getByTestId('rule-form-name-input').fill('book');
+      await page.getByTestId('rule-form-submit-button').click();
+      await expect(page.getByTestId('rule-list-item-book')).toBeVisible();
+      const suggestions = await (await request.get(`${API}/services/stock-soap/suggestions`)).json();
+      const reference = suggestions.find((s) => s.operation === 'GetStatus').rule;
+      const saved = await (await request.get(`${API}/services/stock-soap`)).json();
+      expect(saved.rules.find((r) => r.name === 'book').script).toContain('parse_xml_items');
+      const statusRule = {
+        name: 'status',
+        method: reference.method,
+        sub_path: reference.sub_path,
+        action: 'mock',
+        script: reference.script,
+        conditions: reference.conditions,
+        response: reference.response,
+      };
+
+      // The backend gone, the mock alone answers each request never seen as the backend did.
+      target.close();
+      const updated = await request.put(`${API}/services/stock-soap`, {
+        data: { ...saved, rules: [...saved.rules, statusRule], is_mocked: true, real_target_url: '' },
+      });
+      expect(updated.ok()).toBe(true);
+      for (const [i, body] of unseen.entries()) {
+        const answer = await send(7342, body);
+        expect(answer.status()).toBe(200);
+        expect(await answer.text()).toBe(expected[i]);
+      }
     } finally {
       target.close();
     }
