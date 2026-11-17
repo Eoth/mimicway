@@ -1,7 +1,12 @@
-//! Runs the real binary with `REDACT_HEADERS` set, as an operator would, sends credentials to two observed proxy
-//! services (one whose backend answers, one whose backend is down) and reads back every call they kept, by both
-//! routes of the API: no answer holds a credential the requests carried, nor one the backend sent back. The setting is
-//! read once per process, so only a process of its own can test it.
+//! Runs the real binary with `REDACT_HEADERS` set, as an operator would, and sends credentials through four observed
+//! proxy services: with and without a group, each once with a backend that answers and once with one that is down,
+//! their targets carrying `user:password@`. Every call is read back by the route the service has (four routes: list and
+//! one call, with and without a group): no answer holds a credential the requests carried (headers, a sensitive header
+//! sent twice, a header whose value is not ASCII) nor one the backend set or the target held; and the output of the
+//! binary (stdout and stderr, at its default level of log) holds none of them, nor the secret of the query.
+//!
+//! What it does not see: the logs at the levels `debug` and `trace`, which name what the HTTP libraries do; and a
+//! credential in the query or a body, which observation keeps as sent (the guide says so).
 #![cfg(unix)]
 
 use std::process::{Command, Stdio};
@@ -11,14 +16,20 @@ use std::time::{Duration, Instant};
 mod test_ports;
 use test_ports::reserve_port;
 
-const SECRETS: [&str; 6] = [
+/// Credentials that no answer of the API and no line of the log may hold.
+const SECRETS: [&str; 9] = [
     "secret-authorization",
     "secret-cookie",
-    "secret-api-key",
+    "secret-api-key-first",
+    "secret-api-key-second",
     "secret-auth-token",
     "secret-extra-header",
     "secret-set-cookie",
+    "secret-userinfo",
+    "secret-non-ascii",
 ];
+/// Kept as sent by observation (the guide says so), never written to the log.
+const QUERY_SECRET: &str = "secret-query";
 
 /// A backend that answers every request with a session cookie of its own and a known size, so that the exchange is
 /// captured.
@@ -52,6 +63,8 @@ async fn no_answer_about_observed_calls_holds_a_credential() {
     let backend_port = backend().await;
     let data_dir = std::env::temp_dir().join(format!("mimicway-calls-{}", fastrand::u64(..)));
     std::fs::create_dir_all(&data_dir).unwrap();
+    let output = data_dir.join("output.log");
+    let log = std::fs::File::create(&output).unwrap();
     let port = reserve_port();
     let _server = Server(
         Command::new(env!("CARGO_BIN_EXE_mimicway"))
@@ -62,8 +75,9 @@ async fn no_answer_about_observed_calls_holds_a_credential() {
             .env("REDACT_HEADERS", "X-Tenant-Secret")
             .env_remove("AUTH_ENABLED")
             .env_remove("PROXY_ALLOWED_TARGETS")
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
+            .env_remove("RUST_LOG")
+            .stdout(Stdio::from(log.try_clone().unwrap()))
+            .stderr(Stdio::from(log))
             .spawn()
             .expect("start the binary"),
     );
@@ -88,26 +102,31 @@ async fn no_answer_about_observed_calls_holds_a_credential() {
         .await
         .unwrap();
     assert!(created.status().is_success(), "{}", created.status());
-    // (service, its group, where the application calls it, where the API reads it)
+
+    let alive = format!("http://user:secret-userinfo@127.0.0.1:{backend_port}");
+    let down = "http://user:secret-userinfo@127.0.0.1:1".to_string();
+    // (service, its group, its target, where the application calls it, where the API reads it, status expected)
     let services = [
+        ("alive", None, &alive, "", "/services/alive", 200),
+        ("down", None, &down, "", "/services/down", 502),
         (
-            "alive",
-            None,
-            format!("{root}/alive/ws"),
-            format!("{api}/services/alive"),
+            "alive-g",
+            Some("team"),
+            &alive,
+            "/teamx",
+            "/groups/team/services/alive-g",
+            200,
         ),
         (
-            "down",
+            "down-g",
             Some("team"),
-            format!("{root}/teamx/down/ws"),
-            format!("{api}/groups/team/services/down"),
+            &down,
+            "/teamx",
+            "/groups/team/services/down-g",
+            502,
         ),
     ];
-    for (name, group, _, service_api) in &services {
-        let target = match *name {
-            "alive" => format!("http://127.0.0.1:{backend_port}"),
-            _ => "http://127.0.0.1:1".to_string(),
-        };
+    for (name, group, target, _, service_api, _) in &services {
         let service = serde_json::json!({
             "name": name, "listen_path": "", "real_target_url": target, "is_mocked": false,
             "rewrite_directory_urls": false, "group_name": group, "wsdl_mode": "auto", "rules": []
@@ -120,34 +139,43 @@ async fn no_answer_about_observed_calls_holds_a_credential() {
             .unwrap();
         assert_eq!(created.status().as_u16(), 201, "{name}");
         let observed = client
-            .post(format!("{service_api}/observe"))
+            .post(format!("{api}{service_api}/observe"))
             .send()
             .await
             .unwrap();
         assert_eq!(observed.status().as_u16(), 204, "{name}");
     }
 
-    for (name, _, call_url, _) in &services {
+    for (name, _, _, prefix, _, expected) in &services {
+        let mut headers = reqwest::header::HeaderMap::new();
+        let mut add = |name: &'static str, value: &[u8]| {
+            headers.append(
+                name,
+                reqwest::header::HeaderValue::from_bytes(value).unwrap(),
+            );
+        };
+        add("authorization", b"Bearer secret-authorization");
+        add("cookie", b"session=secret-cookie");
+        add("x-api-key", b"secret-api-key-first");
+        add("x-api-key", b"secret-api-key-second");
+        add("x-auth-token", b"secret-auth-token");
+        add("x-tenant-secret", b"secret-extra-header");
+        add("x-note", b"secret-non-ascii-\xe9t\xe9");
+        add("content-type", b"text/xml");
         let relayed = client
-            .post(call_url)
-            .header("authorization", "Bearer secret-authorization")
-            .header("cookie", "session=secret-cookie")
-            .header("x-api-key", "secret-api-key")
-            .header("x-auth-token", "secret-auth-token")
-            .header("x-tenant-secret", "secret-extra-header")
-            .header("content-type", "text/xml")
+            .post(format!("{root}{prefix}/{name}/ws?api_key={QUERY_SECRET}"))
+            .headers(headers)
             .body("<call/>")
             .send()
             .await
             .unwrap();
-        let expected = if *name == "alive" { 200 } else { 502 };
-        assert_eq!(relayed.status().as_u16(), expected, "{name}");
+        assert_eq!(relayed.status().as_u16(), *expected, "{name}");
     }
 
     let mut answers = Vec::new();
-    for (name, _, _, service_api) in &services {
+    for (name, _, _, _, service_api, expected) in &services {
         let list = client
-            .get(format!("{service_api}/observed-calls"))
+            .get(format!("{api}{service_api}/observed-calls"))
             .send()
             .await
             .unwrap()
@@ -157,7 +185,10 @@ async fn no_answer_about_observed_calls_holds_a_credential() {
         let calls: Vec<serde_json::Value> = serde_json::from_str(&list).unwrap();
         assert_eq!(calls.len(), 1, "{name}: {list}");
         let detail = client
-            .get(format!("{service_api}/observed-calls/{}", calls[0]["id"]))
+            .get(format!(
+                "{api}{service_api}/observed-calls/{}",
+                calls[0]["id"]
+            ))
             .send()
             .await
             .unwrap()
@@ -178,21 +209,33 @@ async fn no_answer_about_observed_calls_holds_a_credential() {
             );
         }
         assert_eq!(parsed["request"]["body"]["text"], "<call/>", "{name}");
-        answers.push(list);
-        answers.push(detail);
-    }
-    let alive_detail: serde_json::Value = serde_json::from_str(&answers[1]).unwrap();
-    assert_eq!(
-        alive_detail["response"]["headers"]["set-cookie"],
-        "[redacted]"
-    );
-    let down_detail: serde_json::Value = serde_json::from_str(&answers[3]).unwrap();
-    assert_eq!(down_detail["failure"]["cause"], "unreachable");
-
-    for answer in &answers {
-        for secret in SECRETS {
-            assert!(!answer.contains(secret), "{secret} in {answer}");
+        if *expected == 200 {
+            assert_eq!(
+                parsed["response"]["headers"]["set-cookie"], "[redacted]",
+                "{name}"
+            );
+        } else {
+            assert_eq!(parsed["failure"]["cause"], "unreachable", "{name}");
+            assert_eq!(
+                parsed["failure"]["target"], "http://127.0.0.1:1/ws",
+                "{name}"
+            );
         }
+        answers.push((name.to_string(), list));
+        answers.push((name.to_string(), detail));
+    }
+    for (name, answer) in &answers {
+        for secret in SECRETS {
+            assert!(!answer.contains(secret), "{name}: {secret} in {answer}");
+        }
+    }
+
+    // What the binary wrote while relaying, failures included.
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let written = std::fs::read_to_string(&output).unwrap();
+    assert!(written.contains("proxy"), "the log was read: {written}");
+    for secret in SECRETS.iter().chain([&QUERY_SECRET]) {
+        assert!(!written.contains(secret), "{secret} in the log:\n{written}");
     }
 
     let _ = std::fs::remove_dir_all(&data_dir);
