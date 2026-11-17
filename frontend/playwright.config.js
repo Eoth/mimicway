@@ -6,6 +6,9 @@ export default defineConfig({
   globalSetup: './e2e/global-setup.mjs',
   timeout: 15000,
   workers: 1,
+  // On GitHub, each failed test is also an annotation of its job, read with the run by anyone: the log of a job is
+  // not. Elsewhere, one line per test.
+  reporter: process.env.GITHUB_ACTIONS ? [['github'], ['list']] : 'list',
   use: {
     baseURL: 'http://localhost:7342',
     headless: true,
