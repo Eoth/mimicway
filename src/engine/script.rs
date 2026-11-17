@@ -152,7 +152,8 @@ impl ScriptEngine {
         // children each, and xml_element() builds an element, recursively, from a Rhai value. Paths use the same syntax as
         // XPath conditions: segments separated by "/", namespace prefixes ignored.
         // A value written inside a document, escaped for where it lands (escape.rs), as the template pipes of the same
-        // names do: absent (`()`), an array or a map gives an empty text, any other value its text.
+        // names do: absent (`()`), an array or a map gives an empty text, any other value its text. A script writes a
+        // JSON value with `to_json`, which knows its type: `json_value` is a pipe only.
         for escaping in [
             Escaping::XmlText,
             Escaping::XmlAttr,

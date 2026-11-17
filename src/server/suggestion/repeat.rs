@@ -32,7 +32,7 @@
 //! (the offsets a value may start at); the checks cost one rendering per call and per shape tried, within
 //! `MAX_RENDERS` renderings for all the suggestions of a service.
 use super::{Call, Candidate, Renders};
-use crate::engine::escape::Escaping;
+use crate::engine::escape::{Escaping, is_json_number};
 use crate::engine::script::{ScriptContext, ScriptEngine};
 use crate::engine::{TemplateContext, TemplateRenderer};
 use crate::models::{BodyFragment, ConditionSource, MockResponse};
@@ -331,15 +331,16 @@ enum Context {
     Cdata,
     /// The inside of a JSON string.
     JsonString,
-    /// A place of a JSON document out of any string: only a JSON value fits, which a script writes (`to_json`) and a
-    /// template cannot.
+    /// A place of a JSON document out of any string: only a JSON value fits, which a script writes (`to_json`), and a
+    /// template (`json_value`) where every value observed there was a JSON number.
     JsonBare,
     /// A text response.
     Text,
 }
 
 impl Context {
-    /// The pipes that escape a value read by a template here; `None` where no pipe keeps the document well formed.
+    /// The pipes that escape a value read by a template here; `None` where no pipe keeps the document well formed
+    /// whatever the values observed (`Attempt::fragments` writes `json_value` out of any JSON string, given numbers).
     fn pipe(self) -> Option<&'static str> {
         match self {
             Context::XmlText => Some(" | xml_text"),
@@ -1042,12 +1043,16 @@ impl Attempt<'_, '_> {
                 Some(BodyFragment::Template {
                     template: match piece {
                         Piece::Value(c) if *c < self.found.len() => {
-                            let expression = &self.found[*c].1;
-                            format!(
-                                "{}{}}}}}",
-                                expression.trim_end_matches('}'),
-                                context.pipe()?
-                            )
+                            let (_, expression, values) = &self.found[*c];
+                            // Out of any JSON string, a value written as a JSON value: a number as it is, any
+                            // other text as a string. Only where every value observed was a number, which it gives
+                            // back as it was.
+                            let numbers = values.iter().all(|v| is_json_number(v));
+                            let pipe = match context {
+                                Context::JsonBare if numbers => " | json_value",
+                                _ => context.pipe()?,
+                            };
+                            format!("{}{pipe}}}}}", expression.trim_end_matches('}'))
                         }
                         _ => {
                             let fits = matches!(

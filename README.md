@@ -232,7 +232,7 @@ A response body is made of fragments. In a `Template` fragment, single braces ar
 | `{{script.total}}` | A value returned by the rule's script |
 | `{{"2026-12-31T10:00:00Z" \| epoch_seconds}}`, `{{now_iso \| date("yyyy-MM-dd")}}` | `1798711200`, today's date: an ISO date, written in the template or taken from the request, in another unit or format |
 
-Pipes: `lower`, `upper`, `trim`, `capitalize`, `first(n)`, `last(n)`, `substr(start, len)`, `default("x")`, `replace("a", "b")`, `prepend("x")`, `append("x")`, `length`, for an ISO 8601 date `epoch_ms`, `epoch_seconds`, `epoch_minutes`, `date("dd/MM/yyyy HH:mm")`, and for a value written inside a document `xml_text`, `xml_attr`, `cdata`, `json_string`.
+Pipes: `lower`, `upper`, `trim`, `capitalize`, `first(n)`, `last(n)`, `substr(start, len)`, `default("x")`, `replace("a", "b")`, `prepend("x")`, `append("x")`, `length`, for an ISO 8601 date `epoch_ms`, `epoch_seconds`, `epoch_minutes`, `date("dd/MM/yyyy HH:mm")`, and for a value written inside a document `xml_text`, `xml_attr`, `cdata`, `json_string`, `json_value`.
 
 Fake data kinds: `FirstName`, `LastName`, `Email`, `CompanyName`, `StreetName`, `DatePast`, `DateFuture`, `TimestampMs`, `BoolRandom`, `LoremSentence`, and French formats (`PhoneNumberFR`, `CityFR`, `PostcodeFR`, `FullAddressFR`, `CountryFR`, `IbanFR`, `Siren`, `Siret`). The visual builder adds integers in a range (`Integer{min,max}`).
 

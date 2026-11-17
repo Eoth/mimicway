@@ -28,6 +28,7 @@ const PIPE_LABELS = {
   xml_attr: () => t('xml_attr — escaped for an XML attribute value'),
   cdata: () => t('cdata — kept whole inside a CDATA section'),
   json_string: () => t('json_string — escaped for the inside of a JSON string'),
+  json_value: () => t('json_value — a JSON number as it is, any other text as a JSON string'),
 };
 
 const VARIABLE_LABELS = {

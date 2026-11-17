@@ -9,6 +9,9 @@
 //   by ending the section between `]]` and `>` and opening another one (`]]]]><![CDATA[>`).
 // - `json_string`: the inside of a JSON string, as serde_json writes one: `"` and `\` escaped, the control characters
 //   U+0000 to U+001F as `\b`, `\f`, `\n`, `\r`, `\t` or `\u00XX`.
+// - `json_value` (template pipe only): a JSON value, out of any string. A text that is exactly a JSON number (RFC 8259:
+//   no `+1`, `01`, `.5`, `1.`, `NaN` nor `Infinity`) as it is, any other text as a JSON string, quotes included; `true`,
+//   `false` and `null` too, as the texts they are.
 //
 // Each function says the length of its result before building it (`escaped_len`), so that a script can refuse a result
 // past the size of a text before it exists (script_budget.rs).
@@ -20,6 +23,7 @@ pub(crate) enum Escaping {
     XmlAttr,
     Cdata,
     JsonString,
+    JsonValue,
 }
 
 impl Escaping {
@@ -29,6 +33,7 @@ impl Escaping {
             Escaping::XmlAttr => "xml_attr",
             Escaping::Cdata => "cdata",
             Escaping::JsonString => "json_string",
+            Escaping::JsonValue => "json_value",
         }
     }
 
@@ -38,6 +43,7 @@ impl Escaping {
             Escaping::XmlAttr,
             Escaping::Cdata,
             Escaping::JsonString,
+            Escaping::JsonValue,
         ]
         .into_iter()
         .find(|e| e.name() == name)
@@ -47,6 +53,12 @@ impl Escaping {
     pub(crate) fn apply(self, text: &str) -> String {
         let mut out = String::with_capacity(self.escaped_len(text));
         match self {
+            Escaping::JsonValue if is_json_number(text) => out.push_str(text),
+            Escaping::JsonValue => {
+                out.push('"');
+                out.push_str(&Escaping::JsonString.apply(text));
+                out.push('"');
+            }
             Escaping::Cdata => {
                 let mut rest = text;
                 while let Some(at) = rest.find("]]>") {
@@ -76,6 +88,8 @@ impl Escaping {
     /// The length in bytes of `apply(text)`, without building it.
     pub(crate) fn escaped_len(self, text: &str) -> usize {
         match self {
+            Escaping::JsonValue if is_json_number(text) => text.len(),
+            Escaping::JsonValue => Escaping::JsonString.escaped_len(text) + 2,
             Escaping::Cdata => text.len() + text.matches("]]>").count() * (CDATA_END.len() - 3),
             _ => text
                 .chars()
@@ -106,6 +120,43 @@ impl Escaping {
             _ => None,
         }
     }
+}
+
+/// Whether `text` is exactly a JSON number (RFC 8259, section 6): `-`? then `0` or a digit 1-9 and digits, then
+/// optionally `.` and digits, then optionally `e` or `E`, a sign, digits.
+pub(crate) fn is_json_number(text: &str) -> bool {
+    let bytes = text.as_bytes();
+    let digits = |from: usize| {
+        bytes[from..]
+            .iter()
+            .take_while(|b| b.is_ascii_digit())
+            .count()
+    };
+    let mut i = usize::from(bytes.first() == Some(&b'-'));
+    match bytes.get(i) {
+        Some(b'0') => i += 1,
+        Some(b'1'..=b'9') => i += digits(i),
+        _ => return false,
+    }
+    if bytes.get(i) == Some(&b'.') {
+        let fraction = digits(i + 1);
+        if fraction == 0 {
+            return false;
+        }
+        i += 1 + fraction;
+    }
+    if matches!(bytes.get(i), Some(b'e' | b'E')) {
+        i += 1;
+        if matches!(bytes.get(i), Some(b'+' | b'-')) {
+            i += 1;
+        }
+        let exponent = digits(i);
+        if exponent == 0 {
+            return false;
+        }
+        i += exponent;
+    }
+    i == bytes.len()
 }
 
 /// How one character is written.

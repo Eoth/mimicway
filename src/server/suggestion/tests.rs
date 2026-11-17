@@ -1302,3 +1302,29 @@ fn the_first_item_of_a_json_array_is_no_field_at_the_top_of_an_object() {
         Suggestion::VarianceUnexplained { .. }
     ));
 }
+
+#[test]
+fn an_identifier_repeated_as_a_json_number_gives_one_rule() {
+    // `{"id":7}` for `/orders/7`: one rule that writes the identifier as a JSON value, as 0.5.0 suggested.
+    let suggestions = suggest_for_service(&observed(
+        ["7", "8", "9"]
+            .iter()
+            .map(|id| {
+                let path: &'static str = Box::leak(format!("/orders/{id}").into_boxed_str());
+                (
+                    path,
+                    exchange(200, &format!("{{\"id\":{id},\"status\":\"open\"}}")),
+                )
+            })
+            .collect(),
+    ));
+    let Suggestion::Echo { rule } = &suggestions[0].outcome else {
+        panic!("expected one rule, got {suggestions:?}");
+    };
+    assert_eq!(
+        rule.response.body[1],
+        BodyFragment::Template {
+            template: "{{path.id | json_value}}".into()
+        }
+    );
+}

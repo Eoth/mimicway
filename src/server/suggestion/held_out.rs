@@ -438,9 +438,20 @@ fn rules_answer_calls_never_seen_with_well_formed_documents_and_as_the_backend()
             let rule = suggested[index];
             // A rule without a list answers as the backend only the number of items it was observed with.
             let items = request.slots.len();
+            // A template writes a value out of a JSON string as a JSON value from its text (`json_value`): it answers as
+            // the backend for the numbers it was observed with, a well-formed document for anything else. A script
+            // writes the JSON value of the request, whatever its type.
+            let numbers = |slots: bool| {
+                matches!(request.count, Number::Int(_))
+                    && (!slots
+                        || request
+                            .slots
+                            .iter()
+                            .all(|(_, _, qty)| matches!(qty, Number::Int(_))))
+            };
             let covered = match &rule.list {
-                Some(_) => holds(rule, items),
-                None => observed.iter().any(|r| r.slots.len() == items),
+                Some(_) => numbers(false) && holds(rule, items),
+                None => numbers(true) && observed.iter().any(|r| r.slots.len() == items),
             };
             if (!rule.repeats.is_empty() || rule.list.is_some()) && covered {
                 prop_assert_eq!(
@@ -461,4 +472,125 @@ fn rules_answer_calls_never_seen_with_well_formed_documents_and_as_the_backend()
         generalized.get() >= 64 && answered.get() >= 256,
         "generalized {generalized:?}, answered {answered:?}"
     );
+}
+
+/// Where a REST call carries its identifier.
+#[derive(Debug, Clone, Copy)]
+enum IdentifierIn {
+    Path,
+    Query,
+    Header,
+}
+
+#[test]
+fn an_identifier_of_the_path_query_or_headers_repeated_as_a_json_value_stays_well_formed() {
+    // The backend answers `{"id":<identifier>}`, the identifier as a JSON value: a number as it is, any other text as a
+    // string. Observed with numbers; held out with anything.
+    use proptest::test_runner::TestRunner;
+    let config = crate::test_seed::config(128, 0x6a73_6f6e_5f76_616c);
+    let backend = |id: &str| {
+        format!(
+            "{{\"id\":{},\"status\":\"open\"}}",
+            crate::engine::escape::Escaping::JsonValue.apply(id)
+        )
+    };
+    let call = |at: IdentifierIn, id: &str| {
+        let mut e = ObservedExchange::new(
+            HashMap::new(),
+            HashMap::new(),
+            b"",
+            None,
+            200,
+            HashMap::new(),
+            backend(id).as_bytes(),
+            Some("application/json".into()),
+        );
+        let path = match at {
+            IdentifierIn::Path => format!("/orders/{id}"),
+            IdentifierIn::Query => {
+                e.request_query_params.insert("id".into(), id.into());
+                "/orders".to_string()
+            }
+            IdentifierIn::Header => {
+                e.request_headers.insert("x-order".into(), id.into());
+                "/orders".to_string()
+            }
+        };
+        (path, e)
+    };
+    let strategy = (
+        prop::sample::select(vec![
+            IdentifierIn::Path,
+            IdentifierIn::Query,
+            IdentifierIn::Header,
+        ]),
+        prop::collection::vec(
+            prop_oneof![
+                (0u32..100_000).prop_map(|n| n.to_string()),
+                prop::sample::select(vec![
+                    "abc", "1e5", "-0", "01", "\"", "true", "1.", "+1", "\\", "\u{1}"
+                ])
+                .prop_map(str::to_string),
+                "[a-z0-9.e+-]{1,6}",
+            ],
+            4..8,
+        ),
+    );
+    let result = TestRunner::new(config).run(&strategy, |(at, held_out)| {
+        let observed: Vec<(String, ObservedExchange)> =
+            ["7", "8", "9"].iter().map(|id| call(at, id)).collect();
+        let mut endpoints: Vec<(ObservationKey, Vec<ObservedExchange>)> = Vec::new();
+        for (path, e) in observed {
+            endpoints.push((
+                ObservationKey {
+                    group_name: None,
+                    service_name: "svc".into(),
+                    method: "GET".into(),
+                    sub_path: path,
+                    operation: None,
+                },
+                vec![e],
+            ));
+        }
+        let suggestions = suggest_for_service(&endpoints);
+        let suggested: Vec<&super::SuggestedRule> = suggestions
+            .iter()
+            .flat_map(|s| rules_of(&s.outcome))
+            .collect();
+        prop_assert!(
+            suggested.len() == 1 && !suggested[0].repeats.is_empty(),
+            "one rule that repeats the identifier: {suggested:?}"
+        );
+        let rules: Vec<Rule> = suggested
+            .iter()
+            .enumerate()
+            .map(|(i, r)| as_rule(i, r))
+            .collect();
+        for id in &held_out {
+            // A path segment is decoded as the matcher decodes it: only identifiers it gives back as they are.
+            if matches!(at, IdentifierIn::Path) && id.contains(['/', '"', '\\', '\u{1}']) {
+                continue;
+            }
+            let (path, mut e) = call(at, id);
+            if matches!(at, IdentifierIn::Path) {
+                e.request_path_params.clear();
+            }
+            let key = ObservationKey {
+                group_name: None,
+                service_name: "svc".into(),
+                method: "GET".into(),
+                sub_path: path,
+                operation: None,
+            };
+            let Some((_, got)) = answer(&rules, &key, &e, b"") else {
+                continue;
+            };
+            prop_assert!(well_formed(true, &got), "not well formed for {id:?}: {got}");
+            prop_assert_eq!(&got, &backend(id), "for {:?}", id);
+        }
+        Ok(())
+    });
+    if let Err(failure) = result {
+        panic!("{failure}");
+    }
 }

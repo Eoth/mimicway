@@ -854,7 +854,7 @@ Defects and debts found on the way. They are taken by bundle: the items of a bun
 | Screen reader | E15, E43 | "Accessible" (0.6) |
 | Forms and messages | E8, E12, E19, E21, E31, E32 | "Words anyone can read" (0.6) |
 | Proxy path and suggestions | E7, E34, E35, E36, E46, E59, E61, E64, E65, E66, E68, and E48 once it is unblocked | "Recorded, without personal data" (0.7) |
-| Builders and rule engine | E2, E28, E45, E69, and E9, E54 and E67 once decided | "Guided and explained" (0.7) |
+| Builders and rule engine | E2, E28, E45, and E9, E54 and E67 once decided | "Guided and explained" (0.7) |
 | Tests | E6, E11, E16 | the first theme that touches them |
 | Kafka and TCP | E3, E4 | "Protocols" (1.1) |
 
@@ -1240,14 +1240,3 @@ Size S
 **What.** A bound per observed service on the endpoints it may hold (a share of `TRAFFIC_OBSERVATION_MAX_KEYS`), its least recently updated endpoint leaving its place when a new one comes, so that one service never pushes another out.
 
 **Done when.** A service sent calls to a thousand invented paths leaves the endpoints of another observed service in place (test), and the scale test counts the eviction.
-
-### E69. A number of the request repeated out of a JSON string
-
-Size S
-
-**Why.** A suggested rule repeats a value of the request only where an escaping keeps the response well formed for any value to come (`src/server/suggestion/repeat.rs`). Out of any JSON string, a template writes the text of the value as it is: `{"id":{{path.id}}}` gives `{"id":abc}` for `/orders/abc`. Such a value is not generalized: a REST route answering `{"id":7,…}` for `/orders/7` gets one rule per identifier observed, as before 0.5.1, where 0.5.0 repeated it. A list rule's script does write the JSON value of an item (`to_json`), typed by the request; a path, query or header value has no JSON type.
-
-**What.** A pipe that writes a value as a JSON value whatever it is (`json_value`: a JSON number as it is, anything else as a JSON string), and the suggestion that uses it where the observed values were numbers, the docs saying what it answers to a value that is not one.
-
-**Done when.** `GET /orders/7`, `/orders/8`, `/orders/9` answered `{"id":7}`… give one rule, which answers `/orders/abc` with a well-formed document (the judge of calls held out, `held_out.rs`, extended to path values).
-

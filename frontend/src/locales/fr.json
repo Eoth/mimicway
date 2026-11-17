@@ -786,6 +786,7 @@
   "xml_attr — escaped for an XML attribute value": "xml_attr — échappé pour la valeur d'un attribut XML",
   "cdata — kept whole inside a CDATA section": "cdata — gardé entier dans une section CDATA",
   "json_string — escaped for the inside of a JSON string": "json_string — échappé pour l'intérieur d'une chaîne JSON",
+  "json_value \u2014 a JSON number as it is, any other text as a JSON string": "json_value — un nombre JSON tel quel, tout autre texte en chaîne JSON",
   "xml_text(value)": "xml_text(valeur)",
   "xml_attr(value)": "xml_attr(valeur)",
   "cdata(value)": "cdata(valeur)",
