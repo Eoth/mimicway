@@ -26,7 +26,7 @@ Mimicway attend donc d'avoir vu **plusieurs appels** à une route (voir la secti
 
 Quand plusieurs champs expliqueraient les réponses, Mimicway garde celui qui a **le moins de valeurs différentes** : le nom qui décide l'emporte sur un identifiant qui change à chaque appel. Un champ dont chaque valeur n'a été vue qu'une fois, et qui demanderait plusieurs valeurs pour une même réponse, n'est jamais choisi : n'importe quel identifiant propre à chaque appel conviendrait, il ne prouve donc rien.
 
-Un appel qui a reçu une **erreur du serveur** (un statut `5xx`) qu'aucun champ n'explique est mis de côté : Mimicway propose les règles des autres appels, s'il en reste assez, et la suggestion dit combien d'appels ont été écartés et avec quel statut. Cinq réponses identiques et un `500` donnent une règle pour les cinq.
+Un appel qui a reçu une **erreur du serveur** (un statut `5xx`) qu'aucun champ n'explique est mis de côté : Mimicway propose les règles des autres appels, s'il en reste assez et plus que d'erreurs, et la suggestion dit combien d'appels ont été écartés et avec quel statut. Cinq réponses identiques et un `500` donnent une règle pour les cinq ; trois réponses et cinquante `503` n'en donnent aucune, puisque les erreurs sont ce que fait surtout cette route.
 
 ![Suggestions : deux règles conditionnelles déduites du trafic observé](screenshots/observation-suggestions.png)
 

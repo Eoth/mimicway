@@ -1086,3 +1086,36 @@ fn an_operation_the_condition_reader_does_not_find_is_no_operation() {
         assert_eq!(super::replay::check(&endpoints), Ok(()));
     }
 }
+
+#[test]
+fn errors_are_set_aside_only_when_fewer_than_the_answers_kept() {
+    // Three answers and fifty server errors: the errors are what the route does, not an accident beside it.
+    let outcome = |answers: usize, errors: usize| {
+        let mut calls: Vec<ObservedExchange> = (0..answers).map(|_| exchange(200, "ok")).collect();
+        calls.extend((0..errors).map(|_| exchange(503, "unavailable")));
+        let suggestions = suggest_for_service(&[(key("GET", "/orders"), calls)]);
+        (
+            suggestions[0].outcome.clone(),
+            suggestions[0].left_out.clone(),
+        )
+    };
+    for (answers, errors) in [(3, 50), (3, 3), (4, 4)] {
+        let (outcome, left_out) = outcome(answers, errors);
+        assert!(
+            matches!(outcome, Suggestion::VarianceUnexplained { .. }) && left_out.is_empty(),
+            "{answers} answers, {errors} errors: {outcome:?}"
+        );
+    }
+    let (outcome, left_out) = outcome(4, 3);
+    assert!(
+        matches!(outcome, Suggestion::Unconditional { .. }),
+        "{outcome:?}"
+    );
+    assert_eq!(
+        left_out,
+        vec![LeftOut {
+            status: 503,
+            count: 3
+        }]
+    );
+}

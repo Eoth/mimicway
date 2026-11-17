@@ -346,8 +346,8 @@ fn response_signature(exchange: &ObservedExchange) -> (u16, &str) {
 /// The suggestion for the calls of one route or operation (oldest first), each rule carrying the conditions `base`
 /// first, and the calls set aside. `None` while there are fewer calls than `min_samples()`: no decision yet, either way.
 /// When no field explains the responses, the calls answered with a `5xx` status are set aside and the others tried
-/// alone, if there are still `min_samples()` of them: a server error that nothing in the request explains says nothing
-/// about the answers the others got.
+/// alone, if there are still `min_samples()` of them and more of them than of errors: a server error that nothing in
+/// the request explains says nothing about the answers the others got, unless errors are what the route mostly does.
 fn suggest_calls(
     method: &str,
     sub_path: &str,
@@ -366,6 +366,7 @@ fn suggest_calls(
         .partition(|c| c.exchange().response_status >= 500);
     if !errors.is_empty()
         && kept.len() >= min_samples()
+        && errors.len() < kept.len()
         && let Ok(suggestion) = explain(method, sub_path, &kept, base)
     {
         let mut by_status: BTreeMap<u16, usize> = BTreeMap::new();

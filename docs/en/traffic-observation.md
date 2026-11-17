@@ -26,7 +26,7 @@ Mimicway therefore waits until it has seen **several calls** to a route (see the
 
 When several fields would explain the responses, Mimicway keeps the one with the **fewest different values**: the name that decides wins over an identifier that changes at every call. A field whose every value was seen only once, and which would need several values for one response, is never chosen: any identifier unique to each call would fit, so it proves nothing.
 
-A call answered with a **server error** (a `5xx` status) that no field explains is set aside: Mimicway suggests the rules for the other calls, if there are still enough of them, and the suggestion says how many calls were left out and with which status. Five identical answers and one `500` give one rule for the five.
+A call answered with a **server error** (a `5xx` status) that no field explains is set aside: Mimicway suggests the rules for the other calls, if there are still enough of them and more of them than of errors, and the suggestion says how many calls were left out and with which status. Five identical answers and one `500` give one rule for the five; three answers and fifty `503` give none, since errors are what that route mostly does.
 
 ![Suggestions: two conditional rules derived from observed traffic](screenshots/observation-suggestions.png)
 
