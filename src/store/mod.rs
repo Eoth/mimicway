@@ -197,6 +197,20 @@ impl WriterHandle {
     }
 }
 
+/// What a change did to the configuration, told to the listener of the store (`MockStore::on_change`) under the write
+/// lock, once the change is applied in memory.
+pub enum ConfigChange<'a> {
+    /// A change of some services or groups: what was there before, what is there now.
+    Edited {
+        before: &'a MockConfig,
+        after: &'a MockConfig,
+    },
+    /// The whole configuration replaced (an import, a restore, a reset): nothing of what was there carries over.
+    Replaced,
+}
+
+type ChangeListener = Arc<dyn Fn(ConfigChange<'_>) + Send + Sync>;
+
 #[derive(Clone)]
 pub struct MockStore {
     config: Arc<RwLock<Arc<MockConfig>>>,
@@ -211,6 +225,9 @@ pub struct MockStore {
     quotas: Quotas,
     /// Bytes of YAML of the configuration in memory, against which MAX_CONFIG_BYTES tells a change that grows it.
     yaml_len: Arc<AtomicUsize>,
+    /// Told of every change applied, whatever the route that made it: the one place where state kept beside the
+    /// configuration (traffic observation) follows it, rather than a call each handler would have to remember.
+    listener: Arc<std::sync::RwLock<Option<ChangeListener>>>,
 }
 
 impl MockStore {
@@ -227,6 +244,7 @@ impl MockStore {
             last_backup: Arc::default(),
             quotas: Quotas::from_lookup(crate::settings::env),
             yaml_len: Arc::default(),
+            listener: Arc::default(),
         })
     }
 
@@ -235,6 +253,23 @@ impl MockStore {
     pub(crate) fn with_quotas(mut self, quotas: Quotas) -> Self {
         self.quotas = quotas;
         self
+    }
+
+    /// Sets the one listener told of every change applied (`ConfigChange`), replacing any earlier one. It runs under the
+    /// write lock: the next change waits for it, so what it keeps never lags behind the configuration.
+    pub fn on_change(&self, listener: impl Fn(ConfigChange<'_>) + Send + Sync + 'static) {
+        *self.listener.write().unwrap_or_else(|e| e.into_inner()) = Some(Arc::new(listener));
+    }
+
+    fn tell(&self, change: ConfigChange<'_>) {
+        let listener = self
+            .listener
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
+        if let Some(listener) = listener {
+            listener(change);
+        }
     }
 
     /// The caps this store enforces.
@@ -326,6 +361,7 @@ impl MockStore {
             last_backup: Arc::default(),
             quotas: Quotas::from_lookup(crate::settings::env),
             yaml_len: Arc::new(AtomicUsize::new(yaml_len)),
+            listener: Arc::default(),
         })
     }
 
@@ -370,6 +406,7 @@ impl MockStore {
             .prepare_and_backup(&config, BackupWhen::Always, capped)
             .await?;
         *guard = Arc::new(config);
+        self.tell(ConfigChange::Replaced);
         self.writer.send_write(self.path.clone(), yaml).await;
         Ok(())
     }
@@ -398,6 +435,7 @@ impl MockStore {
         }
         self.yaml_len.store(yaml.len(), Ordering::Relaxed);
         *guard = Arc::new(empty);
+        self.tell(ConfigChange::Replaced);
         self.writer.send_write(self.path.clone(), yaml).await;
         Ok(())
     }
@@ -423,7 +461,11 @@ impl MockStore {
         let yaml = self
             .prepare_and_backup(&cfg, BackupWhen::OncePerBurst, Capped::Yes)
             .await?;
-        *guard = Arc::new(cfg);
+        let before = std::mem::replace(&mut *guard, Arc::new(cfg));
+        self.tell(ConfigChange::Edited {
+            before: &before,
+            after: &guard,
+        });
         self.writer.send_write(self.path.clone(), yaml).await;
         Ok(guard.clone())
     }
@@ -447,7 +489,11 @@ impl MockStore {
         let yaml = self
             .prepare_and_backup(&cfg, BackupWhen::OncePerBurst, Capped::Yes)
             .await?;
-        *guard = Arc::new(cfg);
+        let before = std::mem::replace(&mut *guard, Arc::new(cfg));
+        self.tell(ConfigChange::Edited {
+            before: &before,
+            after: &guard,
+        });
         self.writer.send_write(self.path.clone(), yaml).await;
         Ok(Ok(guard.clone()))
     }

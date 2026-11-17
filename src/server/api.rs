@@ -397,9 +397,6 @@ async fn reset_config(
 
     tracing::info!(user = %user.username, "config reset: all services removed");
     state.store.reset().await.map_err(AppError::Store)?;
-    // Observation state lives outside the configuration: without this, a service created again after the reset would
-    // start out observed, with the traffic of the one deleted.
-    state.observation.stop_all();
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -542,6 +539,17 @@ async fn observe_service_impl(
 
     if enable {
         state.observation.toggle.enable(group.as_deref(), &name);
+        // A change that removed the service meanwhile went through `ObservationState::follow` before this switch was
+        // on: looked up again now, so that a service created later under this identity never starts out observed.
+        let config = state.store.snapshot().await;
+        if !config
+            .services
+            .iter()
+            .any(|s| service_matches(s, group.as_deref(), &name))
+        {
+            state.observation.stop(group.as_deref(), &name);
+            return Err(AppError::NotFound);
+        }
     } else {
         state.observation.stop(group.as_deref(), &name);
     }
@@ -1217,9 +1225,6 @@ async fn update_service_impl(
         .await
         .map_err(AppError::Store)??;
 
-    if service.group_name != group || service.name != name {
-        state.observation.stop(group.as_deref(), &name);
-    }
     updated
         .services
         .iter()
@@ -1273,9 +1278,6 @@ async fn delete_service_impl(
     {
         Err(AppError::NotFound)
     } else {
-        // Observation state lives outside the configuration: without this, a service created again under the same group
-        // and name would start out observed, with the traffic of the one deleted.
-        state.observation.stop(group.as_deref(), &name);
         Ok(StatusCode::NO_CONTENT)
     }
 }
@@ -2117,6 +2119,8 @@ impl IntoResponse for AppError {
 
 #[cfg(test)]
 mod authz_tests;
+#[cfg(test)]
+mod identity_tests;
 
 #[cfg(test)]
 mod suggestion_tests;

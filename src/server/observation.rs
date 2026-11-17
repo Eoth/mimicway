@@ -424,6 +424,21 @@ impl ObservationStore {
         *self.inner.write().unwrap() = ObservationInner::default();
     }
 
+    /// Keeps the calls of the services `kept` names (group, name), and forgets every other one.
+    pub fn retain_services(&self, kept: impl Fn(Option<&str>, &str) -> bool) {
+        let mut guard = self.inner.write().unwrap();
+        let inner = &mut *guard;
+        inner
+            .buckets
+            .retain(|k, _| kept(k.group_name.as_deref(), &k.service_name));
+        inner
+            .key_order
+            .retain(|_, k| kept(k.group_name.as_deref(), &k.service_name));
+        inner
+            .failures
+            .retain(|f| kept(f.group_name.as_deref(), &f.service_name));
+    }
+
     /// Every endpoint followed for a service, so that suggestions (`server::suggestion`) know which method and path to
     /// examine.
     pub fn keys_for_service(&self, group: Option<&str>, service_name: &str) -> Vec<ObservationKey> {
@@ -487,10 +502,17 @@ impl ObservationToggle {
         self.active.read().unwrap().iter().cloned().collect()
     }
 
-    /// Only for `reset_config`, which deletes every service: otherwise a service created again afterwards would start
-    /// out observed.
+    /// When the whole configuration is replaced: otherwise a service created again afterwards would start out observed.
     pub fn clear_all(&self) {
         self.active.write().unwrap().clear();
+    }
+
+    /// Keeps observing the services `kept` names (group, name), and stops every other one.
+    pub fn retain(&self, kept: impl Fn(Option<&str>, &str) -> bool) {
+        self.active
+            .write()
+            .unwrap()
+            .retain(|(g, n)| kept(g.as_deref(), n));
     }
 }
 
@@ -515,8 +537,8 @@ impl ObservationState {
         }
     }
 
-    /// Stops observing a service and forgets what was observed, when a user turns observation off or the service is
-    /// deleted, renamed or moved to another group: suggestions only ever read the traffic observed since observation was
+    /// Stops observing a service and forgets what was observed, when a user turns observation off (a change of the
+    /// configuration goes through `follow`): suggestions only ever read the traffic observed since observation was
     /// last turned on, and a service created later under the same name never inherits another one's traffic.
     pub fn stop(&self, group: Option<&str>, name: &str) {
         self.toggle.disable(group, name);
@@ -527,6 +549,27 @@ impl ObservationState {
     pub fn stop_all(&self) {
         self.toggle.clear_all();
         self.store.clear();
+    }
+
+    /// Follows a change of the configuration, whatever made it (`MockStore::on_change`): a service whose identity
+    /// (group, name) is gone, renamed, moved, deleted, or left out of its group when the group is renamed or deleted,
+    /// stops being observed and its calls are forgotten, under that identity and under any new one; a replacement of
+    /// the whole configuration (import, restore, reset) forgets everything. A service created later under an identity
+    /// that was forgotten starts out unobserved, with nothing of the traffic of the one before.
+    pub fn follow(&self, change: crate::store::ConfigChange<'_>) {
+        match change {
+            crate::store::ConfigChange::Replaced => self.stop_all(),
+            crate::store::ConfigChange::Edited { after, .. } => {
+                let exists = |group: Option<&str>, name: &str| {
+                    after
+                        .services
+                        .iter()
+                        .any(|s| s.group_name.as_deref() == group && s.name == name)
+                };
+                self.toggle.retain(exists);
+                self.store.retain_services(exists);
+            }
+        }
     }
 }
 

@@ -111,6 +111,11 @@ pub fn build_router_with(
     guard: browser_guard::BrowserGuard,
     limits: limits::Limits,
 ) -> Router {
+    // Observation follows every change of the configuration, whatever the route that made it.
+    let observation = state.observation.clone();
+    state
+        .store
+        .on_change(move |change| observation.follow(change));
     let cors = guard.cors_layer();
     let api_routes = api::routes().layer(axum::middleware::from_fn(limits::buffer_api_body));
 
