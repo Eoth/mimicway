@@ -9,6 +9,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 ### Added
 - The interface shows the version of Mimicway that answers, at the foot of the page once signed in: what to quote when reporting a problem. The server tells it on a new route, `GET /api/version`, which needs a token when authentication is on, like every route but the four open ones: `GET /api/health`, read by probes without a token, still does not name the version. The interface asks when it loads its data (start, sign-in, import), never before sign-in, and shows nothing in front of a server that does not tell.
 
+### Security
+- `libz-sys`, brought by the Kafka client, moves to 1.1.33, past RUSTSEC-2026-0544: the zlib it bundles (1.3.1.2 to 1.3.2) wrote past a buffer in `gzprintf()` after a non-blocking `gzwrite()` stalled. Only a binary built with the `messaging-kafka` feature holds it, and the Kafka client compresses messages, it writes no gzip file; the released binaries and the image are built without the feature. The lock file changes on that package alone.
+
 ## [0.5.1] - 2026-11-17
 
 ### Added
