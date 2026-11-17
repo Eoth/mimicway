@@ -26,10 +26,12 @@
 //!
 //! The guarantee: whatever this reading finds, the rule is suggested only if the engine itself (templates and script,
 //! `renders_back`) gives back every observed response byte for byte from its own request; otherwise the caller
-//! suggests what it suggested before. The reading is bounded (values of `MAX_VALUE` bytes at most, `MAX_REPEATS`
-//! values, a few lists and starts tried, a gap between blocks of `MAX_GAP` bytes at most), so that its cost stays
-//! proportional to the length of the responses times their number.
-use super::{Call, Candidate};
+//! suggests what it suggested before. The reading is bounded: values of `MAX_VALUE` bytes at most (items included),
+//! `MAX_REPEATS` values, a few lists, starts and gaps tried, a gap between blocks of `MAX_GAP` bytes at most. Reading
+//! side by side then costs the length of the responses, times their number, times the candidates, times `MAX_VALUE`
+//! (the offsets a value may start at); the checks cost one rendering per call and per shape tried, within
+//! `MAX_RENDERS` renderings for all the suggestions of a service.
+use super::{Call, Candidate, Renders};
 use crate::engine::escape::Escaping;
 use crate::engine::script::{ScriptContext, ScriptEngine};
 use crate::engine::{TemplateContext, TemplateRenderer};
@@ -459,8 +461,19 @@ enum ListSource {
 
 /// The items of `source` in `body`, each a map of its scalar fields to their text (a JSON number or boolean as JSON
 /// writes it); `None` when the body does not hold them as the script would read them (an item that is no object, a
-/// limit of the script reached). A field that is no scalar is left out: it is never repeated as a text.
+/// limit of the script reached, a value longer than `MAX_VALUE`). A field that is no scalar is left out: it is never
+/// repeated as a text.
 fn read_items(source: &ListSource, body: &str) -> Option<Vec<BTreeMap<String, String>>> {
+    let items = read_all_items(source, body)?;
+    // Values bounded as every value followed (`MAX_VALUE`): reading the blocks side by side costs their lengths.
+    items
+        .iter()
+        .flat_map(|item| item.values())
+        .all(|v| v.len() <= MAX_VALUE)
+        .then_some(items)
+}
+
+fn read_all_items(source: &ListSource, body: &str) -> Option<Vec<BTreeMap<String, String>>> {
     match source {
         ListSource::Xml(path) => {
             let items = crate::engine::script::parse_xml_items_impl(body, path).ok()?;
@@ -770,42 +783,50 @@ fn engine() -> &'static ScriptEngine {
 }
 
 /// Whether `response`, with `script`, rendered by the engine for each call's request as the interception renders it,
-/// gives back the call's observed status and body byte for byte.
-pub(super) fn renders_back(response: &MockResponse, script: Option<&str>, calls: &[&Call]) -> bool {
-    calls.iter().all(|call| {
-        let exchange = call.exchange();
-        let path_params: HashMap<String, String> = call
-            .sample
-            .path_params
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
-        let script_result = match script {
-            Some(code) => {
-                let ctx = ScriptContext {
-                    body: exchange.request_body.clone(),
-                    headers: exchange.request_headers.clone(),
-                    query_params: exchange.request_query_params.clone(),
-                    path_params: path_params.clone(),
-                };
-                match engine().execute(code, &ctx) {
-                    Ok(result) => Some(result),
-                    Err(_) => return false,
+/// gives back the call's observed status and body byte for byte; `false` when `renders` has not one rendering per call
+/// left.
+pub(super) fn renders_back(
+    response: &MockResponse,
+    script: Option<&str>,
+    calls: &[&Call],
+    renders: &Renders,
+) -> bool {
+    renders.take(calls.len())
+        && calls.iter().all(|call| {
+            let exchange = call.exchange();
+            let path_params: HashMap<String, String> = call
+                .sample
+                .path_params
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect();
+            let script_result = match script {
+                Some(code) => {
+                    let ctx = ScriptContext {
+                        body: exchange.request_body.clone(),
+                        headers: exchange.request_headers.clone(),
+                        query_params: exchange.request_query_params.clone(),
+                        path_params: path_params.clone(),
+                    };
+                    match engine().execute(code, &ctx) {
+                        Ok(result) => Some(result),
+                        Err(_) => return false,
+                    }
                 }
-            }
-            None => None,
-        };
-        let ctx = TemplateContext {
-            path_params: &path_params,
-            query_params: &exchange.request_query_params,
-            headers: &exchange.request_headers,
-            request_body: exchange.request_body.as_bytes(),
-            seq_counter: 0,
-            script_result: script_result.as_ref(),
-        };
-        response.status == exchange.response_status
-            && TemplateRenderer::render_body(&response.body, &[], &ctx) == exchange.response_body
-    })
+                None => None,
+            };
+            let ctx = TemplateContext {
+                path_params: &path_params,
+                query_params: &exchange.request_query_params,
+                headers: &exchange.request_headers,
+                request_body: exchange.request_body.as_bytes(),
+                seq_counter: 0,
+                script_result: script_result.as_ref(),
+            };
+            response.status == exchange.response_status
+                && TemplateRenderer::render_body(&response.body, &[], &ctx)
+                    == exchange.response_body
+        })
 }
 
 /// `text` as a Rhai string literal: letters, digits, spaces and the punctuation of markup as they are, every other
@@ -918,15 +939,16 @@ pub(super) fn infer(
     representatives: &[&Call],
     calls: &[&Call],
     headers: &[crate::models::HeaderEntry],
+    renders: &Renders,
 ) -> Option<Repetition> {
     let status = representatives[0].exchange().response_status;
     if calls.iter().any(|c| c.exchange().response_status != status) {
         return None;
     }
     let format = format_of(representatives)?;
-    Encoding::of(format)
-        .iter()
-        .find_map(|&encoding| infer_with(representatives, calls, headers, format, encoding))
+    Encoding::of(format).iter().find_map(|&encoding| {
+        infer_with(representatives, calls, headers, format, encoding, renders)
+    })
 }
 
 /// What the attempts of one format and one encoding share.
@@ -936,6 +958,7 @@ struct Attempt<'a, 'c> {
     headers: &'a [crate::models::HeaderEntry],
     format: Format,
     encoding: Encoding,
+    renders: &'a Renders,
     /// The candidates, their template expression without pipe, and their value in each representative, encoded.
     found: Vec<(Candidate<'a>, String, Vec<String>)>,
 }
@@ -1051,6 +1074,7 @@ fn infer_with(
     headers: &[crate::models::HeaderEntry],
     format: Format,
     encoding: Encoding,
+    renders: &Renders,
 ) -> Option<Repetition> {
     let attempt = Attempt {
         representatives,
@@ -1058,6 +1082,7 @@ fn infer_with(
         headers,
         format,
         encoding,
+        renders,
         found: candidates(representatives)
             .into_iter()
             .map(|(candidate, expression, raw)| {
@@ -1094,7 +1119,7 @@ fn infer_with(
         _ => contexts(format, &skeleton(&pieces)?)?,
     };
     let response = attempt.response(attempt.fragments(&pieces, &contexts)?);
-    renders_back(&response, None, calls).then(|| Repetition {
+    renders_back(&response, None, calls, renders).then(|| Repetition {
         body: response.body,
         fields: attempt.repeated(&pieces),
         list: None,
@@ -1288,10 +1313,10 @@ fn infer_list(
         &text(tail.to_vec())?,
     );
     let response = attempt.response(attempt.fragments(&pieces, &outer)?);
-    if !renders_back(&response, Some(&script), attempt.calls) {
+    if !renders_back(&response, Some(&script), attempt.calls, attempt.renders) {
         return None;
     }
-    let max_items = most_items(&script, source, fields, read);
+    let max_items = most_items(&script, source, fields, read, attempt.renders)?;
     Some(Repetition {
         body: response.body,
         fields: attempt.repeated(&pieces),
@@ -1362,7 +1387,8 @@ fn most_items(
     source: &ListSource,
     fields: &[String],
     read: &[Vec<BTreeMap<String, String>>],
-) -> usize {
+    renders: &Renders,
+) -> Option<usize> {
     let lengths: Vec<(String, usize)> = fields
         .iter()
         .map(|f| {
@@ -1375,31 +1401,34 @@ fn most_items(
             (f.clone(), longest.max(1))
         })
         .collect();
-    let runs = |n: usize| {
+    let runs = |n: usize| -> Option<bool> {
+        if !renders.take(1) {
+            return None;
+        }
         let ctx = ScriptContext {
             body: request_with(source, &lengths, n),
             headers: HashMap::new(),
             query_params: HashMap::new(),
             path_params: HashMap::new(),
         };
-        engine().execute(script, &ctx).is_ok()
+        Some(engine().execute(script, &ctx).is_ok())
     };
     let bound = crate::engine::script::MAX_LIST_ITEMS
         .min(crate::engine::script::MAX_READ_FIELDS / fields.len().max(1));
-    if runs(bound) {
-        return bound;
+    if runs(bound)? {
+        return Some(bound);
     }
     let (mut low, mut high) = (0, bound);
     // `runs(low)` holds and `runs(high)` does not.
     while high - low > 1 {
         let middle = low + (high - low) / 2;
-        if runs(middle) {
+        if runs(middle)? {
             low = middle;
         } else {
             high = middle;
         }
     }
-    low
+    Some(low)
 }
 
 /// The contexts of the holes of a response with a list: those of `pieces` (the list among them, at `list`), and those

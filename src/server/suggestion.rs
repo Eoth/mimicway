@@ -243,6 +243,38 @@ fn unread(exchange: &ObservedExchange) -> bool {
 pub fn suggest_for_service(
     endpoints: &[(ObservationKey, Vec<ObservedExchange>)],
 ) -> Vec<EndpointSuggestion> {
+    suggest_within(endpoints, &Renders::new(MAX_RENDERS))
+}
+
+/// Rules rendered and scripts run to check the suggestions of one service (`repeat::renders_back`, one per observed
+/// call checked): the checks that make a rule repeat its request cost a rendering of every call, for each shape tried.
+/// Past them, no further rule is generalized; the suggestions of before stay.
+pub const MAX_RENDERS: usize = 10_000;
+
+/// The renderings left to a computation of suggestions.
+pub(super) struct Renders(std::cell::Cell<usize>);
+
+impl Renders {
+    pub(super) fn new(count: usize) -> Self {
+        Self(std::cell::Cell::new(count))
+    }
+
+    /// Takes `count` renderings; `false`, taking none, when fewer are left.
+    pub(super) fn take(&self, count: usize) -> bool {
+        let left = self.0.get();
+        if count > left {
+            return false;
+        }
+        self.0.set(left - count);
+        true
+    }
+}
+
+/// `suggest_for_service` within `renders`.
+pub(super) fn suggest_within(
+    endpoints: &[(ObservationKey, Vec<ObservedExchange>)],
+    renders: &Renders,
+) -> Vec<EndpointSuggestion> {
     let mut suggestions = Vec::new();
     for route in observed_routes(endpoints) {
         let calls: Vec<Call> = route
@@ -268,7 +300,7 @@ pub fn suggest_for_service(
                 .into_iter()
                 .collect();
             let Some((outcome, left_out)) =
-                suggest_calls(route.method, &route.pattern, &group, &base)
+                suggest_calls(route.method, &route.pattern, &group, &base, renders)
             else {
                 continue;
             };
@@ -385,11 +417,12 @@ fn suggest_calls(
     sub_path: &str,
     calls: &[&Call],
     base: &[Condition],
+    renders: &Renders,
 ) -> Option<(Suggestion, Vec<LeftOut>)> {
     if calls.len() < min_samples() {
         return None;
     }
-    let unexplained = match explain(method, sub_path, calls, base) {
+    let unexplained = match explain(method, sub_path, calls, base, renders) {
         Ok(suggestion) => return Some((suggestion, Vec::new())),
         Err(unexplained) => unexplained,
     };
@@ -399,7 +432,7 @@ fn suggest_calls(
     if !errors.is_empty()
         && kept.len() >= min_samples()
         && errors.len() < kept.len()
-        && let Ok(suggestion) = explain(method, sub_path, &kept, base)
+        && let Ok(suggestion) = explain(method, sub_path, &kept, base, renders)
     {
         let mut by_status: BTreeMap<u16, usize> = BTreeMap::new();
         for call in errors {
@@ -422,6 +455,7 @@ fn explain(
     sub_path: &str,
     calls: &[&Call],
     base: &[Condition],
+    renders: &Renders,
 ) -> Result<Suggestion, Suggestion> {
     // Groups of equivalent responses, as indices into `calls`, in order of first appearance. Found by signature in a
     // map: comparing each call with every group found so far costs calls × groups, quadratic when every response
@@ -472,9 +506,12 @@ fn explain(
 
     let representatives: Vec<&Call> = classes.iter().map(|c| calls[c[c.len() - 1]]).collect();
     let latest_call = calls[calls.len() - 1].exchange();
-    if let Some(repetition) =
-        repeat::infer(&representatives, calls, &suggested_headers(latest_call))
-    {
+    if let Some(repetition) = repeat::infer(
+        &representatives,
+        calls,
+        &suggested_headers(latest_call),
+        renders,
+    ) {
         let mut echo = rule(
             base_group(),
             calls.len(),

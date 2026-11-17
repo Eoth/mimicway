@@ -588,3 +588,50 @@ fn a_field_of_an_item_out_of_a_json_string_is_written_as_the_json_value_of_the_r
     let missing = rendered(rule, r#"{"order":{"ref":"O-9"},"lines":[{"sku":"S"}]}"#);
     assert!(missing.contains("\"qty\":null"), "{missing}");
 }
+
+#[test]
+fn the_checks_stop_at_their_budget_of_renderings() {
+    // Three calls, the values alone, one rendering each: three renderings generalize, two do not (the conditional
+    // rules of before stay).
+    let endpoints = endpoints(vec![
+        status_call("R-100", "2026-01-05"),
+        status_call("R-200", "2026-01-07"),
+        status_call("R-300", "2026-02-11"),
+    ]);
+    let generalized = |budget: usize| {
+        let suggestions =
+            crate::server::suggestion::suggest_within(&endpoints, &Renders::new(budget));
+        crate::server::suggestion::replay::rules_of(&suggestions[0].outcome)
+            .iter()
+            .any(|r| !r.repeats.is_empty())
+    };
+    assert!(generalized(3));
+    assert!(!generalized(2));
+}
+
+#[test]
+fn items_with_values_longer_than_a_value_followed_are_not_generalized() {
+    let calls = |length: usize| {
+        let value = |c: usize, j: usize| format!("{c}{j}{}", "v".repeat(length - 2));
+        (0..3)
+            .map(|c| {
+                let slots: Vec<(String, String)> = (0..c + 1)
+                    .map(|j| (value(c, j), format!("T{c}{j}")))
+                    .collect();
+                let refs: Vec<(&str, &str)> = slots
+                    .iter()
+                    .map(|(a, b)| (a.as_str(), b.as_str()))
+                    .collect();
+                book_call(&refs)
+            })
+            .collect::<Vec<_>>()
+    };
+    let listed = |length: usize| {
+        let suggestions = suggest_for_service(&endpoints(calls(length)));
+        crate::server::suggestion::replay::rules_of(&suggestions[0].outcome)
+            .iter()
+            .any(|r| r.list.is_some())
+    };
+    assert!(listed(MAX_VALUE));
+    assert!(!listed(MAX_VALUE + 1));
+}

@@ -632,7 +632,9 @@ async fn observed_endpoints(
 
 /// Computed from `ObservationStore` at each call, so there is no suggestion state to keep in sync. Routes with fewer
 /// observations than `suggestion::min_samples()` are left out. The addresses of a backend that a service of the
-/// configuration stands in front of are rewritten to that service (`suggestion::links`).
+/// configuration stands in front of are rewritten to that service (`suggestion::links`). The computation renders rules
+/// and runs scripts (bounded: `suggestion::MAX_RENDERS`): it runs on a thread for blocking work, never on a worker of
+/// the runtime that serves the requests.
 async fn get_service_suggestions_impl(
     state: AppState,
     user: AuthUser,
@@ -641,12 +643,17 @@ async fn get_service_suggestions_impl(
 ) -> Result<Json<Vec<crate::server::suggestion::EndpointSuggestion>>, AppError> {
     use crate::server::suggestion::links;
     let (config, endpoints) = observed_endpoints(&state, &user, group.as_deref(), &name).await?;
-    let mut suggestions = crate::server::suggestion::suggest_for_service(&endpoints);
-    links::redirect_suggestions(
-        &mut suggestions,
-        &links::Covers::from_config(&config),
-        links::OwnAddress::latest(&endpoints).as_ref(),
-    );
+    let suggestions = tokio::task::spawn_blocking(move || {
+        let mut suggestions = crate::server::suggestion::suggest_for_service(&endpoints);
+        links::redirect_suggestions(
+            &mut suggestions,
+            &links::Covers::from_config(&config),
+            links::OwnAddress::latest(&endpoints).as_ref(),
+        );
+        suggestions
+    })
+    .await
+    .map_err(|_| AppError::Unavailable)?;
     Ok(Json(suggestions))
 }
 

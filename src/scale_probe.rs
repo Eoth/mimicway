@@ -126,6 +126,16 @@ pub const FAMILIES: &[Family] = &[
         env: &[("TRAFFIC_OBSERVATION_MAX_BODY_SIZE", "1048576")],
         run: suggestion_lists,
     },
+    // Values of items far longer than a value followed: reading them side by side cost their length squared, on the
+    // thread that answered the request. They are read once, found too long, and left.
+    Family {
+        name: "suggestion-long-items",
+        n: 32768,
+        growth: Growth::Linear,
+        about: "suggestions from 6 calls of a SOAP operation whose response holds a block per item, each item value n bytes long",
+        env: &[("TRAFFIC_OBSERVATION_MAX_BODY_SIZE", "1048576")],
+        run: suggestion_long_items,
+    },
     // 4n stays under 256 values, where Rhai's string interner starts to evict (`throttle_cache`): a step at a threshold,
     // bounded per value, that the ratio would read as growth. Rhai refuses maps of more than 500 keys anyway.
     Family {
@@ -639,6 +649,48 @@ fn suggestion_lists(n: usize) {
         );
         assert!(listed, "one rule with a script: {suggestions:?}");
         black_box(suggestions);
+    });
+}
+
+fn suggestion_long_items(n: usize) {
+    let call = |c: usize| {
+        let items = 1 + c % 3;
+        // An item value as long as a run of text that every response holds before they differ: where they differ,
+        // every offset of that run is a place the value may start at.
+        let run = "a".repeat(n);
+        let slots: String = (0..items)
+            .map(|j| format!("<o:slot><o:date>{run}</o:date><o:type>T{c}{j}</o:type></o:slot>"))
+            .collect();
+        let blocks: String = (0..items)
+            .map(|j| format!("<booked><date>{run}</date><type>T{c}{j}</type></booked>"))
+            .collect();
+        ObservedExchange::new(
+            HashMap::new(),
+            HashMap::new(),
+            format!(
+                "<soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\"><soap:Body>\
+                 <o:Book xmlns:o=\"urn:o\"><o:ref>R{c}</o:ref>{slots}</o:Book></soap:Body></soap:Envelope>"
+            )
+            .as_bytes(),
+            None,
+            200,
+            HashMap::new(),
+            format!("<BookResponse><note>{run}</note><ref>R{c}</ref>{blocks}</BookResponse>").as_bytes(),
+            Some("text/xml".into()),
+        )
+    };
+    let endpoints = vec![(
+        ObservationKey {
+            group_name: None,
+            service_name: "svc".into(),
+            method: "POST".into(),
+            sub_path: "/ws/booking".into(),
+            operation: None,
+        },
+        (0..6).map(call).collect::<Vec<_>>(),
+    )];
+    warm_then_measure(&mut || {
+        black_box(crate::server::suggestion::suggest_for_service(&endpoints));
     });
 }
 
