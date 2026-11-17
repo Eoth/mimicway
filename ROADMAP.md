@@ -847,7 +847,7 @@ Defects and debts found on the way. They are taken by bundle: the items of a bun
 
 | Bundle | Items | Goes with |
 |---|---|---|
-| The judges | E52, E71; E49 waits for the maintainer | first, before the themes |
+| The judges | E72, E52, E71; E49 waits for the maintainer | first, before the themes |
 | Where the relay goes | E62 | "Bounded" (0.6) |
 | Weight | E10 | "Lightest, with the proof" (0.6) |
 | Keyboard | E42, E47 | "Accessible" (0.6) |
@@ -1260,3 +1260,13 @@ Size S
 **What.** One whole pass of cargo-mutants on the file; each mutation that survives gets a test from a judge that generates its cases, or its reason in `.cargo/mutants.toml`; then the file joins `SCOPE`.
 
 **Done when.** A second pass leaves no survivor, and `SCOPE` names the file.
+
+### E72. An advisory without a fixed release, on a build tool
+
+Size S
+
+**Why.** Since 2026-11-17 the supply-chain job of CI fails on every run that plans it. `picomatch`, which `vite`, `vitest` and `tinyglobby` bring to build and test the interface, has an advisory on every release (GHSA-fc5q-39xc-vjpf, a regular expression that takes long on a crafted glob, high) and no fixed one: `npm audit` proposes going back a major version of `vite` and `vitest`. The built interface holds none of it, and the globs these tools match are the project's own, written in its configuration. osv-scanner has dated exceptions (`frontend/osv-scanner.toml`); `npm audit --audit-level=high` has none, and `scripts/check-workflows.mjs` refuses a weaker audit, so the job stays red until a release of `picomatch` fixes it, hiding any other advisory that would come.
+
+**What.** If a fixed `picomatch` is out, take it (no release younger than a week) and close the item. Otherwise the audit of the interface's packages gets the dated exceptions the two other tools have: a script reads `npm audit --json`, fails on any high or critical advisory but those of a list, each with its reason and a date at most six months ahead, the same identifiers and dates as `frontend/osv-scanner.toml` (`scripts/check-exception-dates.mjs` reads the list; an entry missing from one of the two fails); `scripts/check-workflows.mjs` accepts that script and nothing weaker. The exception of `picomatch` says why it does not apply and ends with its fixed release.
+
+**Done when.** The supply-chain job is green with `picomatch` as the only exception, a test shows it red on another high advisory, on an exception past its date and on an entry that only one of the two lists holds, and the exception is gone once `picomatch` is fixed.
