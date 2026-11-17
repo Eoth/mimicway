@@ -786,7 +786,7 @@
   "xml_attr — escaped for an XML attribute value": "xml_attr — échappé pour la valeur d'un attribut XML",
   "cdata — kept whole inside a CDATA section": "cdata — gardé entier dans une section CDATA",
   "json_string — escaped for the inside of a JSON string": "json_string — échappé pour l'intérieur d'une chaîne JSON",
-  "json_value \u2014 a JSON number as it is, any other text as a JSON string": "json_value — un nombre JSON tel quel, tout autre texte en chaîne JSON",
+  "json_value — a JSON number as it is, any other text as a JSON string": "json_value — un nombre JSON tel quel, tout autre texte en chaîne JSON",
   "xml_text(value)": "xml_text(valeur)",
   "xml_attr(value)": "xml_attr(valeur)",
   "cdata(value)": "cdata(valeur)",
@@ -839,7 +839,8 @@
   "Send it again": "Le renvoyer",
   "Credentials are shown as [redacted]: put the real values back before running the command.": "Les identifiants sont montrés comme [redacted] : remettez les vraies valeurs avant de lancer la commande.",
   "The body was cut: the command sends only the part kept.": "Le corps a été coupé : la commande n'envoie que la partie gardée.",
-  "The body holds a NUL character, which a command line cannot carry: the command reads it from {0}, the file the download gives.": "Le corps contient un caractère NUL, qu'une ligne de commande ne peut pas porter : la commande le lit dans {0}, le fichier que donne le téléchargement.",
   "Copy the command": "Copier la commande",
-  "Download the request body": "Télécharger le corps de la requête"
+  "Download the request body": "Télécharger le corps de la requête",
+  "No command is offered for this call: one of its values holds a control character, which a terminal could act on when the command is pasted.": "Aucune commande n'est proposée pour cet appel : une de ses valeurs contient un caractère de contrôle, sur lequel un terminal pourrait agir au collage de la commande.",
+  "The body holds control or invisible characters, which a terminal could act on when the command is pasted: the command reads it from {0}, the file the download gives, to save next to where it runs.": "Le corps contient des caractères de contrôle ou invisibles, sur lesquels un terminal pourrait agir au collage de la commande : la commande le lit dans {0}, le fichier que donne le téléchargement, à enregistrer là où elle est lancée."
 }

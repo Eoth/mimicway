@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { curlArgs, curlCommand, shellArg, bodyFileName, bodyNeedsFile } from '../lib/curl.js';
+import { curlArgs, curlCommand, shellArg, bodyFileName, bodyNeedsFile, commandRefusal } from '../lib/curl.js';
 
 let bin;
 // By their full path: the command runs with the stand-in curl alone on PATH.
@@ -97,6 +97,7 @@ describe('the command of a kept call', () => {
       fc.assert(
         fc.property(call, fc.constantFrom('http://localhost:7342', "http://it's.test"), (generated, origin) => {
           const command = curlCommand(generated, origin);
+          fc.pre(command !== null);
           for (const shell of shells) {
             expect(argumentsReceived(shell, command)).toEqual(curlArgs(generated, origin));
           }
@@ -167,6 +168,78 @@ describe('what the command says', () => {
     expect(curlArgs(head, 'http://h')).toEqual(['--globoff', '--head', 'http://h/orders/ws']);
     const getWithBody = { ...kept({ headers: {} }), method: 'GET' };
     expect(curlArgs(getWithBody, 'http://h').slice(0, 3)).toEqual(['--globoff', '--request', 'GET']);
+  });
+
+  // Every character a pasted command must not hold, one of each class, at the start, inside and at the end of a value.
+  const UNSAFE_SAMPLES = [
+    ...Array.from({ length: 32 }, (_, c) => String.fromCharCode(c)).filter((c) => c !== '\t' && c !== '\n'),
+    '\u007f',
+    ...Array.from({ length: 32 }, (_, c) => String.fromCharCode(0x80 + c)),
+    '\u061c',
+    '\u200e',
+    '\u200f',
+    '\u2028',
+    '\u2029',
+    '\u202a',
+    '\u202b',
+    '\u202c',
+    '\u202d',
+    '\u202e',
+    '\u2066',
+    '\u2067',
+    '\u2068',
+    '\u2069',
+    '\ufeff',
+  ];
+
+  it('sends a body holding a control or invisible character from its file, never in the command', () => {
+    for (const c of UNSAFE_SAMPLES) {
+      for (const text of [`${c}x`, `x${c}y`, `x${c}`, `x\u001b[201~\u0015touch PWNED\r`]) {
+        const unsafe = kept({ body: { text, content_type: null } });
+        const command = curlCommand(unsafe, 'http://h');
+        expect(command, JSON.stringify(text)).toContain('--data-binary @request-body-7.txt');
+        expect(command.includes(c), JSON.stringify(c)).toBe(false);
+      }
+    }
+    // Tab and line feed stay in the command, as typed.
+    expect(curlCommand(kept({ body: { text: 'a\tb\nc', content_type: null } }), 'http://h')).toContain(
+      "--data-raw 'a\tb\nc'",
+    );
+  });
+
+  it('offers no command for a call whose other values hold such a character', () => {
+    for (const c of UNSAFE_SAMPLES) {
+      for (const overrides of [{ headers: { 'x-a': `v${c}` } }, { path: `/a${c}` }, { query: `q=${c}` }]) {
+        const call = kept(overrides);
+        expect(commandRefusal(call, 'http://h'), JSON.stringify(overrides)).toBe('unsafe');
+        expect(curlCommand(call, 'http://h')).toBeNull();
+      }
+    }
+    expect(curlCommand(kept(), 'http://h\u001b')).toBeNull();
+    expect(commandRefusal(kept(), 'http://h')).toBeNull();
+  });
+
+  it('never writes a control or invisible character in a command, whatever the call', () => {
+    const anyChar = fc.oneof(fc.constantFrom(...UNSAFE_SAMPLES), fc.string({ unit: 'grapheme', maxLength: 3 }));
+    const anyText = fc.array(anyChar, { maxLength: 6 }).map((p) => p.join(''));
+    const anyCall = fc.record({
+      id: fc.nat(),
+      method: fc.constantFrom('GET', 'POST', 'HEAD'),
+      request: fc.record({
+        path: anyText.map((p) => `/${p}`),
+        query: fc.option(anyText, { nil: null }),
+        headers: fc.dictionary(anyText, anyText, { maxKeys: 3 }),
+        body: fc.record({ text: anyText, content_type: fc.constant(null) }),
+      }),
+    });
+    fc.assert(
+      fc.property(anyCall, (generated) => {
+        const command = curlCommand(generated, 'http://h');
+        if (command === null) return;
+        for (const c of UNSAFE_SAMPLES) expect(command.includes(c), JSON.stringify(c)).toBe(false);
+      }),
+      { numRuns: 500 },
+    );
   });
 
   it('reads a body holding a NUL character from the file it downloads under', () => {

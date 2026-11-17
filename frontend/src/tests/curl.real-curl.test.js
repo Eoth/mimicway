@@ -64,7 +64,7 @@ function parse(bytes) {
 }
 
 // Values as observation keeps them: a header name is a token, a value visible ASCII with inner spaces and tabs, a path
-// and a query characters an HTTP request line carries (percent escapes whole), a body any text but NUL.
+// and a query characters an HTTP request line carries (percent escapes whole), a body any text.
 const tricky = ['@witness.txt', '<witness.txt', '@witness', '-witness', ';type=text/plain', '@-', '{a}', '[1-2]'];
 const visible = fc.constantFrom(...'@<>;-{}[]"\'\\$`!#%&*+,./:=?^_|~aZ09');
 const headerValue = fc
@@ -79,8 +79,13 @@ const segment = fc
   .array(pathChar, { minLength: 1, maxLength: 6 })
   .map((p) => p.join(''))
   .filter((s) => s !== '.' && s !== '..');
+// Control characters among them: such a body leaves through its file, which the test writes as the download would.
+const control = fc.constantFrom('\0', '\u001b[201~', '\r', '\u0015', '\u007f', '\u0085', '\u202e', '\ufeff');
 const body = fc.oneof(
   fc.constantFrom(...tricky),
+  fc
+    .array(fc.oneof(fc.constantFrom(...tricky), control, fc.string({ unit: 'grapheme' })), { maxLength: 6 })
+    .map((p) => p.join('')),
   fc
     .array(fc.oneof(fc.constantFrom(...tricky), fc.string({ unit: 'grapheme' })), { maxLength: 6 })
     .map((p) => p.join('')),
@@ -97,7 +102,7 @@ const call = fc.record({
     ),
     headers: fc.dictionary(fc.stringMatching(/^[A-Za-z][A-Za-z0-9-]{0,10}$/), headerValue, { maxKeys: 4 }),
     body: fc.record({
-      text: body.filter((t) => !t.includes('\0')),
+      text: body,
       content_type: fc.constant('text/plain'),
     }),
   }),

@@ -9,8 +9,9 @@
 // the address is read with --globoff, so that braces and brackets stay characters.
 //
 // The command carries what observation kept, nothing more: a credential kept as [redacted] stays so, a body cut at the
-// size limit is sent cut, a body that was not UTF-8 is sent as the text kept. The screen says each of these. A command
-// line cannot carry a NUL character: such a body is read from the file the screen downloads (`bodyFileName`).
+// size limit is sent cut, a body that was not UTF-8 is sent as the text kept. The screen says each of these. A body
+// that holds a character a command must not hold (`UNSAFE`, NUL among them) is read from the file the screen downloads
+// (`bodyFileName`).
 
 const PLAIN = /^[A-Za-z0-9_@%+=:,./-]+$/;
 
@@ -21,16 +22,37 @@ export function shellArg(value) {
   return `'${text.replaceAll("'", `'\\''`)}'`;
 }
 
-// Headers curl writes itself from the URL and the body: the kept ones would be wrong for the command (a body cut, a
-// host where the call came through).
 // A header name as HTTP defines it (RFC 9110, token).
 const TOKEN = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
 
+// What a copied command never holds: the control characters but tab and line feed (C0, DEL, C1), which a terminal acts
+// on when they are pasted (ESC [ 2 0 1 ~ ends a protected paste, and what follows runs without Enter), and the
+// invisible characters that reorder or hide text (bidirectional controls, marks, separators of lines and paragraphs,
+// the byte order mark), which make a command read otherwise than it runs.
+const UNSAFE = /[\u0000-\u0008\u000B-\u001F\u007F-\u009F\u061C\u200E\u200F\u2028-\u202E\u2066-\u2069\uFEFF]/;
+
+// Headers curl writes itself from the URL and the body: the kept ones would be wrong for the command (a body cut, a
+// host where the call came through).
 const WRITTEN_BY_CURL = new Set(['host', 'content-length', 'transfer-encoding', 'connection', 'expect']);
 
-/** Whether the request body must be read from its file: a command line cannot carry a NUL character. */
+/** Whether a text holds a character a copied command must never hold (`UNSAFE`). */
+export function holdsUnsafe(text) {
+  return UNSAFE.test(String(text));
+}
+
+/** Whether the request body must be read from its file: it holds a character a command must not (NUL among them). */
 export function bodyNeedsFile(call) {
-  return call.request.body.text.includes('\0');
+  return holdsUnsafe(call.request.body.text);
+}
+
+/**
+ * Why no command is offered for a call, or null: a value other than the body (which goes through its file) holds a
+ * character a command must not hold. The server keeps no such value today; a command is refused rather than built.
+ */
+export function commandRefusal(call, origin) {
+  const { method, request } = call;
+  const values = [origin, method, request.path, request.query ?? '', ...Object.entries(request.headers).flat()];
+  return values.some(holdsUnsafe) ? 'unsafe' : null;
 }
 
 /** The name the request body downloads under, its extension taken from its media type. */
@@ -61,8 +83,9 @@ export function curlArgs(call, origin) {
   return args;
 }
 
-/** The whole command, one option per line. */
+/** The whole command, one option per line; null when none is offered (`commandRefusal`). */
 export function curlCommand(call, origin) {
+  if (commandRefusal(call, origin)) return null;
   const words = ['curl'];
   const args = curlArgs(call, origin);
   const lines = [];

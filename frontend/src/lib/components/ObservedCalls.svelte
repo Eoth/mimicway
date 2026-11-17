@@ -9,7 +9,7 @@
   import { getObservedCalls, getObservedCall } from '../api.js';
   import { t, tCount } from '../i18n.svelte.js';
   import { formatDateTimePrecise } from '../format-date.js';
-  import { curlCommand, bodyFileName, bodyNeedsFile } from '../curl.js';
+  import { curlCommand, commandRefusal, bodyFileName, bodyNeedsFile } from '../curl.js';
 
   let { serviceName, groupName = null } = $props();
 
@@ -105,8 +105,17 @@
     return Object.values(detail.request.headers).includes('[redacted]');
   }
 
-  async function copyCommand(detail) {
-    const command = curlCommand(detail, window.location.origin);
+  // Why no command is offered for a call, in words.
+  function refusal(reason) {
+    switch (reason) {
+      default:
+        return t(
+          'No command is offered for this call: one of its values holds a control character, which a terminal could act on when the command is pasted.',
+        );
+    }
+  }
+
+  async function copyCommand(command, detail) {
     try {
       await navigator.clipboard.writeText(command);
       copied[detail.id] = t('Command copied.');
@@ -230,6 +239,7 @@
             {:else if open && !detail}
               <p class="call-note">{t('Loading...')}</p>
             {:else if detail}
+              {@const command = curlCommand(detail, window.location.origin)}
               <h6>{t('Request')}</h6>
               <p class="call-line">
                 <code data-testid="observed-call-address-{serviceName}-{call.id}"
@@ -264,35 +274,40 @@
               {/if}
 
               <h6>{t('Send it again')}</h6>
-              <pre class="call-body" data-testid="observed-call-command-{serviceName}-{call.id}">{curlCommand(
-                  detail,
-                  window.location.origin,
-                )}</pre>
-              {#if hasRedacted(detail)}
+              {#if command}
+                <pre class="call-body" data-testid="observed-call-command-{serviceName}-{call.id}">{command}</pre>
+              {:else}
+                <p class="call-note" data-testid="observed-call-no-command-{serviceName}-{call.id}">
+                  {refusal(commandRefusal(detail, window.location.origin))}
+                </p>
+              {/if}
+              {#if command && hasRedacted(detail)}
                 <p class="call-note">
                   {t('Credentials are shown as [redacted]: put the real values back before running the command.')}
                 </p>
               {/if}
-              {#if detail.request.body.truncated}
+              {#if command && detail.request.body.truncated}
                 <p class="call-note">{t('The body was cut: the command sends only the part kept.')}</p>
               {/if}
-              {#if bodyNeedsFile(detail)}
-                <p class="call-note">
+              {#if command && bodyNeedsFile(detail)}
+                <p class="call-note" data-testid="observed-call-body-file-{serviceName}-{call.id}">
                   {t(
-                    'The body holds a NUL character, which a command line cannot carry: the command reads it from {0}, the file the download gives.',
+                    'The body holds control or invisible characters, which a terminal could act on when the command is pasted: the command reads it from {0}, the file the download gives, to save next to where it runs.',
                     bodyFileName(detail),
                   )}
                 </p>
               {/if}
               <div class="call-actions">
-                <button
-                  type="button"
-                  class="btn btn-sm btn-primary"
-                  onclick={() => copyCommand(detail)}
-                  data-testid="observed-call-copy-button-{serviceName}-{call.id}"
-                >
-                  {t('Copy the command')}
-                </button>
+                {#if command}
+                  <button
+                    type="button"
+                    class="btn btn-sm btn-primary"
+                    onclick={() => copyCommand(command, detail)}
+                    data-testid="observed-call-copy-button-{serviceName}-{call.id}"
+                  >
+                    {t('Copy the command')}
+                  </button>
+                {/if}
                 {#if detail.request.body.size > 0}
                   <button
                     type="button"

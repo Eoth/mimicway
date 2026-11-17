@@ -162,4 +162,30 @@ describe('ObservedCalls', () => {
     expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:kept');
     clicked.mockRestore();
   });
+  it('sends a body with control characters from its file, and offers no command for a header holding one', async () => {
+    getObservedCalls.mockResolvedValue([failedSummary, { ...failedSummary, id: 10 }]);
+    getObservedCall.mockImplementation(async (_name, _group, id) =>
+      id === 9
+        ? {
+            ...failedDetail,
+            request: {
+              ...failedDetail.request,
+              body: { ...failedDetail.request.body, text: 'x\u001b[201~\u0015id\r' },
+            },
+          }
+        : { ...failedDetail, id: 10, request: { ...failedDetail.request, headers: { 'x-a': 'v\u001b' } } },
+    );
+    const view = render(ObservedCalls, { props: { serviceName: 'orders' } });
+    await fireEvent.click(view.getByText('Show the calls kept'));
+    await fireEvent.click(await view.findByTestId('observed-call-toggle-orders-9'));
+    const command = (await view.findByTestId('observed-call-command-orders-9')).textContent;
+    expect(command).toContain('--data-binary @request-body-9.xml');
+    expect(command).not.toContain('\u001b');
+    expect(view.getByTestId('observed-call-body-file-orders-9').textContent).toContain('request-body-9.xml');
+
+    await fireEvent.click(view.getByTestId('observed-call-toggle-orders-10'));
+    expect((await view.findByTestId('observed-call-no-command-orders-10')).textContent).toContain('control character');
+    expect(view.queryByTestId('observed-call-command-orders-10')).not.toBeInTheDocument();
+    expect(view.queryByTestId('observed-call-copy-button-orders-10')).not.toBeInTheDocument();
+  });
 });
