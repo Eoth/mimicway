@@ -149,7 +149,7 @@ describe('ObservedCalls', () => {
     });
     URL.revokeObjectURL = vi.fn();
     const clicked = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function () {
-      expect(this.download).toBe('request-body-9.txt');
+      expect(this.download).toBe('request-body-orders-1700000000000-9.txt');
       expect(this.getAttribute('href')).toBe('blob:kept');
     });
     const view = render(ObservedCalls, { props: { serviceName: 'orders' } });
@@ -179,9 +179,11 @@ describe('ObservedCalls', () => {
     await fireEvent.click(view.getByText('Show the calls kept'));
     await fireEvent.click(await view.findByTestId('observed-call-toggle-orders-9'));
     const command = (await view.findByTestId('observed-call-command-orders-9')).textContent;
-    expect(command).toContain('--data-binary @request-body-9.xml');
+    expect(command).toContain('--data-binary @request-body-orders-1700000000000-9.xml');
     expect(command).not.toContain('\u001b');
-    expect(view.getByTestId('observed-call-body-file-orders-9').textContent).toContain('request-body-9.xml');
+    expect(view.getByTestId('observed-call-body-file-orders-9').textContent).toContain(
+      'request-body-orders-1700000000000-9.xml',
+    );
 
     await fireEvent.click(view.getByTestId('observed-call-toggle-orders-10'));
     expect((await view.findByTestId('observed-call-no-command-orders-10')).textContent).toContain('control character');

@@ -246,6 +246,19 @@ describe('what the command says', () => {
     );
   });
 
+  // Identifiers count per service and start over when observation does: the name says whose call it is and when.
+  it('names the body file after the service, its group, the instant and the call, in plain characters', () => {
+    const a = { ...kept(), timestamp: 1700000000123, service: { name: 'orders', group: null } };
+    const b = { ...a, service: { name: 'billing', group: null } };
+    expect(bodyFileName(a)).toBe('request-body-orders-1700000000123-7.xml');
+    expect(bodyFileName(b)).not.toBe(bodyFileName(a));
+    const odd = { ...a, service: { name: 'orders', group: "Équipe a/../b's 😀" } };
+    expect(bodyFileName(odd)).toBe('request-body-_quipe_a_.._b_s__-orders-1700000000123-7.xml');
+    expect(bodyFileName(odd)).toMatch(/^[A-Za-z0-9._-]+$/);
+    const binary = { ...odd, request: { ...odd.request, body: { text: 'a\0b', content_type: 'text/xml' } } };
+    expect(curlArgs(binary, 'http://h')).toContain(`@${bodyFileName(binary)}`);
+  });
+
   it('reads a body holding a NUL character from the file it downloads under', () => {
     const binary = kept({ body: { text: 'a\0b', content_type: 'application/json' } });
     expect(bodyNeedsFile(binary)).toBe(true);

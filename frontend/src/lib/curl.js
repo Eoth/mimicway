@@ -58,11 +58,19 @@ export function commandRefusal(call, origin) {
   return values.some(holdsUnsafe) ? 'unsafe' : null;
 }
 
-/** The name the request body downloads under, its extension taken from its media type. */
+/**
+ * The name the request body downloads under, the same in the command that reads it: what makes it the file of this
+ * call for whoever reads it (the group if any, the service, the instant of the call to the millisecond, its
+ * identifier, which counts per service and starts over with each observation), in characters any file system takes,
+ * every other one written `_`, and an extension from its media type. `call.service` is `{ name, group }`.
+ */
 export function bodyFileName(call) {
   const type = (call.request.body.content_type ?? '').toLowerCase();
   const extension = type.includes('json') ? 'json' : type.includes('xml') ? 'xml' : 'txt';
-  return `request-body-${call.id}.${extension}`;
+  const parts = [call.service?.group, call.service?.name, call.timestamp, call.id].filter(
+    (p) => p !== null && p !== undefined,
+  );
+  return `request-body-${parts.join('-').replace(/[^A-Za-z0-9._-]/gu, '_')}.${extension}`;
 }
 
 /** The arguments of the command after `curl`, as the shell must hand them over. */

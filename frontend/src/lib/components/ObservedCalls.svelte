@@ -101,6 +101,11 @@
     }
   }
 
+  // A call with the service it belongs to, which names the file of its body (lib/curl.js, `bodyFileName`).
+  function withService(detail) {
+    return { ...detail, service: { name: serviceName, group: groupName } };
+  }
+
   function hasRedacted(detail) {
     return Object.values(detail.request.headers).includes('[redacted]');
   }
@@ -133,7 +138,7 @@
     const url = URL.createObjectURL(new Blob([detail.request.body.text], { type: 'application/octet-stream' }));
     const link = document.createElement('a');
     link.href = url;
-    link.download = bodyFileName(detail);
+    link.download = bodyFileName(withService(detail));
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -253,7 +258,7 @@
             {:else if open && !detail}
               <p class="call-note">{t('Loading...')}</p>
             {:else if detail}
-              {@const command = curlCommand(detail, window.location.origin)}
+              {@const command = curlCommand(withService(detail), window.location.origin)}
               <h6>{t('Request')}</h6>
               <p class="call-line">
                 <code data-testid="observed-call-address-{serviceName}-{call.id}"
@@ -312,7 +317,7 @@
                 <p class="call-note" data-testid="observed-call-body-file-{serviceName}-{call.id}">
                   {t(
                     'The body holds control or invisible characters, which a terminal could act on when the command is pasted: the command reads it from {0}, the file the download gives, to save next to where it runs.',
-                    bodyFileName(detail),
+                    bodyFileName(withService(detail)),
                   )}
                 </p>
               {/if}
