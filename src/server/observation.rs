@@ -6,14 +6,20 @@
 //   automatically. Until someone turns it on for a service, its proxy stays pure streaming, at no extra cost.
 // - `ObservationStore`: the exchanges (request and backend response) captured meanwhile, grouped by service, method,
 //   literal path and SOAP operation, bounded twice (number of endpoints, exchanges per endpoint) so memory never grows unbounded.
+//   Beside them, the relays that failed with their request (`FailedCall`), in a bounded list of their own: a failure never
+//   pushes an exchange out, and suggestions never read one (a 502 written by Mimicway is not an answer of the backend).
+//   Both are read back call by call through `calls` (the panel's list and the details of one call).
 use serde::Serialize;
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::sync::{Arc, RwLock};
+
+pub mod calls;
 
 const DEFAULT_MAX_BODY_SIZE: usize = 16 * 1024;
 const DEFAULT_MAX_BUFFER_SIZE: usize = 10 * 1024 * 1024;
 const DEFAULT_SAMPLES_PER_KEY: usize = 8;
 const DEFAULT_MAX_KEYS: usize = 200;
+const DEFAULT_MAX_FAILED_CALLS: usize = 100;
 /// Distinct SOAP operations followed for one path of a service (one method): a service names a few dozen at most.
 /// Past them, a call goes to the endpoint of the path without operation, so that a caller inventing an operation per
 /// call never turns one fixed path into as many endpoints as the store follows, pushing every other one out.
@@ -71,6 +77,21 @@ fn max_keys_in(lookup: impl Fn(&str) -> Option<String>) -> usize {
     crate::settings::number(lookup, "TRAFFIC_OBSERVATION_MAX_KEYS", DEFAULT_MAX_KEYS)
 }
 
+/// Failed relays kept at once, across all observed services, each with its request (bodies cut at `max_body_size()`);
+/// beyond that, the oldest goes first. Apart from the exchanges, so that a backend that stays down never pushes a good
+/// sample out.
+pub fn max_failed_calls() -> usize {
+    max_failed_calls_in(crate::settings::env)
+}
+
+fn max_failed_calls_in(lookup: impl Fn(&str) -> Option<String>) -> usize {
+    crate::settings::number(
+        lookup,
+        "TRAFFIC_OBSERVATION_MAX_FAILED_CALLS",
+        DEFAULT_MAX_FAILED_CALLS,
+    )
+}
+
 fn now_ms() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -104,13 +125,22 @@ pub struct ObservationKey {
 /// or of unknown size) is never stored (see `ProxyClient::forward_with_capture`).
 #[derive(Debug, Clone, Serialize)]
 pub struct ObservedExchange {
+    /// Given by the store when it records the exchange (0 before): the order of every call kept, exchanges and failed
+    /// relays together, and the identifier the API reads one call by.
+    pub id: u64,
     pub timestamp: u64,
+    /// The whole path the caller requested, service prefix included, as Mimicway received it; empty when not known.
+    pub request_path: String,
+    /// The query as the caller wrote it, `None` without `?`.
+    pub request_query: Option<String>,
     pub request_query_params: HashMap<String, String>,
     pub request_headers: HashMap<String, String>,
     /// The request body as text, a byte that is not UTF-8 replaced (`from_utf8_lossy`): read it only when
     /// `request_body_utf8` holds, the rules that will match the request read its bytes.
     pub request_body: String,
     pub request_body_truncated: bool,
+    /// The size of the whole request body, in bytes, before it was cut at `max_body_size()`.
+    pub request_body_size: usize,
     /// Whether the whole request body was UTF-8 text. A body in another encoding (a SOAP envelope in ISO-8859-1) is not
     /// the text kept above: conditions read the bytes the mock receives, and no XPath condition reads a body that is
     /// not UTF-8 (`MatchEngine::extract_xpath`), so suggestions read no field and no operation in it.
@@ -125,6 +155,9 @@ pub struct ObservedExchange {
     pub response_headers: HashMap<String, String>,
     pub response_body: String,
     pub response_body_truncated: bool,
+    pub response_body_size: usize,
+    /// Whether the whole response body was UTF-8 text, as for the request.
+    pub response_body_utf8: bool,
     pub response_content_type: Option<String>,
 }
 
@@ -144,11 +177,15 @@ impl ObservedExchange {
         let (req_body, req_truncated) = truncate_body(request_body);
         let (resp_body, resp_truncated) = truncate_body(response_body);
         Self {
+            id: 0,
             timestamp: now_ms(),
+            request_path: String::new(),
+            request_query: None,
             request_query_params,
             request_headers: crate::server::redaction::redact_headers(&request_headers),
             request_body: req_body,
             request_body_truncated: req_truncated,
+            request_body_size: request_body.len(),
             request_body_utf8: std::str::from_utf8(request_body).is_ok(),
             request_content_type,
             request_path_params: HashMap::new(),
@@ -157,9 +194,31 @@ impl ObservedExchange {
             response_headers: crate::server::redaction::redact_headers(&response_headers),
             response_body: resp_body,
             response_body_truncated: resp_truncated,
+            response_body_size: response_body.len(),
+            response_body_utf8: std::str::from_utf8(response_body).is_ok(),
             response_content_type,
         }
     }
+}
+
+/// A relay of an observed service that got no response to hand back, kept with the request as it was buffered.
+#[derive(Debug, Clone)]
+pub struct FailedCall {
+    pub group_name: Option<String>,
+    pub service_name: String,
+    pub method: String,
+    /// The SOAP operation the request names, as for an exchange's endpoint.
+    pub operation: Option<String>,
+    /// The request, in an exchange whose response side is empty (status 0, no header, no body): the relay got none.
+    /// It never enters an endpoint, so suggestions never read it.
+    pub request: ObservedExchange,
+    pub cause: crate::engine::FailureCause,
+    /// The HTTP client's own words for the failure, without the URL.
+    pub detail: Option<String>,
+    /// What Mimicway answered the caller instead (502, or 504 after a timeout).
+    pub status: u16,
+    /// The URL the relay aimed at, its credentials removed, without the query.
+    pub target: String,
 }
 
 #[derive(Default)]
@@ -175,7 +234,10 @@ struct ObservationInner {
     // Endpoints by last update (first = least recent), to evict when `max_keys()` is reached. Recording an exchange
     // moves its endpoint to a new, larger sequence number, found through its bucket: no scan of the order.
     key_order: BTreeMap<u64, ObservationKey>,
+    /// Also the identifier of each call recorded, exchange or failure: unique, and in the order they came.
     next_seq: u64,
+    /// Oldest first, `max_failed_calls()` at most.
+    failures: VecDeque<FailedCall>,
 }
 
 /// The bounded store of observed exchanges, by service, method and path (see the top of this file for both bounds).
@@ -200,7 +262,7 @@ impl ObservationStore {
     pub(crate) fn record_within(
         &self,
         key: ObservationKey,
-        exchange: ObservedExchange,
+        mut exchange: ObservedExchange,
         max_keys: usize,
         samples_per_key: usize,
     ) {
@@ -208,6 +270,7 @@ impl ObservationStore {
         let inner = &mut *guard;
         let seq = inner.next_seq;
         inner.next_seq += 1;
+        exchange.id = seq;
 
         // A new operation of a path that already has `MAX_OPERATIONS_PER_PATH`: the endpoint without operation. Counted
         // over the endpoints followed, `max_keys` at most, and only when the endpoint is new.
@@ -255,6 +318,75 @@ impl ObservationStore {
         bucket.exchanges.push_back(exchange);
     }
 
+    pub fn record_failure(&self, call: FailedCall) {
+        self.record_failure_within(call, max_failed_calls());
+    }
+
+    /// `record_failure` with its bound given, like `record_within`. The exchanges are never touched.
+    pub(crate) fn record_failure_within(&self, mut call: FailedCall, max_failed_calls: usize) {
+        if max_failed_calls == 0 {
+            return;
+        }
+        let mut guard = self.inner.write().unwrap();
+        let inner = &mut *guard;
+        call.request.id = inner.next_seq;
+        inner.next_seq += 1;
+        while inner.failures.len() >= max_failed_calls {
+            inner.failures.pop_front();
+        }
+        inner.failures.push_back(call);
+    }
+
+    /// The calls kept for a service, exchanges and failed relays together, the most recent first.
+    pub fn calls(&self, group: Option<&str>, service_name: &str) -> Vec<calls::CallSummary> {
+        let inner = self.inner.read().unwrap();
+        let exchanges = inner
+            .buckets
+            .iter()
+            .filter(|(k, _)| k.group_name.as_deref() == group && k.service_name == service_name)
+            .flat_map(|(key, bucket)| {
+                bucket
+                    .exchanges
+                    .iter()
+                    .map(move |e| calls::CallSummary::of_exchange(key, e))
+            });
+        let failures = inner
+            .failures
+            .iter()
+            .filter(|f| f.group_name.as_deref() == group && f.service_name == service_name)
+            .map(calls::CallSummary::of_failure);
+        let mut list: Vec<calls::CallSummary> = exchanges.chain(failures).collect();
+        list.sort_unstable_by_key(|call| std::cmp::Reverse(call.id));
+        list
+    }
+
+    /// One call kept for a service, whole as it was kept; `None` when no call of that service has this identifier (any
+    /// more).
+    pub fn call(
+        &self,
+        group: Option<&str>,
+        service_name: &str,
+        id: u64,
+    ) -> Option<calls::CallDetail> {
+        let inner = self.inner.read().unwrap();
+        let exchange = inner
+            .buckets
+            .iter()
+            .filter(|(k, _)| k.group_name.as_deref() == group && k.service_name == service_name)
+            .find_map(|(key, bucket)| {
+                let exchange = bucket.exchanges.iter().find(|e| e.id == id)?;
+                Some(calls::CallDetail::of_exchange(key, exchange))
+            });
+        exchange.or_else(|| {
+            inner
+                .failures
+                .iter()
+                .filter(|f| f.group_name.as_deref() == group && f.service_name == service_name)
+                .find(|f| f.request.id == id)
+                .map(calls::CallDetail::of_failure)
+        })
+    }
+
     /// The exchanges kept for an endpoint, oldest first; empty for an unknown endpoint.
     pub fn observations(&self, key: &ObservationKey) -> Vec<ObservedExchange> {
         let inner = self.inner.read().unwrap();
@@ -270,7 +402,7 @@ impl ObservationStore {
         self.inner.read().unwrap().buckets.len()
     }
 
-    /// Forgets every exchange observed for a service, and only those.
+    /// Forgets every call kept for a service, exchanges and failed relays, and only those.
     pub fn forget_service(&self, group: Option<&str>, service_name: &str) {
         let mut guard = self.inner.write().unwrap();
         let inner = &mut *guard;
@@ -278,6 +410,9 @@ impl ObservationStore {
             |k: &ObservationKey| k.group_name.as_deref() == group && k.service_name == service_name;
         inner.buckets.retain(|k, _| !belongs(k));
         inner.key_order.retain(|_, k| !belongs(k));
+        inner
+            .failures
+            .retain(|f| !(f.group_name.as_deref() == group && f.service_name == service_name));
     }
 
     pub fn clear(&self) {
@@ -736,6 +871,7 @@ mod tests {
         assert_eq!(max_buffer_size_in(vars(&[])), 10 * 1024 * 1024);
         assert_eq!(samples_per_key_in(vars(&[])), 8);
         assert_eq!(max_keys_in(vars(&[])), 200);
+        assert_eq!(max_failed_calls_in(vars(&[])), 100);
     }
 
     #[test]
@@ -745,11 +881,13 @@ mod tests {
             ("TRAFFIC_OBSERVATION_MAX_BUFFER_SIZE", "4"),
             ("TRAFFIC_OBSERVATION_SAMPLES_PER_KEY", "5"),
             ("TRAFFIC_OBSERVATION_MAX_KEYS", "6"),
+            ("TRAFFIC_OBSERVATION_MAX_FAILED_CALLS", "7"),
         ]);
         assert_eq!(max_body_size_in(&lookup), 3);
         assert_eq!(max_buffer_size_in(&lookup), 4);
         assert_eq!(samples_per_key_in(&lookup), 5);
         assert_eq!(max_keys_in(&lookup), 6);
+        assert_eq!(max_failed_calls_in(&lookup), 7);
     }
 
     #[test]
@@ -773,5 +911,160 @@ mod tests {
         };
         store.record_within(other.clone(), sample_exchange(b"<x/>"), 1000, 8);
         assert_eq!(store.observations(&other).len(), 1);
+    }
+
+    fn failed_call(group: Option<&str>, name: &str, body: &[u8]) -> FailedCall {
+        let mut request = ObservedExchange::new(
+            HashMap::new(),
+            HashMap::new(),
+            body,
+            None,
+            0,
+            HashMap::new(),
+            b"",
+            None,
+        );
+        request.request_path = format!("/{name}/ws");
+        FailedCall {
+            group_name: group.map(str::to_string),
+            service_name: name.into(),
+            method: "POST".into(),
+            operation: None,
+            request,
+            cause: crate::engine::FailureCause::Unreachable,
+            detail: Some("Connection refused".into()),
+            status: 502,
+            target: "http://backend.test/ws".into(),
+        }
+    }
+
+    // The two lists never push each other out: a backend that stays down keeps every good sample, and a busy service
+    // keeps every failure.
+    #[test]
+    fn failed_relays_are_bounded_apart_from_the_exchanges() {
+        let store = ObservationStore::new();
+        for i in 0..3 {
+            store.record_within(sample_key(&format!("/{i}")), sample_exchange(b"ok"), 3, 1);
+        }
+        for i in 0..10 {
+            store.record_failure_within(failed_call(None, "svc", i.to_string().as_bytes()), 4);
+        }
+        assert_eq!(store.key_count(), 3, "no exchange pushed out by a failure");
+        let failures: Vec<String> = store
+            .calls(None, "svc")
+            .into_iter()
+            .filter(|c| c.failure.is_some())
+            .map(|c| store.call(None, "svc", c.id).unwrap().request.body.text)
+            .collect();
+        assert_eq!(
+            failures,
+            ["9", "8", "7", "6"],
+            "the four latest, most recent first"
+        );
+        for i in 3..6 {
+            store.record_within(sample_key(&format!("/{i}")), sample_exchange(b"ok"), 3, 1);
+        }
+        assert_eq!(
+            store.calls(None, "svc").len(),
+            3 + 4,
+            "no failure pushed out by an exchange"
+        );
+        store.record_failure_within(failed_call(None, "svc", b"never"), 0);
+        assert_eq!(
+            store.calls(None, "svc").len(),
+            7,
+            "a bound of 0 keeps no failure"
+        );
+    }
+
+    // One list per service, a service being its group and its name, exchanges and failures in the order they came.
+    #[test]
+    fn the_calls_of_a_service_come_most_recent_first_and_only_theirs() {
+        let store = ObservationStore::new();
+        let grouped = |path: &str| ObservationKey {
+            group_name: Some("g".into()),
+            ..sample_key(path)
+        };
+        store.record(sample_key("/a"), sample_exchange(b"first"));
+        store.record_failure(failed_call(None, "svc", b"second"));
+        store.record(grouped("/a"), sample_exchange(b"other service"));
+        store.record_failure(failed_call(Some("g"), "svc", b"other service"));
+        store.record(sample_key("/b"), sample_exchange(b"third"));
+        store.record(sample_key("/a"), sample_exchange(b"fourth"));
+
+        let calls = store.calls(None, "svc");
+        let bodies: Vec<String> = calls
+            .iter()
+            .map(|c| store.call(None, "svc", c.id).unwrap().request.body.text)
+            .collect();
+        assert_eq!(bodies, ["fourth", "third", "second", "first"]);
+        assert_eq!(calls[2].status, None);
+        assert_eq!(
+            calls[2].failure,
+            Some(crate::engine::FailureCause::Unreachable)
+        );
+        assert_eq!(calls[0].status, Some(200));
+        assert_eq!(calls[0].failure, None);
+        assert_eq!(store.calls(Some("g"), "svc").len(), 2);
+        // An identifier of another service reads nothing, through either list.
+        for other in store.calls(Some("g"), "svc") {
+            assert!(store.call(None, "svc", other.id).is_none());
+            assert!(store.call(Some("g"), "svc", other.id).is_some());
+        }
+        assert!(store.call(None, "svc", u64::MAX).is_none());
+    }
+
+    #[test]
+    fn a_failed_relay_reads_back_with_its_request_and_why_no_response_came() {
+        let store = ObservationStore::new();
+        store.record_failure(failed_call(None, "svc", b"<Envelope/>"));
+        let id = store.calls(None, "svc")[0].id;
+        let call = store.call(None, "svc", id).unwrap();
+        assert!(call.response.is_none());
+        let failure = call.failure.unwrap();
+        assert_eq!(failure.cause, crate::engine::FailureCause::Unreachable);
+        assert_eq!(failure.status, 502);
+        assert_eq!(failure.detail.as_deref(), Some("Connection refused"));
+        assert_eq!(failure.target, "http://backend.test/ws");
+        assert_eq!(call.method, "POST");
+        assert_eq!(call.request.path, "/svc/ws");
+        assert_eq!(call.request.body.text, "<Envelope/>");
+        assert_eq!(call.request.body.size, 11);
+    }
+
+    #[test]
+    fn stopping_forgets_the_failed_relays_of_the_service_only() {
+        let state = ObservationState::new();
+        state.store.record_failure(failed_call(None, "svc", b"x"));
+        state
+            .store
+            .record_failure(failed_call(Some("g"), "svc", b"x"));
+        state.stop(None, "svc");
+        assert!(state.store.calls(None, "svc").is_empty());
+        assert_eq!(state.store.calls(Some("g"), "svc").len(), 1);
+        state.stop_all();
+        assert!(state.store.calls(Some("g"), "svc").is_empty());
+    }
+
+    // What the panel says of a body: its real size beside the part kept, and whether the text kept is the original.
+    #[test]
+    fn a_kept_body_says_its_whole_size_and_whether_it_was_utf8() {
+        let mut body = vec![b'a'; DEFAULT_MAX_BODY_SIZE];
+        body.extend_from_slice(b"\xE9t\xE9");
+        let exchange = sample_exchange(&body);
+        let store = ObservationStore::new();
+        store.record(sample_key("/a"), exchange);
+        let id = store.calls(None, "svc")[0].id;
+        let call = store.call(None, "svc", id).unwrap();
+        for kept in [&call.request.body, &call.response.as_ref().unwrap().body] {
+            assert!(kept.truncated);
+            assert_eq!(kept.size, DEFAULT_MAX_BODY_SIZE + 3);
+            assert_eq!(kept.text.len(), DEFAULT_MAX_BODY_SIZE);
+            assert!(!kept.utf8);
+        }
+        let plain = sample_exchange("été".as_bytes());
+        assert!(plain.request_body_utf8 && plain.response_body_utf8);
+        assert_eq!(plain.request_body_size, 5);
+        assert_eq!(plain.response_body_size, 5);
     }
 }

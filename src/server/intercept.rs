@@ -239,18 +239,15 @@ async fn do_proxy_observed(
             if let Some(raw) = capture {
                 // Keyed by group name, like the API that enables observation and lists suggestions (the
                 // group code only exists in service URLs).
-                let mut exchange = crate::server::observation::ObservedExchange::new(
-                    raw.request_query_params,
-                    raw.request_headers,
-                    &raw.request_body,
-                    raw.request_content_type,
+                let exchange = observed_exchange(
+                    raw.request,
+                    path,
+                    route.path_params,
                     raw.response_status,
                     raw.response_headers,
                     &raw.response_body,
                     raw.response_content_type,
                 );
-                exchange.request_path_params = route.path_params;
-                exchange.request_host = raw.request_host;
                 let key = crate::server::observation::ObservationKey {
                     group_name: service.group_name.clone(),
                     service_name: service.name.clone(),
@@ -262,18 +259,68 @@ async fn do_proxy_observed(
             }
             resp
         }
-        Err(error) => {
-            state.request_log.log_proxy(
-                service,
-                method_str,
-                path,
-                target,
-                error.status().as_u16(),
-                captured,
-            );
-            error.into_response()
+        Err(failure) => {
+            let status = failure.error.status().as_u16();
+            state
+                .request_log
+                .log_proxy(service, method_str, path, target, status, captured);
+            // Kept apart from the exchanges, with the request as it was buffered, and never read by suggestions.
+            if let Some(request) = failure.request {
+                let exchange = observed_exchange(
+                    *request,
+                    path,
+                    route.path_params,
+                    0,
+                    HashMap::new(),
+                    b"",
+                    None,
+                );
+                state
+                    .observation
+                    .store
+                    .record_failure(crate::server::observation::FailedCall {
+                        group_name: service.group_name.clone(),
+                        service_name: service.name.clone(),
+                        method: method_str.to_string(),
+                        operation: crate::server::suggestion::request_operation(&exchange),
+                        request: exchange,
+                        cause: failure.cause,
+                        detail: failure.detail,
+                        status,
+                        target: crate::server::redaction::redact_url_credentials(target),
+                    });
+            }
+            failure.error.into_response()
         }
     }
+}
+
+/// An observed exchange from a captured request and the response it got (status 0 and an empty side for none), the
+/// request's credentials redacted and its bodies cut by `ObservedExchange::new`.
+fn observed_exchange(
+    request: crate::engine::CapturedRequestRaw,
+    path: &str,
+    path_params: HashMap<String, String>,
+    response_status: u16,
+    response_headers: HashMap<String, String>,
+    response_body: &[u8],
+    response_content_type: Option<String>,
+) -> crate::server::observation::ObservedExchange {
+    let mut exchange = crate::server::observation::ObservedExchange::new(
+        request.query_params,
+        request.headers,
+        &request.body,
+        request.content_type,
+        response_status,
+        response_headers,
+        response_body,
+        response_content_type,
+    );
+    exchange.request_path_params = path_params;
+    exchange.request_host = request.host;
+    exchange.request_path = path.to_string();
+    exchange.request_query = request.query;
+    exchange
 }
 
 async fn handle_service(

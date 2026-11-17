@@ -79,6 +79,19 @@ pub fn routes() -> Router<AppState> {
             "/groups/{group}/services/{name}/linked-backends",
             get(get_linked_backends_grouped),
         )
+        .route("/services/{name}/observed-calls", get(get_observed_calls))
+        .route(
+            "/services/{name}/observed-calls/{id}",
+            get(get_observed_call),
+        )
+        .route(
+            "/groups/{group}/services/{name}/observed-calls",
+            get(get_observed_calls_grouped),
+        )
+        .route(
+            "/groups/{group}/services/{name}/observed-calls/{id}",
+            get(get_observed_call_grouped),
+        )
         .route("/groups", get(list_groups).post(create_group))
         .route(
             "/groups/{name}",
@@ -573,13 +586,14 @@ type ObservedTraffic = Vec<(
     Vec<crate::server::observation::ObservedExchange>,
 )>;
 
-/// A service's observed traffic, with the configuration it was read from, once the caller may see the service.
-async fn observed_endpoints(
+/// The configuration, once the caller may see the service whose observation they read: the one check of every route
+/// that reads what observation kept (suggestions, linked backends, calls).
+async fn observed_service_config(
     state: &AppState,
     user: &AuthUser,
     group: Option<&str>,
     name: &str,
-) -> Result<(Arc<MockConfig>, ObservedTraffic), AppError> {
+) -> Result<Arc<MockConfig>, AppError> {
     let config = state.store.snapshot().await;
     let svc = config
         .services
@@ -592,7 +606,17 @@ async fn observed_endpoints(
     {
         return Err(AppError::Forbidden);
     }
+    Ok(config)
+}
 
+/// A service's observed traffic, with the configuration it was read from, once the caller may see the service.
+async fn observed_endpoints(
+    state: &AppState,
+    user: &AuthUser,
+    group: Option<&str>,
+    name: &str,
+) -> Result<(Arc<MockConfig>, ObservedTraffic), AppError> {
+    let config = observed_service_config(state, user, group, name).await?;
     let endpoints = state
         .observation
         .store
@@ -681,6 +705,67 @@ async fn get_linked_backends_grouped(
     Path((group, name)): Path<(String, String)>,
 ) -> Result<Json<Vec<crate::server::suggestion::links::LinkedBackend>>, AppError> {
     get_linked_backends_impl(state, user, Some(group), name).await
+}
+
+/// The calls kept for a service, exchanges and failed relays, the most recent first: what was kept, as it was kept
+/// (credentials redacted, bodies cut), never more.
+async fn get_observed_calls_impl(
+    state: AppState,
+    user: AuthUser,
+    group: Option<String>,
+    name: String,
+) -> Result<Json<Vec<crate::server::observation::calls::CallSummary>>, AppError> {
+    observed_service_config(&state, &user, group.as_deref(), &name).await?;
+    Ok(Json(state.observation.store.calls(group.as_deref(), &name)))
+}
+
+async fn get_observed_calls(
+    State(state): State<AppState>,
+    Extension(user): Extension<AuthUser>,
+    Path(name): Path<String>,
+) -> Result<Json<Vec<crate::server::observation::calls::CallSummary>>, AppError> {
+    get_observed_calls_impl(state, user, None, name).await
+}
+
+async fn get_observed_calls_grouped(
+    State(state): State<AppState>,
+    Extension(user): Extension<AuthUser>,
+    Path((group, name)): Path<(String, String)>,
+) -> Result<Json<Vec<crate::server::observation::calls::CallSummary>>, AppError> {
+    get_observed_calls_impl(state, user, Some(group), name).await
+}
+
+/// One call kept for a service, whole; 404 when the service kept no call of that identifier (any more).
+async fn get_observed_call_impl(
+    state: AppState,
+    user: AuthUser,
+    group: Option<String>,
+    name: String,
+    id: u64,
+) -> Result<Json<crate::server::observation::calls::CallDetail>, AppError> {
+    observed_service_config(&state, &user, group.as_deref(), &name).await?;
+    state
+        .observation
+        .store
+        .call(group.as_deref(), &name, id)
+        .map(Json)
+        .ok_or(AppError::NotFound)
+}
+
+async fn get_observed_call(
+    State(state): State<AppState>,
+    Extension(user): Extension<AuthUser>,
+    Path((name, id)): Path<(String, u64)>,
+) -> Result<Json<crate::server::observation::calls::CallDetail>, AppError> {
+    get_observed_call_impl(state, user, None, name, id).await
+}
+
+async fn get_observed_call_grouped(
+    State(state): State<AppState>,
+    Extension(user): Extension<AuthUser>,
+    Path((group, name, id)): Path<(String, String, u64)>,
+) -> Result<Json<crate::server::observation::calls::CallDetail>, AppError> {
+    get_observed_call_impl(state, user, Some(group), name, id).await
 }
 
 // --------------- Messaging (Kafka) ---------------
@@ -3165,6 +3250,137 @@ mod tests {
             .collect();
         assert!(statuses.contains(&200));
         assert!(statuses.contains(&404));
+
+        // The same four calls, read back one by one, the most recent first.
+        let calls: Vec<serde_json::Value> = client
+            .get(format!("{base}/services/proxy-svc/observed-calls"))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        let seen: Vec<(&str, &str, u64)> = calls
+            .iter()
+            .map(|c| {
+                (
+                    c["path"].as_str().unwrap(),
+                    c["query"].as_str().unwrap(),
+                    c["status"].as_u64().unwrap(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            seen,
+            [
+                ("/proxy-svc/orders", "id=2", 404),
+                ("/proxy-svc/orders", "id=1", 200),
+                ("/proxy-svc/orders", "id=2", 404),
+                ("/proxy-svc/orders", "id=1", 200),
+            ]
+        );
+        let detail: serde_json::Value = client
+            .get(format!(
+                "{base}/services/proxy-svc/observed-calls/{}",
+                calls[1]["id"]
+            ))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(detail["response"]["status"], 200);
+        assert_eq!(detail["response"]["body"]["text"], "found");
+        assert_eq!(detail["failure"], serde_json::Value::Null);
+    }
+
+    // The request that broke can be read again, and the 502 Mimicway wrote is never taken for an answer of the backend.
+    #[tokio::test]
+    async fn a_failed_relay_is_listed_with_its_request_and_never_suggested() {
+        let svc = Service {
+            is_mocked: false,
+            real_target_url: "http://127.0.0.1:1".into(),
+            ..svc_named("proxy-svc", None)
+        };
+        let base = spawn_test_app(MockConfig {
+            services: vec![svc],
+            groups: vec![],
+        })
+        .await;
+        let client = reqwest::Client::new();
+        client
+            .post(format!("{base}/services/proxy-svc/observe"))
+            .send()
+            .await
+            .unwrap();
+        let proxy_base = base.trim_end_matches("/api");
+        for i in 0..4 {
+            let relayed = client
+                .post(format!("{proxy_base}/proxy-svc/ws?a=1"))
+                .header("authorization", "Bearer top-secret")
+                .header("content-type", "text/xml")
+                .body(format!("<call n=\"{i}\"/>"))
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(relayed.status(), StatusCode::BAD_GATEWAY);
+        }
+
+        let get = |path: String| {
+            let client = client.clone();
+            async move {
+                let resp = client.get(path).send().await.unwrap();
+                let status = resp.status();
+                (
+                    status,
+                    resp.json::<serde_json::Value>().await.unwrap_or_default(),
+                )
+            }
+        };
+        let (_, suggestions) = get(format!("{base}/services/proxy-svc/suggestions")).await;
+        assert_eq!(suggestions, serde_json::json!([]));
+        let (_, linked) = get(format!("{base}/services/proxy-svc/linked-backends")).await;
+        assert_eq!(linked, serde_json::json!([]));
+
+        let (status, calls) = get(format!("{base}/services/proxy-svc/observed-calls")).await;
+        assert_eq!(status, StatusCode::OK);
+        let calls = calls.as_array().unwrap();
+        assert_eq!(calls.len(), 4);
+        for call in calls {
+            assert_eq!(call["status"], serde_json::Value::Null);
+            assert_eq!(call["failure"], "unreachable");
+            assert_eq!(call["method"], "POST");
+            assert_eq!(call["path"], "/proxy-svc/ws");
+            assert_eq!(call["query"], "a=1");
+        }
+        let (status, detail) = get(format!(
+            "{base}/services/proxy-svc/observed-calls/{}",
+            calls[0]["id"]
+        ))
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(detail["request"]["body"]["text"], "<call n=\"3\"/>");
+        assert_eq!(detail["request"]["headers"]["authorization"], "[redacted]");
+        assert_eq!(detail["request"]["headers"]["content-type"], "text/xml");
+        assert_eq!(detail["response"], serde_json::Value::Null);
+        assert_eq!(detail["failure"]["cause"], "unreachable");
+        assert_eq!(detail["failure"]["status"], 502);
+        assert_eq!(detail["failure"]["target"], "http://127.0.0.1:1/ws");
+
+        let (status, _) = get(format!("{base}/services/proxy-svc/observed-calls/999999")).await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        let (status, _) = get(format!("{base}/services/unknown/observed-calls")).await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+
+        // Forgotten when observation stops, as the exchanges are.
+        client
+            .delete(format!("{base}/services/proxy-svc/observe"))
+            .send()
+            .await
+            .unwrap();
+        let (_, calls) = get(format!("{base}/services/proxy-svc/observed-calls")).await;
+        assert_eq!(calls, serde_json::json!([]));
     }
 
     #[tokio::test]

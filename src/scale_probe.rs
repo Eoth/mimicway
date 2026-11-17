@@ -153,6 +153,14 @@ pub const FAMILIES: &[Family] = &[
         env: &[],
         run: evictions,
     },
+    Family {
+        name: "observed-calls",
+        n: 200,
+        growth: Growth::Linear,
+        about: "n exchanges and n failed relays of one service recorded, then its 2n calls listed and the oldest read",
+        env: &[],
+        run: observed_calls_listed,
+    },
 ];
 
 /// Runs one family at size `n`: `cargo test --features scale-probe --test scale -- probe <family> <n>`.
@@ -664,6 +672,38 @@ fn evictions(n: usize) {
         }
         assert_eq!(store.key_count(), n, "the first n endpoints evicted");
         black_box(store);
+    });
+}
+
+/// The bounds are given to the store directly, above 2n, so that every call is kept and listed.
+fn observed_calls_listed(n: usize) {
+    let order: Vec<usize> = (0..n).collect();
+    let failure = crate::server::observation::FailedCall {
+        group_name: None,
+        service_name: "svc".into(),
+        method: "POST".into(),
+        operation: None,
+        request: observed_calls(&[0]).remove(0).1,
+        cause: crate::engine::FailureCause::Unreachable,
+        detail: None,
+        status: 502,
+        target: "http://backend.test/".into(),
+    };
+    let mut batches: Vec<_> = (0..2)
+        .map(|_| (observed_calls(&order), vec![failure.clone(); n]))
+        .collect();
+    warm_then_measure(&mut || {
+        let store = crate::server::observation::ObservationStore::new();
+        let (exchanges, failures) = batches.pop().expect("a batch per run");
+        for ((key, exchange), failure) in exchanges.into_iter().zip(failures) {
+            store.record_within(key, exchange, usize::MAX, 8);
+            store.record_failure_within(failure, usize::MAX);
+        }
+        let calls = store.calls(None, "svc");
+        assert_eq!(calls.len(), 2 * n, "every call kept and listed");
+        let oldest = calls.last().expect("calls").id;
+        black_box(store.call(None, "svc", oldest).expect("the oldest call"));
+        black_box(calls);
     });
 }
 

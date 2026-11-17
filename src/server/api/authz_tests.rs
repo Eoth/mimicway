@@ -514,3 +514,51 @@ async fn a_route_mounted_without_the_authentication_middleware_refuses_every_cal
         "the service is still there, and was never deleted"
     );
 }
+
+// A call kept by observation holds what an application sent its backend: read only with the right to read the
+// service's suggestions, by either of its routes, never through a route that names another service.
+#[tokio::test]
+async fn the_calls_observed_for_a_service_are_read_only_by_those_who_may_read_the_service() {
+    let app = start().await;
+    let billing = "/groups/team-a/services/billing";
+    let mut proxy = service_json("billing", Some("team-a"));
+    proxy["is_mocked"] = json!(false);
+    proxy["real_target_url"] = json!("http://127.0.0.1:1");
+    assert_eq!(app.put("bob", billing, proxy).await.0, StatusCode::OK);
+    let (status, _) = app
+        .post("bob", &format!("{billing}/observe"), json!({}))
+        .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let relayed = app
+        .client
+        .post(format!("{}/tmaaa/billing/ws", app.root))
+        .body("<call/>")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(relayed.status(), StatusCode::BAD_GATEWAY);
+
+    let (status, calls) = app.get("bob", &format!("{billing}/observed-calls")).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(calls.as_array().unwrap().len(), 1, "{calls}");
+    let one = format!("{billing}/observed-calls/{}", calls[0]["id"]);
+    let (status, detail) = app.get("bob", &one).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(detail["request"]["body"]["text"], "<call/>");
+    assert_eq!(app.get("root", &one).await.0, StatusCode::OK);
+
+    for path in [format!("{billing}/observed-calls"), one.clone()] {
+        let (status, body) = app.get("carol", &path).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{path}");
+        assert!(!body.to_string().contains("<call/>"), "{path}: {body}");
+    }
+    // The route without a group names another service, which does not exist.
+    let ungrouped = format!("/services/billing/observed-calls/{}", calls[0]["id"]);
+    assert_eq!(app.get("root", &ungrouped).await.0, StatusCode::NOT_FOUND);
+    assert_eq!(
+        app.get("root", "/groups/team-b/services/billing/observed-calls")
+            .await
+            .0,
+        StatusCode::NOT_FOUND
+    );
+}

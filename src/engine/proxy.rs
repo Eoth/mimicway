@@ -60,6 +60,86 @@ impl ProxyError {
     }
 }
 
+/// Why an observed relay got no response to hand back, for the person reading the call afterwards
+/// (`server::observation`); the interface says each in plain words.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FailureCause {
+    /// The target is outside `PROXY_ALLOWED_TARGETS`: nothing was sent.
+    RefusedTarget,
+    /// No connection could be opened: nothing listens on the port, the name does not resolve, the network is down.
+    Unreachable,
+    /// The backend did not answer, or stopped sending, within the relay's timeouts.
+    Timeout,
+    /// The backend began to answer, then the connection broke before the end of its body.
+    Interrupted,
+    /// Any other failure of the HTTP client (a response that is not HTTP, say).
+    Other,
+}
+
+/// What `forward_with_capture` answers when the relay fails: the error the caller gets, and for observation, why, the
+/// HTTP client's own words, and the request as it was buffered.
+#[derive(Debug)]
+pub struct RelayFailure {
+    pub error: ProxyError,
+    pub cause: FailureCause,
+    /// The innermost error of the HTTP client (`Connection refused (os error 111)`), never the URL.
+    pub detail: Option<String>,
+    /// `None` when the request was never buffered: streamed because too large or of unknown size, or unreadable. Boxed:
+    /// the error stays small on the way back, where the success carries the response.
+    pub request: Option<Box<CapturedRequestRaw>>,
+}
+
+impl RelayFailure {
+    fn without_request(error: ProxyError) -> Self {
+        Self {
+            error,
+            cause: FailureCause::Other,
+            detail: None,
+            request: None,
+        }
+    }
+
+    /// A failure of the HTTP client, sending the request or reading the response's body (`reading`): the error is the
+    /// one `forward()` gives for the same failure.
+    fn of_client(
+        e: reqwest::Error,
+        url: &str,
+        what: &str,
+        reading: bool,
+        request: CapturedRequestRaw,
+    ) -> Self {
+        let cause = if targets::refused_in(&e) {
+            FailureCause::RefusedTarget
+        } else if e.is_timeout() {
+            FailureCause::Timeout
+        } else if reading {
+            FailureCause::Interrupted
+        } else if e.is_connect() {
+            FailureCause::Unreachable
+        } else {
+            FailureCause::Other
+        };
+        let detail = innermost_error(&e);
+        Self {
+            error: ProxyClient::send_error(e, url, what),
+            cause,
+            detail: Some(detail),
+            request: Some(Box::new(request)),
+        }
+    }
+}
+
+/// The last error of a chain of sources, as its own `Display` gives it: what the system said
+/// (`Connection refused (os error 111)`) rather than what the HTTP client was doing.
+fn innermost_error(error: &(dyn std::error::Error + 'static)) -> String {
+    let mut current = error;
+    while let Some(source) = current.source() {
+        current = source;
+    }
+    current.to_string()
+}
+
 impl axum::response::IntoResponse for ProxyError {
     fn into_response(self) -> axum::response::Response {
         match self {
@@ -301,13 +381,16 @@ impl ProxyClient {
     /// Either way the client gets exactly what `forward()` would have sent; only the capture is missing. The one
     /// exception is malformed HTTP that hyper never lets through on a real connection: a request with neither header
     /// carrying a body larger than `max_buffer` would get 413.
+    ///
+    /// A captured request is buffered before its target is judged or anything is sent, so that a relay that fails
+    /// (target refused, backend unreachable or silent, response cut) still hands back the request with its error.
     pub async fn forward_with_capture(
         &self,
         target_base: &str,
         remaining_path: &str,
         req: Request<Body>,
         max_buffer: usize,
-    ) -> Result<(Response<Body>, Option<ProxyCaptureRaw>), ProxyError> {
+    ) -> Result<(Response<Body>, Option<ProxyCaptureRaw>), RelayFailure> {
         let (parts, body) = req.into_parts();
 
         let request_content_length = parts
@@ -328,7 +411,10 @@ impl ProxyClient {
 
         if !capturable_request {
             let rebuilt = Request::from_parts(parts, body);
-            let resp = self.forward(target_base, remaining_path, rebuilt).await?;
+            let resp = self
+                .forward(target_base, remaining_path, rebuilt)
+                .await
+                .map_err(RelayFailure::without_request)?;
             return Ok((resp, None));
         }
 
@@ -342,7 +428,6 @@ impl ProxyClient {
             })
             .unwrap_or_default();
         let url = target_url(target_base, remaining_path, parts.uri.query());
-        self.check_address(&url)?;
 
         let method = reqwest::Method::from_bytes(parts.method.as_str().as_bytes())
             .unwrap_or(reqwest::Method::GET);
@@ -377,14 +462,33 @@ impl ProxyClient {
 
         let body_bytes = axum::body::to_bytes(body, max_buffer).await.map_err(|e| {
             tracing::error!(error = %e, "observed request body exceeds capture buffer");
-            ProxyError::Upstream(StatusCode::PAYLOAD_TOO_LARGE)
+            RelayFailure::without_request(ProxyError::Upstream(StatusCode::PAYLOAD_TOO_LARGE))
         })?;
-        builder = builder.body(body_bytes.to_vec());
+        builder = builder.body(body_bytes.clone());
+        let request = CapturedRequestRaw {
+            host: (!original_host.is_empty()).then_some(original_host),
+            query: parts.uri.query().map(str::to_string),
+            query_params: request_query_params,
+            headers: request_headers,
+            body: body_bytes.to_vec(),
+            content_type: request_content_type,
+        };
+        if let Err(error) = self.check_address(&url) {
+            return Err(RelayFailure {
+                error,
+                cause: FailureCause::RefusedTarget,
+                detail: None,
+                request: Some(Box::new(request)),
+            });
+        }
 
-        let upstream_resp = builder
-            .send()
-            .await
-            .map_err(|e| Self::send_error(e, &url, "proxy forward (observed) failed"))?;
+        let upstream_resp = match builder.send().await {
+            Ok(resp) => resp,
+            Err(e) => {
+                let what = "proxy forward (observed) failed";
+                return Err(RelayFailure::of_client(e, &url, what, false, request));
+            }
+        };
 
         let status = StatusCode::from_u16(upstream_resp.status().as_u16())
             .unwrap_or(StatusCode::BAD_GATEWAY);
@@ -408,33 +512,31 @@ impl ProxyClient {
             }
         }
 
+        // A response the builder refuses cannot come from hyper, which parsed it: the same answer as `forward()`.
+        let unbuildable = |_| {
+            RelayFailure::without_request(ProxyError::Upstream(StatusCode::INTERNAL_SERVER_ERROR))
+        };
         if !matches!(response_content_length, Some(n) if (n as usize) <= max_buffer) {
             let resp_stream = upstream_resp.bytes_stream();
             let resp = response_builder
                 .body(Body::from_stream(resp_stream))
-                .map_err(|_| ProxyError::Upstream(StatusCode::INTERNAL_SERVER_ERROR))?;
+                .map_err(unbuildable)?;
             return Ok((resp, None));
         }
 
-        let response_bytes = upstream_resp.bytes().await.map_err(|e| {
-            let status = upstream_error_status(&e);
-            tracing::error!(
-                error = %e.without_url(),
-                url = %crate::server::redaction::redact_url_credentials(&url),
-                "reading observed response body failed"
-            );
-            ProxyError::Upstream(status)
-        })?;
+        let response_bytes = match upstream_resp.bytes().await {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                let what = "reading observed response body failed";
+                return Err(RelayFailure::of_client(e, &url, what, true, request));
+            }
+        };
         let resp = response_builder
             .body(Body::from(response_bytes.clone()))
-            .map_err(|_| ProxyError::Upstream(StatusCode::INTERNAL_SERVER_ERROR))?;
+            .map_err(unbuildable)?;
 
         let capture = ProxyCaptureRaw {
-            request_host: (!original_host.is_empty()).then_some(original_host),
-            request_query_params,
-            request_headers,
-            request_body: body_bytes.to_vec(),
-            request_content_type,
+            request,
             response_status: status.as_u16(),
             response_headers,
             response_body: response_bytes.to_vec(),
@@ -448,17 +550,27 @@ impl ProxyClient {
 /// complete; truncating them for storage (`server::observation::max_body_size`) is the caller's job.
 #[derive(Debug, Clone)]
 pub struct ProxyCaptureRaw {
-    /// The request's `Host`: Mimicway's own address as the caller reached it, which the relayed request does not carry
-    /// (the backend gets its own host, and this one in `X-Forwarded-Host`).
-    pub request_host: Option<String>,
-    pub request_query_params: HashMap<String, String>,
-    pub request_headers: HashMap<String, String>,
-    pub request_body: Vec<u8>,
-    pub request_content_type: Option<String>,
+    pub request: CapturedRequestRaw,
     pub response_status: u16,
     pub response_headers: HashMap<String, String>,
     pub response_body: Vec<u8>,
     pub response_content_type: Option<String>,
+}
+
+/// The request side of an observed relay, as the caller sent it (hop-by-hop headers left out, the forwarding headers
+/// not added), complete.
+#[derive(Debug, Clone)]
+pub struct CapturedRequestRaw {
+    /// The request's `Host`: Mimicway's own address as the caller reached it, which the relayed request does not carry
+    /// (the backend gets its own host, and this one in `X-Forwarded-Host`).
+    pub host: Option<String>,
+    /// The query as the caller wrote it, `None` without `?`: order, repeated names and encoding kept.
+    pub query: Option<String>,
+    pub query_params: HashMap<String, String>,
+    /// The headers whose value is visible ASCII; one value per name.
+    pub headers: HashMap<String, String>,
+    pub body: Vec<u8>,
+    pub content_type: Option<String>,
 }
 
 /// The backend URL a request is relayed to. One slash is taken from the start of the path, not all: a path that
@@ -833,8 +945,8 @@ mod tests {
 
         assert_eq!(resp.status(), StatusCode::OK);
         let capture = capture.expect("small request+response must be captured");
-        assert_eq!(capture.request_query_params.get("id").unwrap(), "1");
-        assert_eq!(capture.request_body, br#"{"q":true}"#);
+        assert_eq!(capture.request.query_params.get("id").unwrap(), "1");
+        assert_eq!(capture.request.body, br#"{"q":true}"#);
         assert_eq!(capture.response_status, 200);
         assert_eq!(capture.response_body, br#"{"id":1}"#);
         assert_eq!(
@@ -864,7 +976,7 @@ mod tests {
                 .forward_with_capture(&target_base, "/a", req.body(Body::empty()).unwrap(), 1024)
                 .await
                 .unwrap();
-            assert_eq!(capture.unwrap().request_host.as_deref(), kept, "{host:?}");
+            assert_eq!(capture.unwrap().request.host.as_deref(), kept, "{host:?}");
         }
     }
 
@@ -939,5 +1051,177 @@ mod tests {
             Some(ProxyError::Upstream(StatusCode::GATEWAY_TIMEOUT))
         );
         assert!(started.elapsed() < std::time::Duration::from_secs(5));
+    }
+
+    /// A request with a body, a query whose order and repeated names matter, a header and a host: what an observed
+    /// relay buffers before sending anything.
+    fn observed_post() -> Request<Body> {
+        Request::builder()
+            .method("POST")
+            .uri("/svc/ws?b=2&a=1&a=3")
+            .header("host", "mimic.test:7342")
+            .header("content-type", "text/xml")
+            .header("content-length", "7")
+            .header("x-trace", "t1")
+            .body(Body::from("<ping/>"))
+            .unwrap()
+    }
+
+    fn assert_kept(request: Option<Box<CapturedRequestRaw>>) {
+        let request = request.expect("the request handed back with the failure");
+        assert_eq!(request.body, b"<ping/>");
+        assert_eq!(request.query.as_deref(), Some("b=2&a=1&a=3"));
+        assert_eq!(request.query_params["b"], "2");
+        assert_eq!(request.host.as_deref(), Some("mimic.test:7342"));
+        assert_eq!(request.headers["x-trace"], "t1");
+        assert_eq!(request.content_type.as_deref(), Some("text/xml"));
+    }
+
+    /// A backend that reads one request, writes `reply` as it is, then holds the connection open (`hold`) or closes it.
+    async fn scripted_backend(reply: &'static [u8], hold: bool) -> String {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut seen = Vec::new();
+            let mut chunk = [0u8; 1024];
+            while !seen.ends_with(b"<ping/>") {
+                match socket.read(&mut chunk).await {
+                    Ok(n) if n > 0 => seen.extend_from_slice(&chunk[..n]),
+                    _ => return,
+                }
+            }
+            let _ = socket.write_all(reply).await;
+            let _ = socket.flush().await;
+            if hold {
+                tokio::time::sleep(Duration::from_secs(30)).await;
+            }
+        });
+        format!("http://{addr}")
+    }
+
+    fn short_timeouts() -> ProxyClient {
+        ProxyClient::with_timeouts(Duration::from_secs(2), Duration::from_millis(300))
+    }
+
+    // Each way a relay fails, as the person reading the call is told it: the error the caller got is the one of
+    // `forward()`, and the request comes back whole.
+    #[tokio::test]
+    async fn a_relay_to_a_closed_port_hands_back_its_request_as_unreachable() {
+        let failure = ProxyClient::new()
+            .forward_with_capture("http://127.0.0.1:1", "/ws", observed_post(), 1024)
+            .await
+            .unwrap_err();
+        assert_eq!(failure.error, ProxyError::Upstream(StatusCode::BAD_GATEWAY));
+        assert_eq!(failure.cause, FailureCause::Unreachable);
+        let detail = failure.detail.clone().unwrap_or_default();
+        assert!(detail.contains("refused"), "{detail}");
+        assert!(!detail.contains("127.0.0.1"), "never the URL: {detail}");
+        assert_kept(failure.request);
+    }
+
+    #[tokio::test]
+    async fn a_backend_that_never_answers_hands_back_the_request_as_a_timeout() {
+        let silent = scripted_backend(b"", true).await;
+        let failure = short_timeouts()
+            .forward_with_capture(&silent, "/ws", observed_post(), 1024)
+            .await
+            .unwrap_err();
+        assert_eq!(
+            failure.error,
+            ProxyError::Upstream(StatusCode::GATEWAY_TIMEOUT)
+        );
+        assert_eq!(failure.cause, FailureCause::Timeout);
+        assert!(failure.detail.is_some());
+        assert_kept(failure.request);
+    }
+
+    #[tokio::test]
+    async fn a_body_that_stops_coming_is_a_timeout_and_one_cut_short_is_interrupted() {
+        let head = b"HTTP/1.1 200 OK\r\ncontent-length: 100\r\n\r\nhello";
+        for (hold, cause, status) in [
+            (true, FailureCause::Timeout, StatusCode::GATEWAY_TIMEOUT),
+            (false, FailureCause::Interrupted, StatusCode::BAD_GATEWAY),
+        ] {
+            let backend = scripted_backend(head, hold).await;
+            let failure = short_timeouts()
+                .forward_with_capture(&backend, "/ws", observed_post(), 1024)
+                .await
+                .unwrap_err();
+            assert_eq!(failure.error, ProxyError::Upstream(status), "hold {hold}");
+            assert_eq!(failure.cause, cause, "hold {hold}");
+            assert_kept(failure.request);
+        }
+    }
+
+    #[tokio::test]
+    async fn an_answer_that_is_not_http_is_another_failure() {
+        let backend = scripted_backend(b"this is not HTTP\r\n\r\n", false).await;
+        let failure = short_timeouts()
+            .forward_with_capture(&backend, "/ws", observed_post(), 1024)
+            .await
+            .unwrap_err();
+        assert_eq!(failure.error, ProxyError::Upstream(StatusCode::BAD_GATEWAY));
+        assert_eq!(failure.cause, FailureCause::Other);
+        assert!(failure.detail.is_some());
+        assert_kept(failure.request);
+    }
+
+    // Refused before anything is sent, whether the target is written as an address (judged on the URL) or as a name
+    // (judged by the resolver): the request was read all the same, within its bound.
+    #[tokio::test]
+    async fn a_target_outside_the_list_hands_back_the_request_as_refused() {
+        let client = ProxyClient::restricted(AllowedTargets::parse("10.0.0.0/8").unwrap());
+        for (target, judged_by_resolver) in
+            [("http://127.0.0.1:1", false), ("http://localhost:1", true)]
+        {
+            let failure = client
+                .forward_with_capture(target, "/ws", observed_post(), 1024)
+                .await
+                .unwrap_err();
+            assert_eq!(failure.error, ProxyError::Refused, "{target}");
+            assert_eq!(failure.cause, FailureCause::RefusedTarget, "{target}");
+            assert_eq!(failure.detail.is_some(), judged_by_resolver, "{target}");
+            assert_kept(failure.request);
+        }
+    }
+
+    // Streamed because its size is unknown: nothing was buffered, so nothing comes back with the failure.
+    #[tokio::test]
+    async fn a_streamed_request_that_fails_hands_back_no_request() {
+        let req = Request::builder()
+            .method("POST")
+            .uri("/svc/ws")
+            .header("transfer-encoding", "chunked")
+            .body(Body::from("<ping/>"))
+            .unwrap();
+        let failure = ProxyClient::new()
+            .forward_with_capture("http://127.0.0.1:1", "/ws", req, 1024)
+            .await
+            .unwrap_err();
+        assert_eq!(failure.error, ProxyError::Upstream(StatusCode::BAD_GATEWAY));
+        assert_eq!(failure.cause, FailureCause::Other);
+        assert!(failure.detail.is_none());
+        assert!(failure.request.is_none());
+    }
+
+    #[test]
+    fn the_detail_of_a_failure_is_the_last_error_of_its_chain() {
+        #[derive(Debug)]
+        struct Wrapper(std::io::Error);
+        impl std::fmt::Display for Wrapper {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("error sending request for url (http://secret@host/)")
+            }
+        }
+        impl std::error::Error for Wrapper {
+            fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+                Some(&self.0)
+            }
+        }
+        let chain = Wrapper(std::io::Error::other("connection reset"));
+        assert_eq!(innermost_error(&chain), "connection reset");
+        assert_eq!(innermost_error(&std::io::Error::other("alone")), "alone");
     }
 }
