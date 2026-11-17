@@ -321,6 +321,15 @@
             )}
           </p>
         {/if}
+        {#if suggestion.non_utf8_request_bodies}
+          <p class="suggestion-paths" data-testid="observation-suggestion-non-utf8-{serviceName}-{i}">
+            {tCount(
+              suggestion.non_utf8_request_bodies,
+              '{0} request body is in another encoding than UTF-8: its fields could not be read, and no rule can read them.',
+              '{0} request bodies are in another encoding than UTF-8: their fields could not be read, and no rule can read them.',
+            )}
+          </p>
+        {/if}
         {#if suggestion.outcome === 'VarianceUnexplained'}
           <p class="panel-unexplained" role="status" data-testid="observation-suggestion-unexplained-{serviceName}-{i}">
             <code

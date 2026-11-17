@@ -120,6 +120,8 @@ pub struct EndpointSuggestion {
     pub left_out: Vec<LeftOut>,
     /// Calls whose request body was cut at `observation::max_body_size()`: no field of their body was read.
     pub truncated_request_bodies: usize,
+    /// Calls whose request body was not UTF-8 text (another encoding): no field of their body was read.
+    pub non_utf8_request_bodies: usize,
     #[serde(flatten)]
     pub outcome: Suggestion,
 }
@@ -220,7 +222,13 @@ pub(super) fn observed_routes(
 /// The SOAP operation an observed request names, as suggestions read it (`body_fields`): what splits the observation of
 /// one address into one endpoint per operation (`ObservationKey::operation`).
 pub fn request_operation(exchange: &ObservedExchange) -> Option<String> {
-    body_fields::read(&exchange.request_body, exchange.request_body_truncated).operation
+    body_fields::read(&exchange.request_body, unread(exchange)).operation
+}
+
+/// Whether the request body of an exchange is left unread by suggestions: cut at the size limit of observation (its
+/// end was never seen), or not UTF-8 text (the rules read its bytes, which are not the text kept).
+fn unread(exchange: &ObservedExchange) -> bool {
+    exchange.request_body_truncated || !exchange.request_body_utf8
 }
 
 /// The suggestions for one service, one per route (`observed_routes`), or one per operation of a route whose calls
@@ -235,10 +243,7 @@ pub fn suggest_for_service(
             .iter()
             .map(|sample| Call {
                 sample,
-                body: body_fields::read(
-                    &sample.exchange.request_body,
-                    sample.exchange.request_body_truncated,
-                ),
+                body: body_fields::read(&sample.exchange.request_body, unread(sample.exchange)),
             })
             .collect();
         let mut by_operation: BTreeMap<Option<&str>, Vec<&Call>> = BTreeMap::new();
@@ -276,6 +281,10 @@ pub fn suggest_for_service(
                 truncated_request_bodies: group
                     .iter()
                     .filter(|c| c.sample.exchange.request_body_truncated)
+                    .count(),
+                non_utf8_request_bodies: group
+                    .iter()
+                    .filter(|c| !c.sample.exchange.request_body_utf8)
                     .count(),
                 outcome,
             });

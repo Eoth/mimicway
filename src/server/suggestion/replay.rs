@@ -28,17 +28,18 @@ fn as_rule(i: usize, suggested: &SuggestedRule) -> Rule {
     }
 }
 
-/// What `rules` answer to an observed call, matched and rendered as the interception does: the rule's script run
-/// first, a failing one giving an empty result.
+/// What `rules` answer to an observed call whose request body the mock receives as `received`, matched and rendered
+/// as the interception does: the rule's script run first, a failing one giving an empty result.
 fn answer(
     rules: &[Rule],
     key: &ObservationKey,
     exchange: &ObservedExchange,
+    received: &[u8],
 ) -> Option<(u16, String)> {
     let req = RequestData {
         query_params: exchange.request_query_params.clone(),
         headers: exchange.request_headers.clone(),
-        body: exchange.request_body.as_bytes().to_vec(),
+        body: received.to_vec(),
         content_type: None,
         path_params: exchange.request_path_params.clone(),
         method: key.method.clone(),
@@ -74,6 +75,24 @@ fn answer(
 /// for a SOAP operation stands for the calls in which the reader of XPath conditions finds that operation; the calls it
 /// left out must all be server errors, as many as it says, and are not replayed.
 pub(crate) fn check(endpoints: &[(ObservationKey, Vec<ObservedExchange>)]) -> Result<(), String> {
+    let received: Vec<Vec<Vec<u8>>> = endpoints
+        .iter()
+        .map(|(_, exchanges)| {
+            exchanges
+                .iter()
+                .map(|e| e.request_body.as_bytes().to_vec())
+                .collect()
+        })
+        .collect();
+    check_received(endpoints, &received)
+}
+
+/// `check`, the request bodies given as the mock receives them (`received`, in the shape of `endpoints`), where
+/// observation kept them as text: a body that is not UTF-8 is not the text kept of it.
+pub(crate) fn check_received(
+    endpoints: &[(ObservationKey, Vec<ObservedExchange>)],
+    received: &[Vec<Vec<u8>>],
+) -> Result<(), String> {
     let suggestions = suggest_for_service(endpoints);
     let rules: Vec<Rule> = suggestions
         .iter()
@@ -98,22 +117,28 @@ pub(crate) fn check(endpoints: &[(ObservationKey, Vec<ObservedExchange>)]) -> Re
             .operation
             .as_ref()
             .map(|name| format!("Envelope/Body/{name}"));
-        let calls: Vec<(&ObservationKey, &ObservedExchange)> = endpoints
+        let calls: Vec<(&ObservationKey, &ObservedExchange, &[u8])> = endpoints
             .iter()
-            .filter(|(key, _)| {
+            .zip(received)
+            .filter(|((key, _), _)| {
                 key.method == suggestion.method && suggestion.paths.contains(&key.sub_path)
             })
-            .flat_map(|(key, exchanges)| exchanges.iter().map(move |e| (key, e)))
-            .filter(|(_, e)| {
-                operation.as_ref().is_none_or(|path| {
-                    MatchEngine::extract_xpath(e.request_body.as_bytes(), path).is_some()
-                })
+            .flat_map(|((key, exchanges), bodies)| {
+                exchanges
+                    .iter()
+                    .zip(bodies)
+                    .map(move |(e, b)| (key, e, b.as_slice()))
+            })
+            .filter(|(_, _, body)| {
+                operation
+                    .as_ref()
+                    .is_none_or(|path| MatchEngine::extract_xpath(body, path).is_some())
             })
             .collect();
         for left in &suggestion.left_out {
             let count = calls
                 .iter()
-                .filter(|(_, e)| e.response_status == left.status)
+                .filter(|(_, e, _)| e.response_status == left.status)
                 .count();
             if left.status < 500 || count != left.count {
                 return Err(format!(
@@ -122,15 +147,15 @@ pub(crate) fn check(endpoints: &[(ObservationKey, Vec<ObservedExchange>)]) -> Re
                 ));
             }
         }
-        let replayed = calls.into_iter().filter(|(_, e)| {
+        let replayed = calls.into_iter().filter(|(_, e, _)| {
             !suggestion
                 .left_out
                 .iter()
                 .any(|left| left.status == e.response_status)
         });
-        for (key, exchange) in replayed {
+        for (key, exchange, body) in replayed {
             let expected = Some((exchange.response_status, exchange.response_body.clone()));
-            let got = answer(&rules, key, exchange);
+            let got = answer(&rules, key, exchange, body);
             if got != expected {
                 return Err(format!(
                     "{} {:?} under {}: expected {expected:?}, got {got:?}; suggestions {suggestions:?}",

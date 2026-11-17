@@ -863,7 +863,7 @@ Defects and debts found on the way. They are taken by bundle: the items of a bun
 | Keyboard | E42, E47 | "Accessible" (0.6) |
 | Screen reader | E15, E43 | "Accessible" (0.6) |
 | Forms and messages | E8, E12, E19, E21, E31, E32 | "Words anyone can read" (0.6) |
-| Proxy path and suggestions | E7, E34, E35, E36, E46, E59, E61, and E48 once it is unblocked | "Recorded, without personal data" (0.7) |
+| Proxy path and suggestions | E7, E34, E35, E36, E46, E59, E61, E64, and E48 once it is unblocked | "Recorded, without personal data" (0.7) |
 | Builders and rule engine | E2, E28, E45, and E9 and E54 once decided | "Guided and explained" (0.7) |
 | Tests | E6, E11, E16 | the first theme that touches them |
 | Kafka and TCP | E3, E4 | "Protocols" (1.1) |
@@ -1200,3 +1200,13 @@ Size S
 **What.** The fuzz target draws a request body for some calls (raw bytes, and XML or JSON built around the drawn text), and replays the suggestions on them through `suggestion::replay::check`, as it does for responses.
 
 **Done when.** The target compiles with `--cfg fuzzing` and runs in the CI; a corpus entry holds a SOAP call and a JSON call whose bodies decide the answer.
+
+### E64. XML conditions read only UTF-8 bodies
+
+Size S
+
+**Why.** An XPath condition, a `{{xpath.…}}` variable and `parse_xml_items` read the request body only when it is UTF-8 text (`MatchEngine::extract_xpath`): a SOAP envelope declared `encoding="ISO-8859-1"`, still met in older services, matches no XPath condition, and its values cannot be repeated. Suggestions say so (`non_utf8_request_bodies`) and read nothing in such a body, rather than suggest a rule that never matches.
+
+**What.** The XML readers decode a body by the encoding its declaration names (ISO-8859-1 and Windows-1252 at least) before reading it, the same way in conditions, templates and scripts; suggestions then read such a body like any other.
+
+**Done when.** A rule with an XPath condition answers an ISO-8859-1 envelope whose element holds `é`; the suggestions of three such calls name their operation, and the replay judge, given the bytes the mock receives, finds every call answered.

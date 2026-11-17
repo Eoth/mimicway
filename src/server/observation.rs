@@ -103,8 +103,14 @@ pub struct ObservedExchange {
     pub timestamp: u64,
     pub request_query_params: HashMap<String, String>,
     pub request_headers: HashMap<String, String>,
+    /// The request body as text, a byte that is not UTF-8 replaced (`from_utf8_lossy`): read it only when
+    /// `request_body_utf8` holds, the rules that will match the request read its bytes.
     pub request_body: String,
     pub request_body_truncated: bool,
+    /// Whether the whole request body was UTF-8 text. A body in another encoding (a SOAP envelope in ISO-8859-1) is not
+    /// the text kept above: conditions read the bytes the mock receives, and no XPath condition reads a body that is
+    /// not UTF-8 (`MatchEngine::extract_xpath`), so suggestions read no field and no operation in it.
+    pub request_body_utf8: bool,
     pub request_content_type: Option<String>,
     /// The parameters the service's listen path captured (`/v1/users/{id}`), empty when it names none.
     pub request_path_params: HashMap<String, String>,
@@ -139,6 +145,7 @@ impl ObservedExchange {
             request_headers: crate::server::redaction::redact_headers(&request_headers),
             request_body: req_body,
             request_body_truncated: req_truncated,
+            request_body_utf8: std::str::from_utf8(request_body).is_ok(),
             request_content_type,
             request_path_params: HashMap::new(),
             request_host: None,

@@ -549,6 +549,7 @@ describe('ObservationSuggestions', () => {
           operation: 'GetStatus',
           left_out: [],
           truncated_request_bodies: 2,
+          non_utf8_request_bodies: 1,
           outcome: 'Conditional',
           rules: [
             {
@@ -572,6 +573,9 @@ describe('ObservationSuggestions', () => {
       expect(queryByText(/Envelope\/Body\/GetStatus"/)).not.toBeInTheDocument();
       expect(getByTestId('observation-suggestion-truncated-svc-a-0')).toHaveTextContent(
         '2 request bodies were cut at the size limit of observation: their fields could not be read.',
+      );
+      expect(getByTestId('observation-suggestion-non-utf8-svc-a-0')).toHaveTextContent(
+        '1 request body is in another encoding than UTF-8: its fields could not be read, and no rule can read them.',
       );
 
       await fireEvent.click(getByText('Use this suggestion'));

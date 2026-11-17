@@ -237,7 +237,7 @@ proptest! {
 
 /// The values a body field takes, each written three ways in XML (plain, CDATA, with a reference) so that the same value
 /// reads the same whatever its writing.
-const VALUES: &[&str] = &["R1", "R2", "R3", "R4", "a&b"];
+const VALUES: &[&str] = &["R1", "R2", "R3", "R4", "a&b", "Béziers"];
 const BODY_OPERATIONS: &[&str] = &["GetStatus", "Book", "Ping"];
 
 fn xml_text(value: &str, writing: usize) -> String {
@@ -259,6 +259,25 @@ struct BodyCall {
     writing: usize,
     items: usize,
     odd: Option<u16>,
+    /// Sent in ISO-8859-1 rather than UTF-8: the bytes the mock receives are not the text observation keeps.
+    latin1: bool,
+}
+
+/// The bytes of `call`'s request body, as the client sends them.
+fn request_bytes(call: &BodyCall, seq: usize) -> Vec<u8> {
+    let text = request_body(call, seq);
+    if !call.latin1 {
+        return text.into_bytes();
+    }
+    let declared = if call.soap {
+        format!("<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?>{text}")
+    } else {
+        text
+    };
+    declared
+        .chars()
+        .map(|c| u8::try_from(u32::from(c)).unwrap_or(b'?'))
+        .collect()
 }
 
 fn request_body(call: &BodyCall, seq: usize) -> String {
@@ -294,7 +313,7 @@ fn request_body(call: &BodyCall, seq: usize) -> String {
 /// Calls with XML or JSON bodies on one or two paths. Each (operation, value) answers with the response its table gives,
 /// so that several values often lead to one response; a few calls answer a server error, or another status, that
 /// nothing in the request explains.
-fn arb_body_calls() -> impl Strategy<Value = Vec<(String, ObservedExchange)>> {
+fn arb_body_calls() -> impl Strategy<Value = Vec<(String, ObservedExchange, Vec<u8>)>> {
     let call = (
         prop::bool::weighted(0.7),
         any::<bool>(),
@@ -303,9 +322,10 @@ fn arb_body_calls() -> impl Strategy<Value = Vec<(String, ObservedExchange)>> {
         0usize..3,
         0usize..3,
         prop::option::weighted(0.1, prop::sample::select(vec![500u16, 503, 404])),
+        prop::bool::weighted(0.1),
     )
         .prop_map(
-            |(soap, prefix, operation, value, writing, items, odd)| BodyCall {
+            |(soap, prefix, operation, value, writing, items, odd, latin1)| BodyCall {
                 soap,
                 prefix,
                 operation,
@@ -313,6 +333,7 @@ fn arb_body_calls() -> impl Strategy<Value = Vec<(String, ObservedExchange)>> {
                 writing,
                 items,
                 odd,
+                latin1,
             },
         );
     (
@@ -334,10 +355,12 @@ fn arb_body_calls() -> impl Strategy<Value = Vec<(String, ObservedExchange)>> {
                         Some(status) => (status, format!("error {status}")),
                         None => (200, format!("<r>{answer}</r>")),
                     };
+                    // Through the capture of observation, as the proxy keeps an exchange.
+                    let sent = request_bytes(&call, seq);
                     let exchange = ObservedExchange::new(
                         HashMap::new(),
                         HashMap::new(),
-                        request_body(&call, seq).as_bytes(),
+                        &sent,
                         None,
                         status,
                         HashMap::new(),
@@ -345,7 +368,7 @@ fn arb_body_calls() -> impl Strategy<Value = Vec<(String, ObservedExchange)>> {
                         Some("text/xml".into()),
                     );
                     let path = if second_path { "/ws/b" } else { "/ws/a" };
-                    (path.to_string(), exchange)
+                    (path.to_string(), exchange, sent)
                 })
                 .collect()
         })
@@ -361,6 +384,32 @@ fn posted_endpoints(
     out
 }
 
+/// `posted_endpoints`, with the request bodies the mock receives, in the same shape.
+#[allow(clippy::type_complexity)]
+fn posted_with_bodies(
+    calls: &[(String, ObservedExchange, Vec<u8>)],
+) -> (
+    Vec<(ObservationKey, Vec<ObservedExchange>)>,
+    Vec<Vec<Vec<u8>>>,
+) {
+    let kept: Vec<(String, ObservedExchange)> = calls
+        .iter()
+        .map(|(path, e, _)| (path.clone(), e.clone()))
+        .collect();
+    let endpoints = posted_endpoints(&kept);
+    let received = endpoints
+        .iter()
+        .map(|(key, _)| {
+            calls
+                .iter()
+                .filter(|(path, _, _)| *path == key.sub_path)
+                .map(|(_, _, sent)| sent.clone())
+                .collect()
+        })
+        .collect();
+    (endpoints, received)
+}
+
 #[test]
 fn rules_suggested_from_bodies_answer_every_call_they_come_from_as_observed() {
     use proptest::test_runner::TestRunner;
@@ -374,8 +423,8 @@ fn rules_suggested_from_bodies_answer_every_call_they_come_from_as_observed() {
         Cell::new(0),
     );
     let result = TestRunner::new(config).run(&arb_body_calls(), |calls| {
-        let endpoints = posted_endpoints(&calls);
-        let replayed = super::replay::check(&endpoints);
+        let (endpoints, received) = posted_with_bodies(&calls);
+        let replayed = super::replay::check_received(&endpoints, &received);
         prop_assert!(replayed.is_ok(), "{}", replayed.unwrap_err());
         for suggestion in suggest_for_service(&endpoints) {
             operations.set(operations.get() + usize::from(suggestion.operation.is_some()));

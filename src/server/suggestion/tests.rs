@@ -1026,3 +1026,42 @@ fn the_length_of_a_body_never_explains_its_answer() {
         }]
     );
 }
+
+#[test]
+fn a_body_that_is_not_utf8_gives_no_field_nor_operation_and_is_counted() {
+    // A SOAP envelope in ISO-8859-1: the mock receives these bytes, which no XPath condition reads. An operation read in
+    // the text kept of it gave a rule whose `Envelope/Body/GetCity` exists never held, and the route went unanswered.
+    let request = |city: &[u8]| {
+        let mut bytes = b"<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?>\
+            <soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\"><soap:Body><GetCity><name>"
+            .to_vec();
+        bytes.extend_from_slice(city);
+        bytes.extend_from_slice(b"</name></GetCity></soap:Body></soap:Envelope>");
+        bytes
+    };
+    let sent: Vec<Vec<u8>> = [&b"B\xe9ziers"[..], b"S\xe8te", b"Agde"]
+        .iter()
+        .map(|city| request(city))
+        .collect();
+    let calls: Vec<ObservedExchange> = sent
+        .iter()
+        .map(|body| {
+            ObservedExchange::new(
+                HashMap::new(),
+                HashMap::new(),
+                body,
+                Some("text/xml".into()),
+                200,
+                HashMap::new(),
+                soap_answer("<GetCityResponse>OK</GetCityResponse>").as_bytes(),
+                Some("text/xml".into()),
+            )
+        })
+        .collect();
+    let endpoints = vec![(key("POST", "/ws/CityService"), calls)];
+    let suggestions = suggest_for_service(&endpoints);
+    assert_eq!(suggestions.len(), 1, "{suggestions:?}");
+    assert_eq!(suggestions[0].operation, None);
+    assert_eq!(suggestions[0].non_utf8_request_bodies, 2);
+    assert_eq!(super::replay::check_received(&endpoints, &[sent]), Ok(()));
+}

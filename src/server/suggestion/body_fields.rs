@@ -9,7 +9,8 @@
 //! when raised to the limit of a buffered body). Reading it costs its length, whatever its shape: one pass of the
 //! reader, one lookup of a bounded name per element or key, and nothing copied before its length is checked against the
 //! bounds below. A body cut by that size limit gives no field and no operation: its end, where a value or a second
-//! operation may be, was never seen.
+//! operation may be, was never seen. Nor does a body that is not UTF-8 text: the conditions read its bytes, not the text
+//! kept of it.
 use crate::engine::MatchEngine;
 use crate::engine::matcher::XML_DEPTH_LIMIT;
 use crate::models::ConditionSource;
@@ -45,9 +46,9 @@ pub(super) struct BodyReading {
 }
 
 /// Reads `body` as JSON when it starts with `{` or `[`, as XML when it starts with `<`, and gives nothing otherwise or
-/// when it was `truncated`.
-pub(super) fn read(body: &str, truncated: bool) -> BodyReading {
-    if truncated {
+/// when it is `unread` (cut at the size limit, or not UTF-8 text: `suggestion::unread`).
+pub(super) fn read(body: &str, unread: bool) -> BodyReading {
+    if unread {
         return BodyReading::default();
     }
     match body.trim_start().as_bytes().first() {

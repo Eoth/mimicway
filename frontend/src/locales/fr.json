@@ -377,6 +377,8 @@
   "{0} calls were left out: they got server errors ({1}) that nothing in the request explains.": "{0} appels ont été mis de côté : ils ont reçu des erreurs du serveur ({1}) que rien dans la requête n'explique.",
   "{0} request body was cut at the size limit of observation: its fields could not be read.": "{0} corps de requête a été coupé à la taille maximale de l'observation : ses champs n'ont pas pu être lus.",
   "{0} request bodies were cut at the size limit of observation: their fields could not be read.": "{0} corps de requête ont été coupés à la taille maximale de l'observation : leurs champs n'ont pas pu être lus.",
+  "{0} request body is in another encoding than UTF-8: its fields could not be read, and no rule can read them.": "{0} corps de requête est dans un autre encodage que l'UTF-8 : ses champs n'ont pas pu être lus, et aucune règle ne peut les lire.",
+  "{0} request bodies are in another encoding than UTF-8: their fields could not be read, and no rule can read them.": "{0} corps de requête sont dans un autre encodage que l'UTF-8 : leurs champs n'ont pas pu être lus, et aucune règle ne peut les lire.",
   "no condition: {0} ({1} calls)": "sans condition : {0} ({1} appels)",
   "the response repeats {0}": "la réponse reprend {0}",
   "the response writes one block per \"{0}\" of the request, with its {1}": "la réponse écrit un bloc par « {0} » de la requête, avec ses {1}",
