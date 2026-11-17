@@ -20,6 +20,9 @@ const DEFAULT_MAX_BUFFER_SIZE: usize = 10 * 1024 * 1024;
 const DEFAULT_SAMPLES_PER_KEY: usize = 8;
 const DEFAULT_MAX_KEYS: usize = 200;
 const DEFAULT_MAX_FAILED_CALLS: usize = 100;
+/// Failed relays kept for one service, within `max_failed_calls()`: a caller sending calls that fail through one
+/// observed service pushes out that service's oldest failures, never another service's.
+pub(crate) const MAX_FAILED_CALLS_PER_SERVICE: usize = 20;
 /// Distinct SOAP operations followed for one path of a service (one method): a service names a few dozen at most.
 /// Past them, a new operation takes the place of the operation of that path updated least recently, as endpoints do in
 /// the whole store: a caller inventing an operation per call turns one fixed path into this many endpoints at most,
@@ -237,7 +240,7 @@ struct ObservationInner {
     key_order: BTreeMap<u64, ObservationKey>,
     /// Also the identifier of each call recorded, exchange or failure: unique, and in the order they came.
     next_seq: u64,
-    /// Oldest first, `max_failed_calls()` at most.
+    /// Oldest first, `max_failed_calls()` at most, `MAX_FAILED_CALLS_PER_SERVICE` of one service at most.
     failures: VecDeque<FailedCall>,
 }
 
@@ -364,7 +367,14 @@ impl ObservationStore {
         let inner = &mut *guard;
         call.request.id = inner.next_seq;
         inner.next_seq += 1;
-        while inner.failures.len() >= max_failed_calls {
+        let same_service =
+            |f: &FailedCall| f.group_name == call.group_name && f.service_name == call.service_name;
+        let of_service = inner.failures.iter().filter(|f| same_service(f)).count();
+        if of_service >= MAX_FAILED_CALLS_PER_SERVICE.min(max_failed_calls) {
+            if let Some(oldest) = inner.failures.iter().position(same_service) {
+                inner.failures.remove(oldest);
+            }
+        } else if inner.failures.len() >= max_failed_calls {
             inner.failures.pop_front();
         }
         inner.failures.push_back(call);
@@ -1232,5 +1242,32 @@ mod tests {
         state.record(sample_key("/a"), sample_exchange(b"new"), second);
         assert_eq!(state.store.calls(None, "svc").len(), 1);
         assert_eq!(state.toggle.generation(Some("g"), "svc"), None);
+    }
+
+    // A caller flooding one observed service with calls that fail pushes out that service's oldest failures only.
+    #[test]
+    fn one_service_keeps_so_many_failures_and_never_pushes_out_another_ones() {
+        let store = ObservationStore::new();
+        for i in 0..3 {
+            store.record_failure_within(failed_call(None, "quiet", i.to_string().as_bytes()), 100);
+        }
+        for i in 0..150 {
+            store.record_failure_within(failed_call(None, "busy", i.to_string().as_bytes()), 100);
+        }
+        assert_eq!(store.calls(None, "quiet").len(), 3);
+        let busy: Vec<String> = store
+            .calls(None, "busy")
+            .into_iter()
+            .map(|c| store.call(None, "busy", c.id).unwrap().request.body.text)
+            .collect();
+        assert_eq!(busy.len(), MAX_FAILED_CALLS_PER_SERVICE);
+        assert_eq!(busy[0], "149");
+        assert_eq!(busy[MAX_FAILED_CALLS_PER_SERVICE - 1], "130");
+        // The global bound still holds, below the share of a service too.
+        let small = ObservationStore::new();
+        for i in 0..10 {
+            small.record_failure_within(failed_call(None, "busy", i.to_string().as_bytes()), 4);
+        }
+        assert_eq!(small.calls(None, "busy").len(), 4);
     }
 }

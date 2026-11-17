@@ -159,7 +159,7 @@ Tout se règle par des variables d'environnement ; aucune n'est obligatoire.
 | `REQUEST_LOG_MAX_BODY_SIZE` | `16384` | Octets de chaque corps conservés dans le journal des requêtes. |
 | `TRAFFIC_OBSERVATION_MAX_BODY_SIZE` | `16384` | Octets de chaque corps conservés par l'observation de trafic. |
 | `TRAFFIC_OBSERVATION_MAX_BUFFER_SIZE` | `10485760` | Plus grand corps de requête ou de réponse (d'après son `Content-Length`) que l'observation de trafic met en mémoire pour capturer un échange ; les corps plus grands ou sans taille sont transmis au fil de l'eau et non observés. |
-| `TRAFFIC_OBSERVATION_MAX_FAILED_CALLS` | `100` | Relais de services observés qui ont échoué (backend injoignable, délai dépassé, cible refusée) gardés avec leur requête, tous services observés confondus, à part des échanges ; le plus ancien laisse sa place. |
+| `TRAFFIC_OBSERVATION_MAX_FAILED_CALLS` | `100` | Relais de services observés qui ont échoué (backend injoignable, délai dépassé, cible refusée) gardés avec leur requête, tous services observés confondus, à part des échanges ; le plus ancien laisse sa place. Un service en garde 20 au plus, son plus ancien laissant sa place, pour que les échecs de l'un ne chassent jamais ceux d'un autre. |
 | `TRAFFIC_OBSERVATION_MAX_KEYS` | `200` | Chemins distincts (méthode et chemin, et opération SOAP) suivis en même temps, tous services observés confondus ; le moins récemment appelé laisse sa place. |
 | `TRAFFIC_OBSERVATION_SAMPLES_PER_KEY` | `8` | Échanges conservés par chemin (par opération pour une adresse SOAP). |
 | `TRAFFIC_OBSERVATION_MIN_SAMPLES` | `3` | Échanges d'une route (les chemins regroupés sous un même modèle) nécessaires avant qu'une règle soit suggérée. |

@@ -159,7 +159,7 @@ Everything is set through environment variables; none is required.
 | `REQUEST_LOG_MAX_BODY_SIZE` | `16384` | Bytes of each body kept in the request log. |
 | `TRAFFIC_OBSERVATION_MAX_BODY_SIZE` | `16384` | Bytes of each body kept by traffic observation. |
 | `TRAFFIC_OBSERVATION_MAX_BUFFER_SIZE` | `10485760` | Largest request or response body (by its `Content-Length`) that traffic observation buffers to capture an exchange; larger or unsized bodies are streamed and not observed. |
-| `TRAFFIC_OBSERVATION_MAX_FAILED_CALLS` | `100` | Relays of observed services that failed (backend unreachable, timeout, target refused) kept with their request, across all observed services, apart from the exchanges; the oldest makes room. |
+| `TRAFFIC_OBSERVATION_MAX_FAILED_CALLS` | `100` | Relays of observed services that failed (backend unreachable, timeout, target refused) kept with their request, across all observed services, apart from the exchanges; the oldest makes room. One service keeps 20 of them at most, its oldest making room, so that the failures of one never push out another's. |
 | `TRAFFIC_OBSERVATION_MAX_KEYS` | `200` | Distinct paths (method and path, and SOAP operation) followed at once, across all observed services; the least recently called makes room. |
 | `TRAFFIC_OBSERVATION_SAMPLES_PER_KEY` | `8` | Exchanges kept per path (per operation for a SOAP address). |
 | `TRAFFIC_OBSERVATION_MIN_SAMPLES` | `3` | Exchanges of a route (the paths grouped under one pattern) needed before a rule is suggested. |
