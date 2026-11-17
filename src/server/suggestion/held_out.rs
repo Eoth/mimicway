@@ -204,6 +204,19 @@ fn well_formed(json: bool, body: &str) -> bool {
     if json {
         return serde_json::from_str::<serde_json::Value>(body).is_ok();
     }
+    // XML 1.0, section 2.2, production `Char`, which quick-xml does not check.
+    let char_production = |c: char| {
+        let c = u32::from(c);
+        c == 0x9
+            || c == 0xA
+            || c == 0xD
+            || (0x20..=0xD7FF).contains(&c)
+            || (0xE000..=0xFFFD).contains(&c)
+            || c >= 0x10000
+    };
+    if !body.chars().all(char_production) {
+        return false;
+    }
     use quick_xml::events::Event;
     let mut reader = quick_xml::reader::Reader::from_str(body);
     let mut depth = 0usize;

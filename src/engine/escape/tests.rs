@@ -37,10 +37,34 @@ fn read_back(xml: &str) -> Option<String> {
     }
 }
 
+/// XML 1.0, section 2.2, production `Char`, written here apart from the functions judged.
+fn char_production(c: char) -> bool {
+    let c = u32::from(c);
+    c == 0x9
+        || c == 0xA
+        || c == 0xD
+        || (0x20..=0xD7FF).contains(&c)
+        || (0xE000..=0xFFFD).contains(&c)
+        || c >= 0x10000
+}
+
+/// Whether every character of `xml`, and every character a reference `&#…;` stands for, is a `Char`.
+fn only_xml_chars(xml: &str) -> bool {
+    xml.chars().all(char_production)
+        && xml.split("&#").skip(1).all(|r| {
+            let number = r.split(';').next().unwrap_or_default();
+            let code = match number.strip_prefix('x') {
+                Some(hex) => u32::from_str_radix(hex, 16).ok(),
+                None => number.parse().ok(),
+            };
+            code.and_then(char::from_u32).is_some_and(char_production)
+        })
+}
+
 fn arb_text() -> impl Strategy<Value = String> {
     prop_oneof![
         "\\PC{0,24}",
-        "[<>&\"'\\]\\[!CDATA{}\\\\ a\u{0}-\u{1f}\u{7f}é]{0,24}",
+        "[<>&\"'\\]\\[!CDATA{}\\\\ a\u{0}-\u{1f}\u{7f}é\u{fffe}\u{ffff}\r\n\t]{0,24}",
     ]
 }
 
@@ -54,6 +78,14 @@ fn every_character_each_escaping_writes_otherwise() {
         Escaping::XmlAttr.apply("a&b<c>d\"e'f"),
         "a&amp;b&lt;c&gt;d&quot;e&apos;f"
     );
+    assert_eq!(Escaping::XmlText.apply("a\tb\nc\rd"), "a\tb\nc&#13;d");
+    assert_eq!(Escaping::XmlAttr.apply("a\tb\nc\rd"), "a&#9;b&#10;c&#13;d");
+    for escaping in [Escaping::XmlText, Escaping::XmlAttr, Escaping::Cdata] {
+        assert_eq!(
+            escaping.apply("\u{0}\u{1}\u{8}\u{b}\u{c}\u{e}\u{1f}\u{fffe}\u{ffff}\u{fffd}\u{10000}"),
+            "\u{fffd}".repeat(10) + "\u{10000}"
+        );
+    }
     assert_eq!(
         Escaping::JsonString.apply("\"\\\u{8}\u{c}\n\r\t\u{0}\u{1f}\u{7f}é/"),
         "\\\"\\\\\\b\\f\\n\\r\\t\\u0000\\u001f\u{7f}é/"
@@ -117,20 +149,20 @@ proptest! {
 
     #[test]
     fn each_xml_escaping_reads_back_its_text(text in arb_text()) {
-        // XML holds no control character but tab, line feed and carriage return; and a carriage return is read as a
-        // line feed. Those are no matter of escaping.
-        let text: String = text
-            .chars()
-            .filter(|c| !c.is_control() || *c == '\t' || *c == '\n')
-            .collect();
+        // What a reader must read back: the text, each character XML 1.0 refuses replaced by U+FFFD; inside a CDATA
+        // section, where references are not read, a carriage return read as a line feed, as every reader does.
+        let allowed: String = text.chars().map(|c| if char_production(c) { c } else { '\u{fffd}' }).collect();
         let element = format!("<r>{}</r>", Escaping::XmlText.apply(&text));
-        prop_assert_eq!(read_back(&element), Some(text.clone()), "{}", element);
+        prop_assert!(only_xml_chars(&element), "{:?}", element);
+        prop_assert_eq!(read_back(&element), Some(allowed.clone()), "{}", element);
         let cdata = format!("<r><![CDATA[{}]]></r>", Escaping::Cdata.apply(&text));
-        prop_assert_eq!(read_back(&cdata), Some(text.clone()), "{}", cdata);
-        let attribute = text.replace(['\t', '\n'], " ");
+        prop_assert!(only_xml_chars(&cdata), "{:?}", cdata);
+        let lines = allowed.replace("\r\n", "\n").replace('\r', "\n");
+        prop_assert_eq!(read_back(&cdata), Some(lines), "{}", cdata);
         for quote in ['"', '\''] {
-            let xml = format!("<r a={quote}{}{quote}/>", Escaping::XmlAttr.apply(&attribute));
-            prop_assert_eq!(read_back(&xml), Some(attribute.clone()), "{}", xml);
+            let xml = format!("<r a={quote}{}{quote}/>", Escaping::XmlAttr.apply(&text));
+            prop_assert!(only_xml_chars(&xml), "{:?}", xml);
+            prop_assert_eq!(read_back(&xml), Some(allowed.clone()), "{}", xml);
         }
     }
 

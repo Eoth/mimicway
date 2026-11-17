@@ -3,10 +3,14 @@
 // into an XML or JSON document keeps that document well formed, whatever the value.
 //
 // - `xml_text`: the text of an element. `&`, `<` and `>` become entities (`>` too, so that a value never ends a CDATA
-//   marker `]]>` written around it).
-// - `xml_attr`: the value of an attribute, between either kind of quote. `&`, `<`, `>`, `"` and `'` become entities.
+//   marker `]]>` written around it), and a carriage return `&#13;` (a reader would read it as a line feed).
+// - `xml_attr`: the value of an attribute, between either kind of quote. `&`, `<`, `>`, `"` and `'` become entities,
+//   tab, line feed and carriage return `&#9;`, `&#10;`, `&#13;` (a reader turns them into spaces otherwise).
 // - `cdata`: the inside of a CDATA section, where entities are not read: `]]>`, which would end the section, is written
 //   by ending the section between `]]` and `>` and opening another one (`]]]]><![CDATA[>`).
+// In all three, a character XML 1.0 refuses in a document (U+0000 to U+001F but tab, line feed and carriage return,
+// U+FFFE, U+FFFF; no reference to them is allowed either) becomes U+FFFD: a reader reads back the value of the request,
+// those characters replaced.
 // - `json_string`: the inside of a JSON string, as serde_json writes one: `"` and `\` escaped, the control characters
 //   U+0000 to U+001F as `\b`, `\f`, `\n`, `\r`, `\t` or `\u00XX`.
 // - `json_value` (template pipe only): a JSON value, out of any string. A text that is exactly a JSON number (RFC 8259:
@@ -60,7 +64,8 @@ impl Escaping {
                 out.push('"');
             }
             Escaping::Cdata => {
-                let mut rest = text;
+                let allowed = xml_chars(text);
+                let mut rest = allowed.as_str();
                 while let Some(at) = rest.find("]]>") {
                     out.push_str(&rest[..at]);
                     out.push_str(CDATA_END);
@@ -90,7 +95,10 @@ impl Escaping {
         match self {
             Escaping::JsonValue if is_json_scalar(text) => text.len(),
             Escaping::JsonValue => Escaping::JsonString.escaped_len(text) + 2,
-            Escaping::Cdata => text.len() + text.matches("]]>").count() * (CDATA_END.len() - 3),
+            Escaping::Cdata => {
+                let allowed = xml_chars(text);
+                allowed.len() + allowed.matches("]]>").count() * (CDATA_END.len() - 3)
+            }
             _ => text
                 .chars()
                 .map(|c| match self.piece(c) {
@@ -104,6 +112,12 @@ impl Escaping {
 
     fn piece(self, c: char) -> Option<Piece> {
         match (self, c) {
+            (Escaping::XmlText | Escaping::XmlAttr, c) if !is_xml_char(c) => {
+                Some(Piece::Fixed("\u{fffd}"))
+            }
+            (Escaping::XmlText | Escaping::XmlAttr, '\r') => Some(Piece::Fixed("&#13;")),
+            (Escaping::XmlAttr, '\t') => Some(Piece::Fixed("&#9;")),
+            (Escaping::XmlAttr, '\n') => Some(Piece::Fixed("&#10;")),
             (Escaping::XmlText | Escaping::XmlAttr, '&') => Some(Piece::Fixed("&amp;")),
             (Escaping::XmlText | Escaping::XmlAttr, '<') => Some(Piece::Fixed("&lt;")),
             (Escaping::XmlText | Escaping::XmlAttr, '>') => Some(Piece::Fixed("&gt;")),
@@ -120,6 +134,18 @@ impl Escaping {
             _ => None,
         }
     }
+}
+
+/// Whether XML 1.0 lets a document hold `c` (section 2.2, `Char`), as a character or a reference to one.
+pub(crate) fn is_xml_char(c: char) -> bool {
+    matches!(c, '\t' | '\n' | '\r' | '\u{20}'..='\u{d7ff}' | '\u{e000}'..='\u{fffd}' | '\u{10000}'..)
+}
+
+/// `text` with every character XML 1.0 refuses replaced by U+FFFD.
+fn xml_chars(text: &str) -> String {
+    text.chars()
+        .map(|c| if is_xml_char(c) { c } else { '\u{fffd}' })
+        .collect()
 }
 
 /// Whether `text` is exactly a JSON number or one of the literals `true`, `false`, `null`: what `json_value` writes as

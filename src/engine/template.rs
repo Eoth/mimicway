@@ -704,11 +704,11 @@ mod tests {
         let ctx = make_ctx(&p, &q, &h, b"{\"v\":\"a<\\\"&'\\u0001\"}", 0);
         assert_eq!(
             render_template("{{body./v | xml_text}}", &ctx),
-            "a&lt;\"&amp;'\u{1}"
+            "a&lt;\"&amp;'\u{fffd}"
         );
         assert_eq!(
             render_template("{{body./v | xml_attr}}", &ctx),
-            "a&lt;&quot;&amp;&apos;\u{1}"
+            "a&lt;&quot;&amp;&apos;\u{fffd}"
         );
         assert_eq!(
             render_template("{{body./v | json_string}}", &ctx),
