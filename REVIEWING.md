@@ -35,7 +35,7 @@ With `AUTH_ENABLED=false` every caller is an anonymous super-admin: this mode is
 | Endpoint | Allowed |
 |---|---|
 | `GET /api/health`, `GET /api/auth/status`, `POST /api/auth/login`, `POST /api/auth/validate` | Anyone (no token) |
-| `GET /api/auth/me`, `POST /api/script/validate`, `POST /api/rule-test`, `POST /api/rule-conflicts` | Any authenticated user (the last three are stateless) |
+| `GET /api/version`, `GET /api/auth/me`, `POST /api/script/validate`, `POST /api/rule-test`, `POST /api/rule-conflicts` | Any authenticated user (the last three are stateless) |
 | `GET /api/config`, `GET /api/services`, `GET /api/logs`, `GET /api/observation/status` | Any authenticated user, filtered to what they can access |
 | `PUT /api/config`, `DELETE /api/config/reset`, `GET /api/config/backups`, `POST /api/config/restore/{file}` | Super-admins |
 | `POST /api/services` | Super-admins anywhere; group admins inside their group |

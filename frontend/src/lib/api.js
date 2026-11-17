@@ -38,6 +38,11 @@ async function request(method, path, body) {
   return res.json();
 }
 
+// The version of the server that answers. Needs a token when authentication is on: asked once signed in.
+export function getVersion() {
+  return request('GET', '/version');
+}
+
 // Auth
 export function getAuthStatus() {
   return request('GET', '/auth/status');

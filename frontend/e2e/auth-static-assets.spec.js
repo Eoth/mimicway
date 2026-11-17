@@ -115,6 +115,8 @@ test.describe('Auth: the files of the interface load without a token (AUTH_ENABL
     // which signs the user out.
     await page.route('**/api/messaging/status', (route) => route.fulfill({ status: 404, body: '' }));
     await page.route('**/api/tcp/status', (route) => route.fulfill({ status: 404, body: '' }));
+    // Asked once signed in, for the foot of the page.
+    await page.route('**/api/version', (route) => route.fulfill({ json: { version: '1.2.3' } }));
 
     await page.goto(baseUrl + '/');
     await page.locator('[data-testid="login-form-username-input"]').fill('alice');
@@ -128,6 +130,7 @@ test.describe('Auth: the files of the interface load without a token (AUTH_ENABL
     // Still signed in once the interface has settled.
     await page.waitForLoadState('networkidle');
     await expect(page.locator('[data-testid="app-user-badge"]')).toContainText('alice');
+    await expect(page.locator('[data-testid="app-version"]')).toHaveText('Version 1.2.3');
     await docsScreenshot(page, 'authentication-user-badge.png', '[data-testid="app-user-badge"]');
   });
 

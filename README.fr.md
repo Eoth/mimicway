@@ -188,6 +188,7 @@ Tout est sous `/api`, en JSON à l'entrée comme à la sortie. Les messages d'er
 | Méthode | Chemin | Rôle |
 |---|---|---|
 | GET | `/api/health` | Sonde de vivacité. |
+| GET | `/api/version` | Version du serveur qui répond. |
 | GET, PUT | `/api/config` | Configuration complète : lire (filtrée selon ce que l'appelant peut voir), remplacer. |
 | DELETE | `/api/config/reset` | Supprimer tous les services et groupes (super-admin ; une sauvegarde protégée est conservée). |
 | GET | `/api/config/backups` | Lister les sauvegardes (super-admin). |

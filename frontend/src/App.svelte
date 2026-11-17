@@ -13,6 +13,7 @@
     createGroup,
     getMessagingStatus,
     getTcpStatus,
+    getVersion,
   } from './lib/api.js';
   import { auth, isLoggedIn, setAuth, logout } from './lib/auth.svelte.js';
   import ServiceList from './lib/components/ServiceList.svelte';
@@ -142,7 +143,25 @@
     loading = false;
   }
 
+  // The version of the server, shown at the foot of the page: asked of the server, which may not be where the UI's
+  // files come from, and only once signed in, since the server tells it to no one else. '' while unknown, and when
+  // the server does not tell: the page then has no footer, and that is not an error to report.
+  // Asked again each time the data is loaded (start, sign-in, import), never kept from a previous session: a server
+  // replaced while the page stayed open is named as it is at the next sign-in.
+  let version = $state('');
+
+  async function loadVersion() {
+    try {
+      const answer = await getVersion();
+      version = typeof answer?.version === 'string' ? answer.version : '';
+    } catch {
+      version = '';
+    }
+  }
+
   async function loadData() {
+    // Not awaited: the services do not wait for it.
+    loadVersion();
     try {
       services = await getServices();
       try {
@@ -163,6 +182,7 @@
     logout();
     services = [];
     groups = [];
+    version = '';
     view = 'list';
     selectedService = null;
     selectedServiceGroup = null;
@@ -675,6 +695,11 @@
       {/if}
     {/if}
   </main>
+  {#if version}
+    <footer class="app-footer">
+      <p data-testid="app-version">{t('Version {0}', version)}</p>
+    </footer>
+  {/if}
 {/if}
 
 <style>
@@ -742,6 +767,17 @@
     max-width: 60rem;
     margin: var(--space-6) auto;
     padding: 0 var(--space-6);
+  }
+  /* The line of the header is for the actions: what would send them to a second line stands here. */
+  .app-footer {
+    max-width: 60rem;
+    margin: var(--space-6) auto;
+    padding: 0 var(--space-6);
+    color: var(--color-text-muted);
+    font-size: var(--text-s);
+  }
+  .app-footer p {
+    margin: 0;
   }
 
   .breadcrumb {

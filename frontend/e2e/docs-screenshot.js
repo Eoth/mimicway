@@ -42,9 +42,18 @@ const nextFrames = (page) =>
 // Transitions (a group's chevron, a button turning from primary to outline) are run to their end, and the pointer is
 // moved off the content: otherwise an image may catch a transition half-way, or a button hovered in one language only
 // (the texts, hence the layout, differ), and the two images of a pair would not show the same state.
+//
+// The version at the foot of the page is left out of the image, its place kept: a picture of the guide naming a
+// version would be out of date at the next release.
+const NOT_IN_PICTURES = '[data-testid="app-version"] { visibility: hidden; }';
+
 async function capture(page, language, filename, directory) {
   await page.mouse.move(0, 0);
-  await page.screenshot({ path: target(language, filename, directory), animations: 'disabled' });
+  await page.screenshot({
+    path: target(language, filename, directory),
+    animations: 'disabled',
+    style: NOT_IN_PICTURES,
+  });
 }
 
 // Whether an element shows in the captured viewport (an element scrolled out of it does not appear in the image).

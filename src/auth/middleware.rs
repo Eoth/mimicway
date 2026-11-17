@@ -372,6 +372,53 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn the_version_is_told_only_to_a_signed_in_caller() {
+        // A version is of no use to an anonymous caller but for choosing an attack: unlike /api/health, which a
+        // probe reads without a token and which therefore never names it, /api/version needs one.
+        let realm = FakeRealm::start().await;
+        let auth_config = realm.auth_config(vec![]);
+        let keycloak = Some(KeycloakClient::new(auth_config.clone()));
+        let base = spawn_test_app(auth_config, keycloak).await;
+        let client = reqwest::Client::new();
+
+        let anonymous = client.get(format!("{base}/version")).send().await.unwrap();
+        assert_eq!(anonymous.status().as_u16(), 401);
+        assert!(
+            !anonymous
+                .text()
+                .await
+                .unwrap()
+                .contains(env!("CARGO_PKG_VERSION"))
+        );
+
+        let health: serde_json::Value = client
+            .get(format!("{base}/health"))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert!(health.get("version").is_none());
+
+        let signed_in = client
+            .get(format!("{base}/version"))
+            .header(
+                "authorization",
+                format!("Bearer {}", realm.token_for("alice")),
+            )
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(signed_in.status().as_u16(), 200);
+        let body: serde_json::Value = signed_in.json().await.unwrap();
+        assert_eq!(
+            body,
+            serde_json::json!({ "version": env!("CARGO_PKG_VERSION") })
+        );
+    }
+
+    #[tokio::test]
     async fn auth_disabled_injects_anonymous_super_admin() {
         // Authentication off: every route, /api/auth/me included, gets the anonymous super-admin.
         let base = spawn_test_app(disabled_auth_config(), None).await;

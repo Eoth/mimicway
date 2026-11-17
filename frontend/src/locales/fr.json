@@ -18,6 +18,7 @@
   "Skip to main content": "Aller au contenu principal",
   "Loading...": "Chargement...",
   "Smart mock & proxy": "Mock & Proxy Intelligent",
+  "Version {0}": "Version {0}",
   "Request log": "Journal des requetes",
   "Logs": "Logs",
   "Kafka message log": "Journal des messages Kafka",

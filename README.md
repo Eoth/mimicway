@@ -188,6 +188,7 @@ All under `/api`, JSON in and out. Error messages follow the request's `Accept-L
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/api/health` | Liveness probe. |
+| GET | `/api/version` | Version of the running server. |
 | GET, PUT | `/api/config` | Whole configuration: read (filtered to what the caller may see), replace. |
 | DELETE | `/api/config/reset` | Remove every service and group (super-admin; a protected backup is kept). |
 | GET | `/api/config/backups` | List backups (super-admin). |

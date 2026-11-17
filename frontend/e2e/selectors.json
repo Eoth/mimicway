@@ -3,6 +3,7 @@
 
   "app": {
     "titleButton": "[data-testid=\"app-title-button\"]",
+    "version": "[data-testid=\"app-version\"]",
     "navLogsButton": "[data-testid=\"app-nav-logs-button\"]",
     "navMessagingButton": "[data-testid=\"app-nav-messaging-button\"]",
     "navGroupsButton": "[data-testid=\"app-nav-groups-button\"]",

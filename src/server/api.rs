@@ -22,6 +22,7 @@ use std::sync::Arc;
 pub fn routes() -> Router<AppState> {
     let router = Router::new()
         .route("/health", get(health))
+        .route("/version", get(version))
         .route("/auth/status", get(auth_status))
         .route("/auth/login", post(login))
         .route("/auth/validate", post(validate_token))
@@ -140,6 +141,22 @@ async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
         status: "ok",
         write_queue: state.store.writer_status(),
         disposable_data: disposable_data(crate::settings::env),
+    })
+}
+
+// --------------- Version ---------------
+
+#[derive(serde::Serialize)]
+struct VersionResponse {
+    version: &'static str,
+}
+
+/// The version of the server that answers, for the foot of the UI's pages and for whoever reports a problem. It is not
+/// part of `/health`: that route is open, and a version is of no use to an anonymous caller but for choosing an
+/// attack. This one needs a token when authentication is on, like every route the middleware does not name.
+async fn version() -> Json<VersionResponse> {
+    Json(VersionResponse {
+        version: env!("CARGO_PKG_VERSION"),
     })
 }
 
